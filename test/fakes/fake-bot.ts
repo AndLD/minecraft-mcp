@@ -1,5 +1,58 @@
 import { EventEmitter } from 'node:events'
-import type { BotEvents, BotLike } from '../../src/bot/bot-like.types.js'
+import type {
+  BotEvents,
+  BotLike,
+  EntityLike,
+  ItemLike,
+  PathfinderLike,
+  PlayerLike,
+} from '../../src/bot/bot-like.types.js'
+import type { Position } from '../../src/core/position.types.js'
+
+/** A pathfinder whose movements finish only when the test says so, and which behaves like the real plugin. */
+export class FakePathfinder implements PathfinderLike {
+  readonly gotoGoals: unknown[] = []
+  readonly followGoals: { goal: unknown; dynamic: boolean | undefined }[] = []
+  /** How many times movement was halted with `setGoal(null)`. */
+  stopCalls = 0
+  private pending: { resolve: () => void; reject: (error: Error) => void }[] = []
+
+  goto(goal: unknown): Promise<void> {
+    this.gotoGoals.push(goal)
+    return new Promise<void>((resolve, reject) => {
+      this.pending.push({ resolve, reject })
+    })
+  }
+
+  /** Like the real plugin, changing the goal ends any trip in progress with `GoalChanged`. */
+  setGoal(goal: unknown, dynamic?: boolean): void {
+    if (goal === null) this.stopCalls += 1
+    else this.followGoals.push({ goal, dynamic })
+    const interrupted = this.pending
+    this.pending = []
+    for (const trip of interrupted)
+      trip.reject(namedError('GoalChanged', 'The goal was changed before it could be completed!'))
+  }
+
+  /** The bot reaches the goal. */
+  arrive(): void {
+    this.pending.shift()?.resolve()
+  }
+
+  /** The pathfinder rejects the way the real plugin does (error names NoPath, Timeout, ...). */
+  failWith(name: string, message = name): void {
+    this.pending.shift()?.reject(namedError(name, message))
+  }
+}
+
+function namedError(name: string, message: string): Error {
+  const error = new Error(message)
+  error.name = name
+  return error
+}
+
+const key = (p: Position): string =>
+  `${String(Math.floor(p.x))},${String(Math.floor(p.y))},${String(Math.floor(p.z))}`
 
 /** A stub of the game bot: tests drive it by emitting events and read what it was asked to do. */
 export class FakeBot implements BotLike {
@@ -10,6 +63,29 @@ export class FakeBot implements BotLike {
   entity: BotLike['entity'] = { position: { x: 10, y: 64, z: -5 } }
   game = { dimension: 'overworld' }
   time = { timeOfDay: 6000 }
+  entities: Record<string, EntityLike> = {}
+  players: Record<string, PlayerLike> = {}
+  registry = {
+    blocksByName: {
+      air: { id: 0 },
+      stone: { id: 1 },
+      dirt: { id: 2 },
+      oak_log: { id: 3 },
+      iron_ore: { id: 4 },
+      crafting_table: { id: 5 },
+    } as Record<string, { id: number }>,
+  }
+  inventoryItems: ItemLike[] = []
+  emptySlots = 36
+  heldItem: ItemLike | null = null
+  readonly pathfinder = new FakePathfinder()
+  clearControlStatesCalls = 0
+  /** The block world, by integer coordinates. Unknown positions are unloaded (null). */
+  private readonly blocks = new Map<string, string>()
+  inventory = {
+    items: (): readonly ItemLike[] => this.inventoryItems,
+    emptySlotCount: (): number => this.emptySlots,
+  }
 
   readonly chatLog: string[] = []
   readonly whisperLog: { player: string; text: string }[] = []
@@ -18,6 +94,40 @@ export class FakeBot implements BotLike {
   endOnQuit = true
 
   private readonly emitter = new EventEmitter()
+
+  setBlock(position: Position, name: string): void {
+    this.blocks.set(key(position), name)
+  }
+
+  blockAt(position: Position): { readonly name: string } | null {
+    const name = this.blocks.get(key(position))
+    return name === undefined ? null : { name }
+  }
+
+  findBlocks(options: {
+    matching: number | number[]
+    maxDistance: number
+    count: number
+  }): readonly Position[] {
+    const origin = this.entity?.position
+    if (origin === undefined) return []
+    const ids = new Set(Array.isArray(options.matching) ? options.matching : [options.matching])
+    const found: { position: Position; distance: number }[] = []
+    for (const [coordinates, name] of this.blocks) {
+      if (!ids.has(this.registry.blocksByName[name]?.id ?? -1)) continue
+      const [x = 0, y = 0, z = 0] = coordinates.split(',').map(Number)
+      const distance = Math.hypot(x - origin.x, y - origin.y, z - origin.z)
+      if (distance <= options.maxDistance) found.push({ position: { x, y, z }, distance })
+    }
+    return found
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, options.count)
+      .map((f) => f.position)
+  }
+
+  clearControlStates(): void {
+    this.clearControlStatesCalls += 1
+  }
 
   chat(message: string): void {
     this.chatLog.push(message)

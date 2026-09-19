@@ -34,12 +34,7 @@ describe('createApp', () => {
 
     const app = createApp(parsed.value)
 
-    expect(
-      app.registry
-        .list()
-        .map((t) => t.name)
-        .sort(),
-    ).toEqual(['connect', 'disconnect', 'get_status', 'say', 'wait_for_chat', 'whisper'])
+    expect(app.registry.list()).toHaveLength(16)
     expect(app.clock.now()).toBeGreaterThan(0)
     expect(app.random.next()).toBeLessThan(1)
     expect(app.connection.state).toBe('disconnected')

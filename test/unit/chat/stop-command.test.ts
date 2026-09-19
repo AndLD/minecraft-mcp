@@ -1,9 +1,8 @@
 import { describe, expect, it, jest } from '@jest/globals'
-import { NoopStopHandler } from '../../../src/chat/noop-stop-handler.js'
 import { StopCommand } from '../../../src/chat/stop-command.js'
 
 describe('StopCommand', () => {
-  const command = new StopCommand(new NoopStopHandler())
+  const command = new StopCommand({ stopAll: jest.fn() })
 
   it.each(['stop', 'Stop', 'STOP', ' stop ', '!stop', 'stop!', 'stop.'])('matches %j', (text) => {
     expect(command.matches({ text })).toBe(true)
@@ -22,11 +21,5 @@ describe('StopCommand', () => {
 
     expect(stopAll).toHaveBeenCalledTimes(1)
     expect(note).toContain('stop')
-  })
-
-  it('the placeholder handler does nothing and does not throw', () => {
-    expect(() => {
-      new NoopStopHandler().stopAll()
-    }).not.toThrow()
   })
 })

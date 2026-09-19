@@ -66,6 +66,10 @@ export async function createHarness(
       return bot
     },
     socketFactory: () => socket,
+    pathGoals: {
+      near: (x, y, z, range) => ({ kind: 'near', x, y, z, range }),
+      followEntity: (entity, range) => ({ kind: 'follow', id: entity.id, range }),
+    },
   })
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
