@@ -15,6 +15,8 @@ import { createMineflayerBot } from './bot/mineflayer-bot-factory.js'
 import { MineflayerContainerAccess } from './bot/mineflayer-container-access.js'
 import { MineflayerDigger } from './bot/mineflayer-digger.js'
 import { MineflayerDroppedItems } from './bot/mineflayer-dropped-items.js'
+import { MineflayerGaze } from './bot/mineflayer-gaze.js'
+import { MineflayerInventoryWriter } from './bot/mineflayer-inventory-writer.js'
 import { MineflayerEater } from './bot/mineflayer-eater.js'
 import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
 import { MineflayerFoodCatalog } from './bot/mineflayer-food-catalog.js'
@@ -75,6 +77,7 @@ import {
 } from './mcp/tools/memory-tools.js'
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
+import { DropItemsTool, GiveItemsTool, ResolveItemTool } from './mcp/tools/handover-tools.js'
 import { AttackEntityTool } from './mcp/tools/attack-entity-tool.js'
 import { HuntAnimalsTool } from './mcp/tools/hunt-animals-tool.js'
 import { ListHuntableAnimalsTool } from './mcp/tools/list-huntable-animals-tool.js'
@@ -150,6 +153,11 @@ import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
 import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
 import { PenDetector } from './skills/hunting/pen-detector.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
+import { DropItemsSkill } from './skills/handover/drop-items-skill.js'
+import { DropSpot } from './skills/handover/drop-spot.js'
+import { GiveItemsSkill } from './skills/handover/give-items-skill.js'
+import { ItemResolver } from './skills/handover/item-resolver.js'
+import { ItemThrower } from './skills/handover/item-thrower.js'
 import { ContainerSelector } from './skills/storage/container-selector.js'
 import { ContainerVisitor } from './skills/storage/container-visitor.js'
 import { DepositItemsSkill } from './skills/storage/deposit-items-skill.js'
@@ -441,6 +449,34 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scanner: scanContainers,
     facts: itemFacts,
   })
+  // Handing items over.
+  const dropSpot = new DropSpot(blocks)
+  const thrower = new ItemThrower(new MineflayerInventoryWriter(connection), scheduler)
+  const giveItems = new GiveItemsSkill({
+    inventory,
+    index: containerIndex,
+    withdrawer: withdrawItems,
+    depositor: depositItems,
+    navigator,
+    entities,
+    blocks,
+    gaze: new MineflayerGaze(connection),
+    thrower,
+    spot: dropSpot,
+    drops,
+    scheduler,
+    vitals,
+    facts: itemFacts,
+  })
+  const dropItems = new DropItemsSkill({
+    inventory,
+    navigator,
+    blocks,
+    thrower,
+    spot: dropSpot,
+    vitals,
+    facts: itemFacts,
+  })
   const inventoryFull = new InventoryFullHandler({
     policy: storagePolicy,
     depositor: depositItems,
@@ -547,6 +583,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new FindItemsTool(findItems, launcher))
     .register(new SetStoragePolicyTool(storagePolicy, standing))
     .register(new ResumeTaskTool(tasks, clock))
+    .register(new GiveItemsTool(giveItems, launcher, config.owner))
+    .register(new DropItemsTool(dropItems, launcher))
+    .register(new ResolveItemTool(new ItemResolver(itemFacts), inventory, containerIndex))
     .register(new ProtectAreaTool(protectedAreas))
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))

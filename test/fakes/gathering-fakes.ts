@@ -66,8 +66,31 @@ export class InstantNavigator implements Navigator {
     return Promise.resolve(ok(target))
   }
 
-  goToPlayer(): Promise<Result<Position, NavigationFailure>> {
-    return Promise.resolve(err({ reason: 'target_not_found', message: 'not used' }))
+  /** Where the players are; a player not listed cannot be found. */
+  readonly players = new Map<string, Position>()
+  readonly playerTrips: { player: string; within: number }[] = []
+  /** Failures to hand out for the next trips to a player, in order; `undefined` lets a trip succeed. */
+  playerFailures: (NavigationFailure | undefined)[] = []
+
+  goToPlayer(
+    player: string,
+    within: number,
+    options: NavigationOptions,
+  ): Promise<Result<Position, NavigationFailure>> {
+    this.playerTrips.push({ player, within })
+    if (options.signal.aborted)
+      return Promise.resolve(err({ reason: 'aborted', message: 'Cancelled.' }))
+    const failure = this.playerFailures.shift()
+    if (failure !== undefined) return Promise.resolve(err(failure))
+    const where = this.players.get(player)
+    if (where === undefined)
+      return Promise.resolve(
+        err({ reason: 'target_not_found', message: `${player} is not in view.` }),
+      )
+    // The bot stops `within` blocks short of the player, on the side it came from.
+    const arrival = { x: where.x - within, y: where.y, z: where.z }
+    this.onArrive(arrival)
+    return Promise.resolve(ok(arrival))
   }
 
   follow(): Promise<Result<void, NavigationFailure>> {
