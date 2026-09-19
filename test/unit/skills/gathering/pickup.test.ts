@@ -146,6 +146,19 @@ describe('DropCollector', () => {
     expect(world.navigator.trips).toHaveLength(1)
   })
 
+  it('skips items the extra test rejects', async () => {
+    const world = setup()
+    world.drops.drop('apple', { x: 2, y: 64, z: 0 })
+    world.drops.drop('stick', { x: 4, y: 64, z: 0 })
+
+    await world.collector.collect(
+      { maxDistance: 12, accept: (item) => item.name === 'stick' },
+      new AbortController().signal,
+    )
+
+    expect(world.navigator.trips.map((trip) => trip.target.x)).toEqual([4])
+  })
+
   it('collects only what dropped near the broken block', async () => {
     const world = setup()
     world.drops.drop('oak_log', { x: 5, y: 64, z: 0 }, 5)

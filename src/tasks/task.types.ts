@@ -5,9 +5,10 @@ export type TaskStatus = 'running' | 'waiting_for_input' | 'succeeded' | 'failed
 
 /**
  * Why a task was cancelled. `requested` (the owner or agent asked) and `replaced` are deliberate stops;
- * `preempted` means a survival reflex took over and the task may be resumed afterwards.
+ * `preempted` means a survival reflex took over and the task may be resumed afterwards; `died` means the bot died.
  */
-export type CancelReason = 'requested' | 'replaced' | 'preempted' | 'disconnected' | 'shutdown'
+export type CancelReason =
+  'requested' | 'replaced' | 'preempted' | 'disconnected' | 'shutdown' | 'died'
 
 /** How to start the same task again: the tool and the arguments that launched it. */
 export interface ResumeDescriptor {

@@ -67,7 +67,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 8 Hunting and food | done, merged into `development` |
 | 9 Storage and containers | done, merged into `development` |
 | 10 Item handover | done, merged into `development` |
-| 11 Drop recovery | not started |
+| 11 Drop recovery | done (branch `feature/drop-recovery`, pull request pending) |
 | 12 Server commands and teleport | not started (added) |
 | 13 Construction engine and building | not started (building now sits on a shared engine) |
 | 14 Excavation and mining | not started (added) |
@@ -246,7 +246,7 @@ The tools before this phase cannot hunt: perception can list entities and the re
 Today there is no way to hand items over: the inventory port can drop items, but no tool exposes it, and nothing walks to a player, chooses what to give, or fetches it from storage. This phase adds that flow.
 
 - Branch: `feature/item-handover`.
-- **As built:** as planned. The request words are resolved by the server (`ItemResolver`), and the agent passes them as the player said them; `InventoryWriter` and `Gaze` are new ports. Not built: a retry that collects the items again when nobody picked them up (the result reports `unclaimed`; the drop-recovery feature decides what to do about them), and telling the dimension of an unseen player apart from a far-away one.
+- **As built:** as planned. The request words are resolved by the server (`ItemResolver`), and the agent passes them as the player said them; `InventoryWriter` and `Gaze` are new ports. Not built: a retry that collects the items again when nobody picked them up (the result reports `unclaimed`; the drop-recovery feature takes them back), and telling the dimension of an unseen player apart from a far-away one.
 - Reuses: `Navigator` (go to the player), `InventoryReader/Writer` (toss), and the storage feature (`FindItems`, `WithdrawItems`) as the source of items.
 - `ItemResolver`: turns what you say ("iron", "some wood", "a stack of cobble", "food") into concrete item ids and counts, using minecraft-data names, plurals, and item groups. When the request is ambiguous ("wood" could be logs or planks) it returns candidates so that I ask you in chat. Counts like "a stack" or "all" are supported.
 - `GiveItems` skill: input is the player (defaults to the owner), the items, and options (`fetch_from_storage`, default on; `keep_reserve`, default on; `mode`).
@@ -268,6 +268,7 @@ Today there is no way to hand items over: the inventory port can drop items, but
 The plan had no death handling at all, and nothing about items the bot has dropped that end up lying around. This phase makes recovering the bot's own drops automatic by default, and skippable whenever you ask.
 
 - Branch: `feature/drop-recovery`.
+- **As built:** as planned, with these differences. (1) There is no `DeathReflex` in the reflex engine: the engine polls every 250 ms and Mineflayer respawns the bot at once, so a death could fall between two ticks. Instead a `DeathWatcher` port reports the death from the bot's own events, and `DeathResponder` (plain code, like `LowFoodResponder`) reacts. The death is reported at the respawn: the server's death message has arrived by then, and the inventory before the death is taken from the last look before the fatal hit if the server had already emptied it. (2) keepInventory is not read from a game rule (the bot cannot): the inventory before the death is compared with the one two seconds after the respawn, and nothing lost means nothing to recover. (3) `AutoRecovery` starts the recovery task by itself (waiting for a running task or an acting reflex, for about three minutes) and tells the agent and the game chat how it went; `UnclaimedDropHandler` does the same for handover leftovers. (4) The unclaimed wait is the setting `UNCLAIMED_DROP_WAIT_SECONDS` (default 60), counted from the throw. (5) `list_death_records` lists both kinds of records. (6) After a restart nothing is recovered on its own: the session briefing lists the drops that can still be fetched (`pendingDrops`), and the agent asks the player. (7) A shield is put in the off hand together with armor and weapon (`equipBestGear`). (8) A bot that died while it was recovering does not go back on its own; it tells the agent instead.
 - Two situations covered:
   1. **Death drop:** the bot died and its inventory lies at the death spot (items despawn after 5 minutes).
   2. **Unclaimed handover drop:** items dropped for a player that nobody picked up.

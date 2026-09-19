@@ -3,7 +3,7 @@ import type { Result } from './result.js'
 export interface GearReport {
   /** The weapon now in hand, when one was found. */
   readonly weapon: string | undefined
-  /** Armor pieces put on. */
+  /** Armor pieces put on, and a shield put in the off hand. */
   readonly armor: readonly string[]
 }
 

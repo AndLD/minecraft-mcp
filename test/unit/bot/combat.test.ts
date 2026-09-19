@@ -178,6 +178,27 @@ describe('MineflayerCombatDriver', () => {
       expect(bot.equipped).toEqual([])
     })
 
+    it('puts a shield in the empty off hand', async () => {
+      const bot = botWithZombie()
+      bot.inventoryItems = [item('shield')]
+
+      const report = await driverWith(bot).driver.equipBestGear()
+
+      expect(report).toEqual({ weapon: undefined, armor: ['shield'] })
+      expect(bot.equipped).toEqual([{ itemType: 130, slot: 'off-hand' }])
+    })
+
+    it('leaves the off hand alone when something is already there', async () => {
+      const bot = botWithZombie()
+      bot.inventoryItems = [item('shield')]
+      bot.slots[45] = item('totem_of_undying')
+
+      const report = await driverWith(bot).driver.equipBestGear()
+
+      expect(report.armor).toEqual([])
+      expect(bot.equipped).toEqual([])
+    })
+
     it('carries on when a piece cannot be equipped', async () => {
       const bot = botWithZombie()
       bot.inventoryItems = [item('iron_helmet'), item('iron_sword')]

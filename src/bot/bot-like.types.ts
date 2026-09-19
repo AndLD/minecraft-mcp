@@ -9,6 +9,12 @@ export interface BotEvents {
   error: (error: Error) => void
   chat: (username: string, message: string) => void
   whisper: (username: string, message: string) => void
+  /** The bot's health reached zero. Mineflayer respawns it by itself. */
+  death: () => void
+  respawn: () => void
+  health: () => void
+  /** Every chat line as plain text, including the server's own messages (deaths, joins). */
+  messagestr: (message: string) => void
 }
 
 export interface EntityLike {
@@ -36,7 +42,7 @@ export interface EntityLike {
   getDroppedItem?(): ItemLike | null
 }
 
-export type EquipSlot = 'hand' | 'head' | 'torso' | 'legs' | 'feet'
+export type EquipSlot = 'hand' | 'off-hand' | 'head' | 'torso' | 'legs' | 'feet'
 
 export interface PlayerLike {
   readonly username: string
@@ -144,6 +150,9 @@ export interface BotLike {
     >
   }
   readonly inventory: {
+    /** Fires whenever a slot changes (`updateSlot` in Mineflayer). */
+    on(event: 'updateSlot', listener: () => void): unknown
+    removeListener(event: 'updateSlot', listener: () => void): unknown
     items(): readonly ItemLike[]
     emptySlotCount(): number
     /** All window slots; 5 to 8 are the armor slots (head, torso, legs, feet). */

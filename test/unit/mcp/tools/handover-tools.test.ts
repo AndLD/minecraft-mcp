@@ -94,6 +94,17 @@ describe('GiveItemsTool', () => {
     })
   })
 
+  it('passes on whether to take back what nobody picks up', async () => {
+    const { tool: t, inputs } = tool()
+
+    await t.execute(
+      t.inputSchema.parse({ items: [{ item: 'dirt' }], recollect_unclaimed: false }),
+      context,
+    )
+
+    expect(inputs[0]).toMatchObject({ recollectUnclaimed: false })
+  })
+
   it('gives to the named player, in chest mode', async () => {
     const { tool: t, inputs } = tool()
 

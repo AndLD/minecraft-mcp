@@ -1,3 +1,4 @@
+import type { Config } from '../../../src/config/config.types.js'
 import type { Position } from '../../../src/core/position.types.js'
 import { dataOf, startApp, type AppUnderTest } from './app-under-test.js'
 import { GROUND_Y, type E2EWorld } from './e2e-world.js'
@@ -23,6 +24,8 @@ export interface E2ESession {
 export interface StartSessionOptions {
   /** Connect the bot to the server (default true). */
   readonly connectBot?: boolean
+  /** Settings of the app under test that differ from the defaults. */
+  readonly appConfig?: Partial<Config>
 }
 
 /**
@@ -37,7 +40,11 @@ export async function startSession(
   await world.prepareArena(ARENA_CENTER)
   const player = await joinAsPlayer(info, uniqueName('Owner'))
   await world.clearEntities() // with the owner online, so leftovers from the last test really disappear
-  const bot = await startApp(info, { username: uniqueName('Bot'), owner: player.username })
+  const bot = await startApp(info, {
+    username: uniqueName('Bot'),
+    owner: player.username,
+    ...(options.appConfig === undefined ? {} : { config: options.appConfig }),
+  })
 
   if (options.connectBot !== false) {
     const connected = await bot.call('connect')

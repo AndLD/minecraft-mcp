@@ -1,4 +1,5 @@
 import type { Clock } from '../core/clock.port.js'
+import { DROP_DESPAWN_MS, type DropRecords } from './drop-records.js'
 import type { InstructionLog } from './instruction-log.js'
 import type { NotesStore } from './notes-store.js'
 import type { StandingInstructions } from './standing-instructions.js'
@@ -20,6 +21,15 @@ export interface SessionBriefing {
     readonly progress: string | null
     readonly resumable: boolean
     readonly startedAt: string
+  }[]
+  /** Dropped items that can still be fetched: where the bot died, or items nobody picked up. */
+  readonly pendingDrops: readonly {
+    readonly id: string
+    readonly kind: string
+    readonly status: string
+    readonly position: { readonly x: number; readonly y: number; readonly z: number }
+    readonly dimension: string
+    readonly secondsLeft: number
   }[]
   readonly standingInstructions: Readonly<Record<string, string>>
   readonly notes: readonly {
@@ -47,6 +57,7 @@ export interface SessionBriefingBuilderOptions {
   readonly notes: NotesStore
   readonly standing: StandingInstructions
   readonly history: InstructionLog
+  readonly drops: DropRecords
 }
 
 /** Summarizes what the bot remembers about this world, so the agent can pick up where the last session ended. */
@@ -54,7 +65,7 @@ export class SessionBriefingBuilder {
   constructor(private readonly deps: SessionBriefingBuilderOptions) {}
 
   build(): SessionBriefing {
-    const { worldState, journal, notes, standing, history, clock } = this.deps
+    const { worldState, journal, notes, standing, history, drops, clock } = this.deps
     const opened = worldState.lastOpen
     const nextSteps: string[] = []
 
@@ -63,6 +74,7 @@ export class SessionBriefingBuilder {
         world: { profile: null, status: 'not_connected' },
         previousSession: null,
         interruptedTasks: [],
+        pendingDrops: [],
         standingInstructions: {},
         notes: [],
         recentHistory: [],
@@ -113,6 +125,18 @@ export class SessionBriefingBuilder {
         'Tell the player about the interrupted tasks and ask before resuming (resume_interrupted_task) or dropping them (discard_interrupted_task).',
       )
     }
+    const pendingDrops = drops.recoverable().map((record) => ({
+      id: record.id,
+      kind: record.kind,
+      status: record.status,
+      position: record.position,
+      dimension: record.dimension,
+      secondsLeft: Math.max(0, Math.round((record.at + DROP_DESPAWN_MS - clock.now()) / 1000)),
+    }))
+    if (pendingDrops.length > 0)
+      nextSteps.push(
+        'Some dropped items can still be fetched (pendingDrops). Tell the player where they lie and ask whether to fetch them now (recover_drops); they vanish 5 minutes after the drop.',
+      )
     const previous = opened.previousSessionAt
     const listedNotes = notes.latest(NOTE_LIMIT)
     if (listedNotes.length > 0)
@@ -138,6 +162,7 @@ export class SessionBriefingBuilder {
         resumable: job.resume !== null,
         startedAt: job.startedAt,
       })),
+      pendingDrops,
       standingInstructions: standing.all(),
       notes: listedNotes.map((note) => ({ id: note.id, text: note.text, tags: note.tags })),
       recentHistory: history.recent(HISTORY_LIMIT),

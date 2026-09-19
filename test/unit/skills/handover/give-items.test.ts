@@ -11,6 +11,7 @@ import { DropSpot } from '../../../../src/skills/handover/drop-spot.js'
 import { GiveItemsSkill, type GiveInput } from '../../../../src/skills/handover/give-items-skill.js'
 import type { ItemRequest } from '../../../../src/skills/handover/handover.types.js'
 import { ItemThrower } from '../../../../src/skills/handover/item-thrower.js'
+import { DropIgnoreList } from '../../../../src/skills/recovery/drop-ignore-list.js'
 import { ContainerIndex } from '../../../../src/state/container-index.js'
 import { StorageRules } from '../../../../src/state/storage-rules.js'
 import { FakeBot } from '../../../fakes/fake-bot.js'
@@ -18,6 +19,7 @@ import { FakeClock } from '../../../fakes/fake-clock.js'
 import { FakeEntityScanner } from '../../../fakes/fake-ports.js'
 import { AutoScheduler, FakeDroppedItems, skillContext } from '../../../fakes/gathering-fakes.js'
 import { FakeGaze, FakeInventoryWriter, playerAt } from '../../../fakes/handover-fakes.js'
+import { RecordingUnclaimedSink } from '../../../fakes/recovery-fakes.js'
 import { InMemoryStateStore } from '../../../fakes/state-fakes.js'
 import { FakeStorageWorld } from '../../../fakes/storage-fakes.js'
 
@@ -55,6 +57,8 @@ async function setup() {
   const writer = new FakeInventoryWriter(world, drops)
   const spot = new DropSpot(world.scanner)
   const thrower = new ItemThrower(writer, scheduler)
+  const unclaimed = new RecordingUnclaimedSink()
+  const ignore = new DropIgnoreList(clock)
   playerAt(entities, 'Andrey_Knight', PLAYER)
   world.navigator.players.set('Andrey_Knight', PLAYER)
   /** The bot ends up where it walks to; when it steps away from the drop the player picks the items up. */
@@ -81,6 +85,8 @@ async function setup() {
     scheduler,
     vitals: world.vitals,
     facts,
+    unclaimed,
+    clock,
   })
   const dropper = new DropItemsSkill({
     inventory: world.inventory,
@@ -90,8 +96,22 @@ async function setup() {
     spot,
     vitals: world.vitals,
     facts,
+    ignore,
   })
-  return { clock, world, index, entities, gaze, drops, writer, skill, dropper, playerPicksUp }
+  return {
+    clock,
+    world,
+    index,
+    entities,
+    gaze,
+    drops,
+    writer,
+    skill,
+    dropper,
+    playerPicksUp,
+    unclaimed,
+    ignore,
+  }
 }
 
 const count = (item: string, n: number): ItemRequest => ({
@@ -248,6 +268,50 @@ describe('GiveItemsSkill: from the inventory to a player', () => {
       value: { unclaimed: [{ name: 'iron_ingot', count: 5 }] },
     })
     expect(s.clock.now()).toBeGreaterThanOrEqual(8000) // it waited for someone to pick them up
+  })
+
+  it('hands what nobody picked up over to the drop recovery, with the place and the player', async () => {
+    const s = await setup()
+    s.world.carry('iron_ingot', 5)
+    s.playerPicksUp.value = false
+    s.clock.advance(1000)
+
+    await s.skill.run(
+      give([count('iron_ingot', 5)], { recollectUnclaimed: false }),
+      skillContext().context,
+    )
+
+    expect(s.unclaimed.tracked).toHaveLength(1)
+    expect(s.unclaimed.tracked[0]).toMatchObject({
+      items: [{ name: 'iron_ingot', count: 5 }],
+      player: 'Andrey_Knight',
+      dimension: 'overworld',
+      recollect: false,
+    })
+    expect(s.unclaimed.tracked[0]?.position.x).toBeCloseTo(8.5, 0) // where the bot stood: 1.5 blocks from the player
+    // The clock starts when the items are thrown, not when the wait for the player is over: they despawn from then on.
+    expect(s.unclaimed.tracked[0]?.at).toBeGreaterThanOrEqual(1000)
+    expect(s.unclaimed.tracked[0]?.at).toBeLessThan(2000)
+    expect(s.clock.now()).toBeGreaterThanOrEqual(9000)
+  })
+
+  it('tells the drop recovery nothing when the player picked everything up', async () => {
+    const s = await setup()
+    s.world.carry('iron_ingot', 5)
+
+    await s.skill.run(give([count('iron_ingot', 5)]), skillContext().context)
+
+    expect(s.unclaimed.tracked).toEqual([])
+  })
+
+  it('leaves the standing policy to decide when the call says nothing', async () => {
+    const s = await setup()
+    s.world.carry('iron_ingot', 5)
+    s.playerPicksUp.value = false
+
+    await s.skill.run(give([count('iron_ingot', 5)]), skillContext().context)
+
+    expect(s.unclaimed.tracked[0]?.recollect).toBeUndefined()
   })
 
   it('reports items the server would not let go of as still missing', async () => {
@@ -626,6 +690,18 @@ describe('DropItemsSkill', () => {
       value: { dropped: [{ name: 'dirt', count: 2 }], notCarried: [{ name: 'dirt', count: 3 }] },
     })
     expect(none).toMatchObject({ ok: false, error: { reason: 'nothing_to_drop' } })
+  })
+
+  it('tells the ignore list what it threw away, so no recovery picks it up again', async () => {
+    const s = await setup()
+    s.world.carry('dirt', 12)
+
+    await s.dropper.run(drop([count('dirt', 12)]), skillContext().context)
+
+    const junk = { entityId: 1, name: 'dirt', count: 12, position: at(1), distance: 1 }
+    expect(s.ignore.isIgnored({ ...junk, position: at(0) })).toBe(true)
+    expect(s.ignore.isIgnored({ ...junk, position: at(40) })).toBe(false)
+    expect(s.ignore.isIgnored({ ...junk, name: 'diamond', position: at(0) })).toBe(false)
   })
 
   it('keeps the reserve out of group requests', async () => {

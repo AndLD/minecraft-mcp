@@ -4,6 +4,9 @@ import { chooseArmor, chooseWeapon } from './gear.js'
 import type { BotHolder } from './bot-like.types.js'
 import type { PathDriver, PathHandle } from './path-driver.js'
 
+/** The window slot of the off hand. */
+const OFF_HAND_SLOT = 45
+
 /** What melee combat needs from the game, replaceable in tests. */
 export interface CombatDriver {
   /** Where the entity is, or undefined once it is gone. */
@@ -72,6 +75,18 @@ export class MineflayerCombatDriver implements CombatDriver {
         weapon = better
       } catch {
         // Keep whatever is in hand.
+      }
+    }
+
+    // A shield goes in the off hand; without one there, the first shield carried is put on.
+    const shield = items.find((item) => item.name === 'shield')
+    const shieldId = bot.registry.itemsByName['shield']?.id
+    if (shield !== undefined && shieldId !== undefined && !bot.inventory.slots[OFF_HAND_SLOT]) {
+      try {
+        await bot.equip(shieldId, 'off-hand')
+        armor.push('shield')
+      } catch {
+        // No shield then.
       }
     }
     return { weapon, armor }

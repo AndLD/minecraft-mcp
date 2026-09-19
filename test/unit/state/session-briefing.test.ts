@@ -10,6 +10,7 @@ describe('SessionBriefingBuilder', () => {
       world: { profile: null, status: 'not_connected' },
       previousSession: null,
       interruptedTasks: [],
+      pendingDrops: [],
       standingInstructions: {},
       notes: [],
       recentHistory: [],
@@ -144,5 +145,44 @@ describe('SessionBriefingBuilder', () => {
   it('is an ok result type sanity check for ok/err helpers used above', () => {
     expect(ok(1).ok).toBe(true)
     expect(err('x').ok).toBe(false)
+  })
+})
+
+describe('SessionBriefingBuilder: dropped items', () => {
+  it('lists what can still be fetched and tells the agent to ask the player', async () => {
+    const stack = buildStateStack()
+    await stack.worldState.open(SEED_A)
+    stack.drops.add({
+      kind: 'death',
+      position: { x: 5, y: 64, z: -7 },
+      dimension: 'overworld',
+      at: stack.clock.now() - 100_000,
+      cause: null,
+      lost: [{ name: 'iron_ingot', count: 3 }],
+      note: null,
+    })
+    stack.drops.add({
+      kind: 'death',
+      position: { x: 0, y: 64, z: 0 },
+      dimension: 'overworld',
+      at: stack.clock.now() - 400_000,
+      cause: null,
+      lost: [{ name: 'stick', count: 3 }],
+      note: null,
+    })
+
+    const briefing = stack.briefing.build()
+
+    expect(briefing.pendingDrops).toEqual([
+      {
+        id: 'drop-1',
+        kind: 'death',
+        status: 'pending',
+        position: { x: 5, y: 64, z: -7 },
+        dimension: 'overworld',
+        secondsLeft: 200,
+      },
+    ])
+    expect(briefing.nextSteps.join(' ')).toContain('recover_drops')
   })
 })

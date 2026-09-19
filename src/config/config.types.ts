@@ -14,6 +14,8 @@ export interface Config {
   /** Fallback world profile name, used when the world cannot be identified automatically. */
   readonly worldProfile: string | undefined
   readonly lowHealthThreshold: number
+  /** How long thrown items may lie unclaimed before the bot takes them back (see the drop recovery policy). */
+  readonly unclaimedDropWaitSeconds: number
   /** Survival reflexes (eat, fight, flee, avoid lava, surface for air) run by themselves. */
   readonly reflexesEnabled: boolean
   readonly logLevel: LogLevel

@@ -92,6 +92,12 @@ const giveSchema = z.object({
     .min(1)
     .optional()
     .describe('For chest mode: the container id or label. By the storage rules when omitted.'),
+  recollect_unclaimed: z
+    .boolean()
+    .optional()
+    .describe(
+      'Drop mode: what nobody picks up within a minute. true: the bot takes it back. false: it stays on the ground (its coordinates are kept, see list_death_records). Omit to follow the standing drop recovery policy (default: take it back).',
+    ),
   ...taskOptionsShape,
 })
 
@@ -99,7 +105,8 @@ export class GiveItemsTool implements ToolDefinition<typeof giveSchema> {
   readonly name = 'give_items'
   readonly description =
     'Gives items to a player: takes what the bot carries, fetches the rest from the chests it may use, walks to the player, ' +
-    'faces them, and throws the items at their feet, then steps back and reports what nobody picked up. Large amounts can go ' +
+    'faces them, and throws the items at their feet, then steps back and reports what nobody picked up (after a minute the bot ' +
+    'takes such leftovers back, unless recollect_unclaimed is false or the drop recovery policy is skip). Large amounts can go ' +
     'into a chest instead (mode "chest"). Result: exactly what was given, what is still missing (shortfall: offer to gather, ' +
     'craft, or hunt it), and anything left on the ground. Fails with ambiguous (ask the player which item; the candidates are ' +
     'listed), unknown_item, shortfall (nothing available at all), player_not_online, player_not_visible (far away or in ' +
@@ -130,6 +137,7 @@ export class GiveItemsTool implements ToolDefinition<typeof giveSchema> {
               keepReserve: input.keep_reserve,
               mode: input.mode,
               chest: input.chest,
+              recollectUnclaimed: input.recollect_unclaimed,
             },
             ctx,
           ),

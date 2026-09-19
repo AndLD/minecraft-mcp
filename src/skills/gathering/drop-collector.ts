@@ -14,6 +14,13 @@ const PICKUP_RANGE = 0.5
 const DROP_RADIUS = 6
 const MAX_TRIPS = 12
 
+export interface DropFilter {
+  readonly names?: readonly string[] | undefined
+  readonly maxDistance: number
+  /** An extra test, for example "near this spot" or "not something the bot threw away on purpose". */
+  readonly accept?: ((item: DroppedItem) => boolean) | undefined
+}
+
 export interface DropCollectorDeps {
   readonly drops: DroppedItemScanner
   readonly navigator: Navigator
@@ -37,21 +44,16 @@ export class DropCollector {
   }
 
   /** Picks up every matching item within `maxDistance` of the bot. */
-  async collect(
-    filter: { readonly names?: readonly string[] | undefined; readonly maxDistance: number },
-    signal: AbortSignal,
-  ): Promise<void> {
+  async collect(filter: DropFilter, signal: AbortSignal): Promise<void> {
     await this.sweep(() => this.matching(filter), signal)
   }
 
-  matching(filter: {
-    readonly names?: readonly string[] | undefined
-    readonly maxDistance: number
-  }): readonly DroppedItem[] {
+  matching(filter: DropFilter): readonly DroppedItem[] {
     const names = filter.names
     return this.deps.drops
       .nearby(filter.maxDistance)
       .filter((item) => names === undefined || names.length === 0 || names.includes(item.name))
+      .filter((item) => filter.accept === undefined || filter.accept(item))
   }
 
   private async sweep(
