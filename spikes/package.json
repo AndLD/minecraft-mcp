@@ -1,0 +1,11 @@
+{
+  "name": "minecraft-mcp-spike",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway feasibility spike. Not part of the architecture.",
+  "dependencies": {
+    "minecraft-protocol": "latest",
+    "mineflayer": "latest",
+    "mineflayer-pathfinder": "latest"
+  }
+}
