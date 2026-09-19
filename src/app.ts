@@ -13,6 +13,7 @@ import { MineflayerChat } from './bot/mineflayer-chat.js'
 import { MineflayerConnection } from './bot/mineflayer-connection.js'
 import { createMineflayerBot } from './bot/mineflayer-bot-factory.js'
 import { MineflayerContainerAccess } from './bot/mineflayer-container-access.js'
+import { MineflayerDeathWatcher } from './bot/mineflayer-death-watcher.js'
 import { MineflayerDigger } from './bot/mineflayer-digger.js'
 import { MineflayerDroppedItems } from './bot/mineflayer-dropped-items.js'
 import { MineflayerGaze } from './bot/mineflayer-gaze.js'
@@ -78,6 +79,12 @@ import {
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
 import { DropItemsTool, GiveItemsTool, ResolveItemTool } from './mcp/tools/handover-tools.js'
+import {
+  ListDeathRecordsTool,
+  RecoverDropsTool,
+  SetDropRecoveryPolicyTool,
+  SkipDropRecoveryTool,
+} from './mcp/tools/drop-recovery-tools.js'
 import { AttackEntityTool } from './mcp/tools/attack-entity-tool.js'
 import { HuntAnimalsTool } from './mcp/tools/hunt-animals-tool.js'
 import { ListHuntableAnimalsTool } from './mcp/tools/list-huntable-animals-tool.js'
@@ -129,6 +136,8 @@ import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
 import { ContainerIndex } from './state/container-index.js'
+import { DropRecords } from './state/drop-records.js'
+import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
 import { InstructionLog } from './state/instruction-log.js'
 import { NotesStore } from './state/notes-store.js'
@@ -153,6 +162,12 @@ import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
 import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
 import { PenDetector } from './skills/hunting/pen-detector.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
+import { AutoRecovery } from './skills/recovery/auto-recovery.js'
+import { DeathResponder } from './skills/recovery/death-responder.js'
+import { DropIgnoreList } from './skills/recovery/drop-ignore-list.js'
+import { HazardAssessor } from './skills/recovery/hazard-assessor.js'
+import { RecoverDropsSkill } from './skills/recovery/recover-drops-skill.js'
+import { UnclaimedDropHandler } from './skills/recovery/unclaimed-drops.js'
 import { DropItemsSkill } from './skills/handover/drop-items-skill.js'
 import { DropSpot } from './skills/handover/drop-spot.js'
 import { GiveItemsSkill } from './skills/handover/give-items-skill.js'
@@ -168,6 +183,12 @@ import { WithdrawItemsSkill } from './skills/storage/withdraw-items-skill.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
 import { TaskManager } from './tasks/task-manager.js'
+
+/** A record tried this often is not tried again without the player's say-so. */
+const DEFAULT_RECOVERY_ATTEMPTS = 2
+/** When a task or reflex keeps the bot busy, an automatic recovery tries again this often, for about 3 minutes. */
+const RECOVERY_RETRY_MS = 5_000
+const RECOVERY_RETRIES = 36
 
 /** The low-level seams. Tests replace them; production uses the real implementations. */
 export interface AppDeps {
@@ -247,6 +268,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const containerIndex = new ContainerIndex(clock)
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
+  const dropRecords = new DropRecords(clock)
+  const dropPolicy = new DropRecoveryPolicy()
   const journal = new TaskJournal(clock, tasks)
   const worldState = new WorldStateManager({
     registry: new WorldRegistry({
@@ -265,6 +288,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       containerIndex,
       storageRules,
       storagePolicy,
+      dropRecords,
+      dropPolicy,
     ],
     logger,
   })
@@ -341,6 +366,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     notes,
     standing,
     history,
+    drops: dropRecords,
   })
 
   const inbox = new AgentInbox({
@@ -449,6 +475,64 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scanner: scanContainers,
     facts: itemFacts,
   })
+  // Drop recovery: after a death, and for items nobody picked up.
+  const dropIgnore = new DropIgnoreList(clock)
+  const recoverDrops = new RecoverDropsSkill({
+    records: dropRecords,
+    inventory,
+    vitals,
+    navigator,
+    collector: dropCollector,
+    hazards: new HazardAssessor(blocks, entities),
+    combatant,
+    ignore: dropIgnore,
+    clock,
+    scheduler,
+  })
+  const autoRecovery = new AutoRecovery({
+    tasks,
+    recoverer: recoverDrops,
+    records: dropRecords,
+    activeReflex: () => reflexes.activeReflex(),
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+    say: (text) => {
+      chat.say(text)
+    },
+    scheduler,
+    maxAttempts: DEFAULT_RECOVERY_ATTEMPTS,
+    retryDelayMs: RECOVERY_RETRY_MS,
+    maxTries: RECOVERY_RETRIES,
+  })
+  const unclaimedDrops = new UnclaimedDropHandler({
+    records: dropRecords,
+    policy: dropPolicy,
+    recovery: autoRecovery,
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+    clock,
+    scheduler,
+  })
+  const deathResponder = new DeathResponder({
+    watcher: new MineflayerDeathWatcher(connection),
+    records: dropRecords,
+    policy: dropPolicy,
+    recovery: autoRecovery,
+    cancelTasks: async () => {
+      await tasks.cancel(undefined, 'died')
+    },
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+    say: (text) => {
+      chat.say(text)
+    },
+    clock,
+    scheduler,
+  })
+  deathResponder.start()
   // Handing items over.
   const dropSpot = new DropSpot(blocks)
   const thrower = new ItemThrower(new MineflayerInventoryWriter(connection), scheduler)
@@ -468,6 +552,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     vitals,
     facts: itemFacts,
+    unclaimed: unclaimedDrops,
+    clock,
   })
   const dropItems = new DropItemsSkill({
     inventory,
@@ -477,6 +563,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     spot: dropSpot,
     vitals,
     facts: itemFacts,
+    ignore: dropIgnore,
   })
   const inventoryFull = new InventoryFullHandler({
     policy: storagePolicy,
@@ -587,6 +674,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GiveItemsTool(giveItems, launcher, config.owner))
     .register(new DropItemsTool(dropItems, launcher))
     .register(new ResolveItemTool(new ItemResolver(itemFacts), inventory, containerIndex))
+    .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))
+    .register(new SkipDropRecoveryTool(dropRecords, tasks, clock))
+    .register(new SetDropRecoveryPolicyTool(dropPolicy, standing))
+    .register(new ListDeathRecordsTool(dropRecords, clock))
     .register(new ProtectAreaTool(protectedAreas))
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))

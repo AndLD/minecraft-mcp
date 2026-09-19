@@ -1,4 +1,5 @@
 import type { BlockScanner } from '../../core/block-scanner.port.js'
+import type { Clock } from '../../core/clock.port.js'
 import type { DroppedItemScanner } from '../../core/dropped-items.port.js'
 import type { EntityScanner } from '../../core/entity-scanner.port.js'
 import type { Gaze } from '../../core/gaze.port.js'
@@ -22,6 +23,7 @@ import type { DropSpot } from './drop-spot.js'
 import type { ItemThrower } from './item-thrower.js'
 import { RequestPlanner } from './request-planner.js'
 import type { ItemFacts } from '../../core/item-facts.port.js'
+import type { UnclaimedSink } from '../recovery/unclaimed-drops.js'
 
 /** Close enough that the thrown items land at the player's feet, within their reach to pick up. */
 const APPROACH_RANGE = 1.5
@@ -46,6 +48,8 @@ export interface GiveInput {
   readonly mode: 'drop' | 'chest'
   /** For chest mode: the container (id or label); by the storage rules when undefined. */
   readonly chest: string | undefined
+  /** Drop mode: true takes back what nobody picks up, false leaves it; undefined follows the standing drop recovery policy. */
+  readonly recollectUnclaimed?: boolean | undefined
 }
 
 export interface GiveOutput {
@@ -80,6 +84,9 @@ export interface GiveItemsDeps {
   readonly scheduler: Scheduler
   readonly vitals: VitalsReader
   readonly facts: ItemFacts
+  /** Told about items nobody picked up, which decides whether they are taken back. */
+  readonly unclaimed: UnclaimedSink
+  readonly clock: Clock
 }
 
 /**
@@ -264,6 +271,15 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
 
     await this.retreat(here, player, context)
     const unclaimed = await this.unclaimed(thrown, here, context.signal)
+    if (unclaimed.length > 0)
+      deps.unclaimed.track({
+        items: unclaimed,
+        position: here,
+        dimension: deps.vitals.read()?.dimension ?? 'unknown',
+        at: deps.clock.now(),
+        player: input.player,
+        recollect: input.recollectUnclaimed,
+      })
     const missing = [...shortfall]
     for (const wanted of give) {
       const done = thrown.find((t) => t.name === wanted.name)?.count ?? 0

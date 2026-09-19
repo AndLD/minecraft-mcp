@@ -273,6 +273,7 @@ export class FakeBot implements BotLike {
       iron_chestplate: { id: 121 },
       leather_helmet: { id: 122 },
       diamond_boots: { id: 123 },
+      shield: { id: 130 },
     },
     foodsByName: {
       cooked_beef: { foodPoints: 8, saturation: 12.8 },

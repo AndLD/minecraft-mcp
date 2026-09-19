@@ -7,6 +7,7 @@ import type { ItemCount } from '../../core/recipes.port.js'
 import { err, ok } from '../../core/result.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
+import type { DropIgnoreList } from '../recovery/drop-ignore-list.js'
 import type { DropSpot } from './drop-spot.js'
 import type { ItemRequest } from './handover.types.js'
 import type { ItemThrower } from './item-thrower.js'
@@ -32,6 +33,8 @@ export interface DropItemsDeps {
   readonly spot: DropSpot
   readonly vitals: VitalsReader
   readonly facts: ItemFacts
+  /** Told what was thrown away on purpose, so no recovery picks it up again. */
+  readonly ignore: DropIgnoreList
 }
 
 /** Throws items on the ground where the bot stands (getting rid of junk), then steps away from them. */
@@ -82,6 +85,7 @@ export class DropItemsSkill implements Skill<DropInput, DropOutput> {
 
     context.progress(`Dropping ${describeItems(drop)}`)
     const dropped = await deps.thrower.throwAll(drop, context.signal)
+    deps.ignore.add(dropped, here)
     // Step away so the bot does not pick the items up again.
     await deps.navigator.goToPosition({ x: here.x + RETREAT_DISTANCE, y: here.y, z: here.z }, 1.5, {
       signal: context.signal,
