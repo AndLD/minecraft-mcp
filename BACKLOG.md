@@ -26,7 +26,7 @@ Give instructions to the bot by speaking instead of typing in game chat. The bot
 ## Deferred from finished work
 
 ### Survival reflexes
-- **Fall-damage guard**: land in water with a bucket, or avoid the fall. Needs placing blocks and buckets, so it fits after the building work. The pathfinder's default maximum drop already avoids large falls.
+- **Fall-damage guard**: land in water with a bucket, or avoid the fall. Now part of the cave exploration feature in the plan (caves have drops). The pathfinder's default maximum drop already avoids large falls.
 - **Night shelter**: build or dig in when night falls far from a bed. Same dependency.
 - **E2E scenario for a reflex pausing and resuming a real task**: covered by integration tests only.
 
