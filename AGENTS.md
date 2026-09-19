@@ -301,6 +301,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Building | `build`, `list_blueprints`, `place_block`, `preview_build` |
 | Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine), `preview_excavation` |
 | Railways | `plan_railway`, `build_railway`, `place_minecart` |
+| Sleeping | `sleep`, `set_respawn_point`, `place_bed`, `list_beds`, `set_sleep_policy` (never in the Nether or the End: a bed explodes there) |
 | Farming | `build_farm` (field, pen), `plant_crops`, `harvest_crops`, `breed_animals`, `tend_farm`, `plant_trees`, `harvest_trees`, `list_farms`, `register_farm` |
 | Server commands | `teleport_to_player`, `teleport_to_position` (only on the player's request, and only when the server allows commands) |
 | Discovery | `explore_for_structure`, `explore_caves`, `list_known_structures`, `set_landmark`, `list_landmarks` |
