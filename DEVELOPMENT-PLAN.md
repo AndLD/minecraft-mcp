@@ -58,8 +58,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 |---|---|
 | 0 Feasibility spike | done, merged into `development` |
 | 1 Project scaffold | done, merged into `development` |
-| 2 Core skeleton and MCP shell | implemented on `feature/core-mcp-shell`, awaiting approval |
-| 3 and later | not started |
+| 2 Core skeleton and MCP shell | done, merged into `development` |
+| 3 Movement and perception | implemented on `feature/movement-perception`, awaiting approval |
+| 4 and later | not started |
 
 ## Phases
 
