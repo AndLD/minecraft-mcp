@@ -369,7 +369,7 @@ minecraft-mcp/
 
 ## Open items to confirm during execution
 
-- Whether the LAN world accepts the offline bot (Phase 0). Fallback prepared.
+- ~~Whether the LAN world accepts the offline bot~~ Confirmed in the Phase 0 spike (see `spikes/FINDINGS.md`); Paper fallback not needed. Still open: whether the hashed seed stays the same when the world is re-opened, and whether LAN broadcast auto-discovery (port and world name) should make `MC_PORT` optional (proposal: yes).
 - Whether Claude Code channels/Monitor can replace polling for instant chat delivery (evaluate after Phase 2; polling is the baseline).
 - Low-health threshold (default 8 of 20) and flee distance; tune during Phase 6 play testing.
 
