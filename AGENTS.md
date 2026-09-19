@@ -31,7 +31,7 @@ npm run typecheck   # tsc --noEmit
 5. **Validate all external input** (env, tool arguments, chat) with zod at the boundary.
 6. **Strict TypeScript.** `strict`, `noUncheckedIndexedAccess`, no `any` (use `unknown` and narrow).
 7. **All code must be testable.** Inject dependencies through constructors, inject `Clock` and `Random` (no direct `Date.now()`, `Math.random()`, or bare timers in logic), keep wiring in `createApp()`, and keep Mineflayer behind thin adapters. If something is hard to test, fix the design, not the test.
-8. **Follow Git Flow** (see below). Never commit directly to `main` or `development`.
+8. **Follow Git Flow** (see below): publish every branch, merge only through pull requests, and never commit directly to `main` or `development`.
 9. **Never run live tests against the operator's real LAN world without asking first.** The operator supervises the work but is often away from the computer. Before any live test (connecting the bot to their running game, scripted checks, interactive sessions), ask in chat whether they are ready and wait for a clear yes; do this every time, even if an earlier live test was approved. Unit, integration, and Docker e2e tests run against fakes or a throwaway server and need no confirmation.
 
 ## Architecture
@@ -297,11 +297,13 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 ## Git workflow (Git Flow)
 
 - `main` is **production**. `development` is the **integration** branch.
-- **Every development phase or feature gets its own branch created from `development`**: `feature/<name>`, e.g. `feature/movement-perception`. **Name branches, folders, and files after the feature, never after a development-plan phase number.** Merge back into `development` with `--no-ff` when tests pass and the user approves.
+- **Every development phase or feature gets its own branch created from `development`**: `feature/<name>`, e.g. `feature/movement-perception`. **Name branches, folders, and files after the feature, never after a development-plan phase number.** Merge back into `development` through a pull request (merge commit) when tests pass and the user approves.
 - Releases: `release/<version>` from `development`, merged into `main` (tagged `vX.Y.Z`) and back into `development`. Urgent fixes: `hotfix/<name>` from `main`, merged into `main` and `development`.
 - Before starting work: `git switch development && git pull --ff-only` (if a remote exists), then `git switch -c feature/<name>`.
 - Conventional Commit messages: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`.
-- Do not merge into `main`, push, or force-push without an explicit request from the user.
+- **Every branch is published to the remote** (`git push -u origin <branch>`) as soon as it is created; never leave a branch local-only. This includes `development`.
+- **Every merge goes through a pull request** on GitHub (`gh pr create --base <target>`, then `gh pr merge --merge` for a merge commit), never a local `git merge` into `development` or `main`. The user's approval is still required before merging.
+- Do not merge into `main` or force-push without an explicit request from the user.
 
 ## Runtime protocol (for the agent playing through this server)
 
