@@ -517,7 +517,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
   })
   const deathResponder = new DeathResponder({
-    watcher: new MineflayerDeathWatcher(connection),
+    watcher: new MineflayerDeathWatcher(connection, clock),
     records: dropRecords,
     policy: dropPolicy,
     recovery: autoRecovery,

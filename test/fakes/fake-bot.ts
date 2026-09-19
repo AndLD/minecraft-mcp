@@ -302,7 +302,17 @@ export class FakeBot implements BotLike {
   slots: (ItemLike | null)[] = Array.from({ length: 46 }, () => null)
   /** When set, free slots are worked out from the stacks (64 per slot) instead of `emptySlots`. */
   slotLimit: number | undefined
+  private readonly inventoryEmitter = new EventEmitter()
+  /** Tells listeners a slot changed, as Mineflayer's window does. */
+  inventoryChanged(): void {
+    this.inventoryEmitter.emit('updateSlot')
+  }
   inventory = ((owner: FakeBot) => ({
+    on: (_event: 'updateSlot', listener: () => void): unknown =>
+      owner.inventoryEmitter.on('updateSlot', listener),
+    removeListener: (_event: 'updateSlot', listener: () => void): unknown =>
+      owner.inventoryEmitter.removeListener('updateSlot', listener),
+    listenerCount: (): number => owner.inventoryEmitter.listenerCount('updateSlot'),
     items: (): readonly ItemLike[] => owner.inventoryItems,
     emptySlotCount: (): number =>
       owner.slotLimit === undefined

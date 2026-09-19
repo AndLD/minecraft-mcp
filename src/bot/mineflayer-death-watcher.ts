@@ -1,3 +1,4 @@
+import type { Clock } from '../core/clock.port.js'
 import type { Unsubscribe } from '../core/connection.port.js'
 import type { DeathEvent, DeathWatcher } from '../core/death-watcher.port.js'
 import type { ItemCount } from '../core/recipes.port.js'
@@ -16,6 +17,16 @@ export function countSlots(slots: readonly (ItemLike | null)[]): ItemCount[] {
 const total = (items: readonly ItemCount[]): number =>
   items.reduce((sum, item) => sum + item.count, 0)
 
+/** Looks this far back from the death for the fullest inventory: the server may empty it before announcing the death. */
+const LOOK_BACK_MS = 2_000
+/** Older looks are not needed any more (one is kept from before the window, see `fullest`). */
+const HISTORY_MS = 10_000
+
+interface Look {
+  readonly at: number
+  readonly carried: readonly ItemCount[]
+}
+
 interface Dying {
   readonly position: DeathEvent['position']
   readonly dimension: string
@@ -31,7 +42,10 @@ export class MineflayerDeathWatcher implements DeathWatcher {
   private readonly listeners = new Set<(event: DeathEvent) => void>()
   private detach: (() => void) | undefined
 
-  constructor(private readonly holder: BotHolder) {
+  constructor(
+    private readonly holder: BotHolder,
+    private readonly clock: Clock,
+  ) {
     holder.onChange((bot) => {
       this.attach(bot)
     })
@@ -54,21 +68,34 @@ export class MineflayerDeathWatcher implements DeathWatcher {
     this.detach = undefined
     if (bot === undefined) return
 
-    // The server may already have emptied the inventory when the death is announced, so the last look from
-    // before the fatal hit is kept too, and the fuller of the two counts.
-    let lastAlive = countSlots(bot.inventory.slots)
+    // The server empties the inventory before it announces the death, so the inventory at the death event is
+    // already bare. Every change of a slot is remembered for a while, and the fullest recent look counts.
+    const history: Look[] = [{ at: this.clock.now(), carried: countSlots(bot.inventory.slots) }]
     let dying: Dying | undefined
-    const onHealth = (): void => {
-      if (bot.health > 0 && dying === undefined) lastAlive = countSlots(bot.inventory.slots)
+    const remember = (): void => {
+      if (dying !== undefined) return
+      const now = this.clock.now()
+      history.push({ at: now, carried: countSlots(bot.inventory.slots) })
+      // Keep one look older than the limit: it is what the inventory held when the newer ones began.
+      while (history.length > 1 && now - (history[1]?.at ?? now) > HISTORY_MS) history.shift()
+    }
+    const fullest = (deathAt: number): readonly ItemCount[] => {
+      const inWindow = history.filter((look) => deathAt - look.at <= LOOK_BACK_MS)
+      // The look just before the window is what the inventory held when the window began.
+      const before = history.filter((look) => deathAt - look.at > LOOK_BACK_MS).at(-1)
+      const candidates = [...(before === undefined ? [] : [before]), ...inWindow]
+      const now = countSlots(bot.inventory.slots)
+      return [...candidates.map((look) => look.carried), now].reduce((best, current) =>
+        total(current) > total(best) ? current : best,
+      )
     }
     const onDeath = (): void => {
       const position = bot.entity?.position
       if (position === undefined) return
-      const now = countSlots(bot.inventory.slots)
       dying = {
         position: { x: position.x, y: position.y, z: position.z },
         dimension: bot.game.dimension,
-        carried: total(now) >= total(lastAlive) ? now : lastAlive,
+        carried: fullest(this.clock.now()),
         messages: [],
       }
     }
@@ -83,12 +110,12 @@ export class MineflayerDeathWatcher implements DeathWatcher {
         listener({ position, dimension, carried, cause: messages[0] })
     }
 
-    bot.on('health', onHealth)
+    bot.inventory.on('updateSlot', remember)
     bot.on('death', onDeath)
     bot.on('messagestr', onMessage)
     bot.on('respawn', onRespawn)
     this.detach = () => {
-      bot.removeListener('health', onHealth)
+      bot.inventory.removeListener('updateSlot', remember)
       bot.removeListener('death', onDeath)
       bot.removeListener('messagestr', onMessage)
       bot.removeListener('respawn', onRespawn)

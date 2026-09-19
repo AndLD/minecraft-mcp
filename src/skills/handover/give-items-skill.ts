@@ -266,6 +266,7 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
     await deps.gaze.lookAt(this.aimPoint(here, player))
     context.progress(`Giving ${describeItems(give)}`)
     const thrown = await deps.thrower.throwAll(give, context.signal)
+    const thrownAt = deps.clock.now()
     if (context.signal.aborted && thrown.length === 0)
       return err({ reason: 'aborted', message: 'Cancelled.' })
 
@@ -276,7 +277,7 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
         items: unclaimed,
         position: here,
         dimension: deps.vitals.read()?.dimension ?? 'unknown',
-        at: deps.clock.now(),
+        at: thrownAt,
         player: input.player,
         recollect: input.recollectUnclaimed,
       })

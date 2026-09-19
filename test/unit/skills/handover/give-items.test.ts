@@ -289,6 +289,10 @@ describe('GiveItemsSkill: from the inventory to a player', () => {
       recollect: false,
     })
     expect(s.unclaimed.tracked[0]?.position.x).toBeCloseTo(8.5, 0) // where the bot stood: 1.5 blocks from the player
+    // The clock starts when the items are thrown, not when the wait for the player is over: they despawn from then on.
+    expect(s.unclaimed.tracked[0]?.at).toBeGreaterThanOrEqual(1000)
+    expect(s.unclaimed.tracked[0]?.at).toBeLessThan(2000)
+    expect(s.clock.now()).toBeGreaterThanOrEqual(9000)
   })
 
   it('tells the drop recovery nothing when the player picked everything up', async () => {

@@ -150,6 +150,9 @@ export interface BotLike {
     >
   }
   readonly inventory: {
+    /** Fires whenever a slot changes (`updateSlot` in Mineflayer). */
+    on(event: 'updateSlot', listener: () => void): unknown
+    removeListener(event: 'updateSlot', listener: () => void): unknown
     items(): readonly ItemLike[]
     emptySlotCount(): number
     /** All window slots; 5 to 8 are the armor slots (head, torso, legs, feet). */
