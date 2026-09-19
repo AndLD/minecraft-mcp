@@ -9,7 +9,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | Language | TypeScript (strict), ESM, Node 22+ |
 | Minecraft | 1.21.1 vanilla, LAN world from TLauncher, bot in offline auth |
 | Transport | MCP over stdio, `@modelcontextprotocol/sdk` |
-| Config | `.env`: `MC_HOST=localhost` (default), `MC_PORT`, plus the variables listed in README. The `connect` tool can override host/port at runtime |
+| Config | `.env`: `MC_HOST=localhost` (default), `MC_PORT` (optional: when empty the port is discovered from the LAN world broadcast), plus the variables listed in README. The `connect` tool can override host/port at runtime |
 | Instruction channel | In-game chat → `ChatInbox` → agent long-polls `wait_for_chat` |
 | Real-time behavior | Static-code reflexes (eat, flee, lava, drowning, `stop`); the agent only issues high-level goals |
 | Threat policy | Always flee from skeletons and creepers; always flee at low health; fight all other hostile mobs (zombies, spiders, etc.); ignore endermen. Encoded as a data table, see AGENTS.md |
@@ -52,6 +52,14 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | E2E tests are slow and timing-sensitive | Small smoke-level suite (a handful of scenarios per phase), deterministic world (superflat or fixed seed), mobs and time controlled via RCON, generous timeouts, kept out of `npm test`; failures dump server and bot logs |
 | E2E needs Docker and the server EULA | Documented prerequisite; the e2e scripts fail fast with a clear message when Docker is missing; EULA accepted through the container env |
 
+## Status
+
+| Phase | Status |
+|---|---|
+| 0 Feasibility spike | done, merged into `development` |
+| 1 Project scaffold | implemented on `feature/project-scaffold`, awaiting approval |
+| 2 and later | not started |
+
 ## Phases
 
 Each phase ends with working, tested software and a manual check in the game. Estimates are rough working-session counts.
@@ -60,7 +68,7 @@ Every phase (and any later feature) is developed in its own branch created from 
 
 ### Phase 0: Feasibility spike (½ session)
 
-Branch: `feature/feasibility-spike`. Throwaway script under `spikes/`, not part of the architecture and not covered by tests.
+Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffold; it lives in git history), not part of the architecture and not covered by tests.
 
 - Repository bootstrap first: initial commit with the docs on `main`, then create `development` from it.
 - Bare Mineflayer bot joins the LAN world (1.21.1, offline) and echoes your chat back.
@@ -87,6 +95,7 @@ Branch: `feature/feasibility-spike`. Throwaway script under `spikes/`, not part 
 - `src/core`: port interfaces (`Connection`, `ChatPort`, `VitalsReader`, `Clock`, `Logger`) and shared types (`Position`, `Result`).
 - `src/bot`: `MineflayerConnection` (connect/disconnect/reconnect events, error handling) and chat adapter.
 - `src/chat`: `ChatInbox` with `wait(timeout)`, owner filtering, and a bounded buffer; `ChatCommandInterceptor` with `stop`.
+- `src/bot`: `LanDiscovery` port and adapter (listens to the LAN broadcast on `224.0.2.60:4445`, returns the port and world name; used by `connect` when `MC_PORT` is not set).
 - `src/mcp`: `ToolRegistry`, `ToolDefinition`, server bootstrap; tools `connect`, `disconnect`, `get_status`, `wait_for_chat`, `say`, `whisper`.
 - Wiring in `src/app.ts` (`createApp(config, deps)`), so it can be built in tests with fakes; `src/index.ts` only reads env, calls `createApp`, and starts the stdio transport.
 - Branch: `feature/core-mcp-shell`.
@@ -352,7 +361,7 @@ This is a human verification step with the real game client, in addition to the 
 ```
 minecraft-mcp/
   README.md  AGENTS.md  CLAUDE.md  DEVELOPMENT-PLAN.md
-  package.json  tsconfig.json  eslint.config.js  jest.config.ts
+  package.json  tsconfig.json  eslint.config.js  jest.config.js
   .env.example  .gitignore
   src/
     index.ts  app.ts
@@ -363,13 +372,13 @@ minecraft-mcp/
   test/{unit,integration,fakes}/
   test/e2e/<feature>/   # e2e grouped per feature (movement-perception/, survival-reflexes/, ...)
   docker/             # e2e server configuration
-  spikes/             # Phase 0 throwaway, removed after the spike
+  docs/               # feasibility findings and other notes
   data/<profile>/     # gitignored: per-world state (knowledge, journal, notes, ...)
 ```
 
 ## Open items to confirm during execution
 
-- ~~Whether the LAN world accepts the offline bot~~ Confirmed in the Phase 0 spike (see `spikes/FINDINGS.md`); Paper fallback not needed. Still open: whether the hashed seed stays the same when the world is re-opened, and whether LAN broadcast auto-discovery (port and world name) should make `MC_PORT` optional (proposal: yes).
+- ~~Whether the LAN world accepts the offline bot~~ Confirmed in the Phase 0 spike (see `docs/feasibility-findings.md`); Paper fallback not needed. `MC_PORT` is now optional (decided): the port and world name come from the LAN broadcast. Still open: whether the hashed seed stays the same when the world is re-opened.
 - Whether Claude Code channels/Monitor can replace polling for instant chat delivery (evaluate after Phase 2; polling is the baseline).
 - Low-health threshold (default 8 of 20) and flee distance; tune during Phase 6 play testing.
 

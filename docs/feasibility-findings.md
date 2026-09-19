@@ -1,4 +1,4 @@
-# Phase 0 spike findings
+# Feasibility spike findings
 
 Environment: Minecraft Java 1.21.1 (TLauncher, vanilla), world opened via "Open to LAN", Mineflayer 4.39.0, Node 22.
 
@@ -27,4 +27,4 @@ The world announces itself on UDP multicast `224.0.2.60:4445` as `[MOTD]<player>
 
 - Use LAN broadcast auto-discovery in the `connect` tool (optional port).
 - World fingerprint = hashed seed + world name + spawn point; verify stability across re-opening the world during the persistent-state feature.
-- The spike code in this folder is throwaway and is removed once the scaffold exists.
+- The spike code (a bare Mineflayer bot with a chat echo, a `come` command, a status ping, and a LAN broadcast listener) was throwaway and lives only in git history (`feature/feasibility-spike`).

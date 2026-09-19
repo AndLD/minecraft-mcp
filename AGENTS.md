@@ -41,6 +41,7 @@ Dependency direction: **`mcp` → `skills`/`tasks` → `core` ← `bot`**. The c
 src/
   index.ts              Entry point only: read env, call createApp, start stdio transport
   app.ts                Composition root: createApp(config, deps) builds and wires everything (testable)
+  infra/                Real implementations of generic ports: SystemClock, SystemRandom, StderrLogger (the only place allowed to touch Date.now, Math.random, stderr)
   config/               Env loading + zod schema (MC_HOST, MC_PORT, ...)
   core/                 Ports (interfaces) and domain types. No imports from other layers.
   bot/                  Mineflayer adapter: implements the ports (only place importing mineflayer)
@@ -220,7 +221,9 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 
 ## Coding conventions
 
-- ESM (`"type": "module"`), TypeScript `strict`, target ES2023, `moduleResolution: NodeNext`. Import local files with `.js` extensions.
+- ESM (`"type": "module"`), TypeScript `strict`, target ES2023, `moduleResolution: NodeNext`. Import local files with `.js` extensions. TypeScript is pinned to `~6.0` because `ts-jest` and `typescript-eslint` do not support 7.x yet; revisit when they do.
+- Files that contain only interfaces or types are named `*.port.ts` (ports) or `*.types.ts` (data types). They emit no code and are excluded from the coverage gate; put runtime code in a differently named file.
+- Lint enforces the hard rules: `no-console`, no `Date.now()`/`new Date()`/`Math.random()` outside `src/infra` and tests, no Mineflayer imports outside `src/bot`, no `any`.
 - Files are `kebab-case.ts`; one exported class or interface per file when practical; interfaces are not prefixed with `I`.
 - Prefer composition and constructor injection. No inheritance hierarchies deeper than one level.
 - Expected failures (unreachable, out of materials, interrupted) are **values** (`{ ok: false, reason }`), not exceptions. Exceptions are for bugs and I/O errors.
