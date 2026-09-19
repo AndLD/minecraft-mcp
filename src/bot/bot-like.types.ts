@@ -24,6 +24,8 @@ export interface EntityLike {
    * or a target. Set by our factory from Mineflayer's `entityDead` event, which never marks the entity itself.
    */
   readonly isDead?: boolean | undefined
+  /** For item entities: what lies on the ground. */
+  getDroppedItem?(): ItemLike | null
 }
 
 export type EquipSlot = 'hand' | 'head' | 'torso' | 'legs' | 'feet'
@@ -43,6 +45,28 @@ export interface BlockLike {
   readonly name: string
   /** `block` for full solid blocks, `empty` for air, liquids, and plants. */
   readonly boundingBox?: string | undefined
+}
+
+/** A crafting recipe as Mineflayer builds it. `delta` lists what changes in the inventory (ingredients negative). */
+export interface RecipeLike {
+  readonly result: { readonly id: number; readonly count: number }
+  readonly delta: readonly { readonly id: number; readonly count: number }[]
+  readonly requiresTable: boolean
+}
+
+/** An opened furnace window. */
+export interface FurnaceLike {
+  /** Fuel left in the current piece, from 0 to 1 (0 when unlit). */
+  readonly fuel: number
+  inputItem(): ItemLike | null
+  fuelItem(): ItemLike | null
+  outputItem(): ItemLike | null
+  putInput(itemType: number, metadata: number | null, count: number): Promise<void>
+  putFuel(itemType: number, metadata: number | null, count: number): Promise<void>
+  takeInput(): Promise<ItemLike | null>
+  takeFuel(): Promise<ItemLike | null>
+  takeOutput(): Promise<ItemLike | null>
+  close(): void | Promise<void>
 }
 
 /**
@@ -75,8 +99,23 @@ export interface BotLike {
   readonly entities: Readonly<Record<string, EntityLike>>
   readonly players: Readonly<Record<string, PlayerLike>>
   readonly registry: {
-    readonly blocksByName: Readonly<Record<string, { readonly id: number }>>
+    readonly blocksByName: Readonly<
+      Record<
+        string,
+        {
+          readonly id: number
+          readonly diggable?: boolean | undefined
+          /** For example `mineable/pickaxe`. */
+          readonly material?: string | undefined
+          /** Item ids of the tools that make the block drop its items; undefined when any tool does. */
+          readonly harvestTools?: Readonly<Record<number, boolean>> | undefined
+        }
+      >
+    >
     readonly itemsByName: Readonly<Record<string, { readonly id: number }>>
+    readonly items: Readonly<Record<number, { readonly name: string }>>
+    /** Keyed by the id of the item that is made. Only the keys are used. */
+    readonly recipes: Readonly<Record<string, unknown>>
     readonly foodsByName: Readonly<
       Record<string, { readonly foodPoints: number; readonly saturation: number }>
     >
@@ -106,6 +145,19 @@ export interface BotLike {
   consume(): Promise<void>
   /** Hits an entity taken from `entities`. */
   attack(entity: EntityLike): void
+  /** Breaks a block returned by `blockAt`. Resolves when it is gone. */
+  dig(block: BlockLike): Promise<void>
+  stopDigging(): void
+  /** Places the item in hand against the face (a unit vector) of a block returned by `blockAt`. */
+  placeBlock(reference: BlockLike, face: Position): Promise<void>
+  openFurnace(block: BlockLike): Promise<FurnaceLike>
+  /** Every recipe for the item; those needing a table are included when `craftingTable` is true. */
+  recipesAll(
+    itemType: number,
+    metadata: number | null,
+    craftingTable: boolean,
+  ): readonly RecipeLike[]
+  craft(recipe: RecipeLike, count: number, craftingTable?: BlockLike | null): Promise<void>
   on<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown
   once<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown
   removeListener<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown
