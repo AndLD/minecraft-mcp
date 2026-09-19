@@ -45,7 +45,7 @@ Left out of the farming feature in the plan: shearing sheep, milking cows, colle
 
 ### Survival reflexes
 - **Fall-damage guard**: land in water with a bucket, or avoid the fall. Now part of the cave exploration feature in the plan (caves have drops). The pathfinder's default maximum drop already avoids large falls.
-- **Night shelter**: build or dig in when night falls far from a bed. Same dependency.
+- **Night shelter**: build or dig in when night falls far from a bed. Same dependency. Having a bed to go to is the sleeping feature in the plan.
 - **E2E scenario for a reflex pausing and resuming a real task**: covered by integration tests only.
 
 ### Hunting
