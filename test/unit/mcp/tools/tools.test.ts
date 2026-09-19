@@ -15,6 +15,7 @@ import {
   FakeConnection,
   FakeLanDiscovery,
   FakeVitals,
+  buildVitals,
 } from '../../../fakes/fake-ports.js'
 import { FakeScheduler } from '../../../fakes/fake-scheduler.js'
 import { buildConfig } from '../../../fakes/test-config.js'
@@ -103,7 +104,7 @@ describe('GetStatusTool', () => {
 
     expect(tool.execute()).toEqual({
       ok: true,
-      data: { state: 'disconnected', target: null, vitals: null, pendingInbox: 0 },
+      data: { state: 'disconnected', target: null, vitals: null, pendingInbox: 0, reflexes: null },
     })
   })
 
@@ -118,13 +119,7 @@ describe('GetStatusTool', () => {
       auth: 'offline',
     })
     const vitals = new FakeVitals()
-    vitals.vitals = {
-      health: 20,
-      food: 18,
-      position: { x: 1, y: 64, z: 2 },
-      dimension: 'overworld',
-      timeOfDay: 1000,
-    }
+    vitals.vitals = buildVitals({ food: 18, position: { x: 1, y: 64, z: 2 }, timeOfDay: 1000 })
     inbox.pushMessage({ sender: 'A', text: 'hi', whisper: false })
     const tool = new GetStatusTool(connection, vitals, inbox)
 
@@ -135,8 +130,33 @@ describe('GetStatusTool', () => {
         target: { host: 'localhost', port: 34231, username: 'ClaudeBot', version: '1.21.1' },
         vitals: vitals.vitals,
         pendingInbox: 1,
+        reflexes: null,
       },
     })
+  })
+})
+
+describe('GetStatusTool reflexes', () => {
+  it('reports whether the reflexes are enabled and which one is acting', () => {
+    const { inbox } = inboxSetup()
+    const tool = new GetStatusTool(new FakeConnection(), new FakeVitals(), inbox, {
+      enabled: true,
+      activeReflex: () => 'threat_response',
+    })
+
+    expect(tool.execute()).toMatchObject({
+      data: { reflexes: { enabled: true, active: 'threat_response' } },
+    })
+  })
+
+  it('reports no active reflex', () => {
+    const { inbox } = inboxSetup()
+    const tool = new GetStatusTool(new FakeConnection(), new FakeVitals(), inbox, {
+      enabled: false,
+      activeReflex: () => undefined,
+    })
+
+    expect(tool.execute()).toMatchObject({ data: { reflexes: { enabled: false, active: null } } })
   })
 })
 

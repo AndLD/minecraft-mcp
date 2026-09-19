@@ -27,6 +27,7 @@ describe('loadConfig', () => {
       dataDir: './data',
       worldProfile: undefined,
       lowHealthThreshold: 8,
+      reflexesEnabled: true,
       logLevel: 'info',
     })
   })
@@ -47,6 +48,7 @@ describe('loadConfig', () => {
       DATA_DIR: '/var/mc',
       WORLD_PROFILE: 'survival1',
       LOW_HEALTH_THRESHOLD: '6',
+      REFLEXES_ENABLED: 'false',
       LOG_LEVEL: 'debug',
     })
     expect(config).toEqual({
@@ -60,6 +62,7 @@ describe('loadConfig', () => {
       dataDir: '/var/mc',
       worldProfile: 'survival1',
       lowHealthThreshold: 6,
+      reflexesEnabled: false,
       logLevel: 'debug',
     })
   })

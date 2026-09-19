@@ -14,5 +14,7 @@ export interface Config {
   /** Fallback world profile name, used when the world cannot be identified automatically. */
   readonly worldProfile: string | undefined
   readonly lowHealthThreshold: number
+  /** Survival reflexes (eat, fight, flee, avoid lava, surface for air) run by themselves. */
+  readonly reflexesEnabled: boolean
   readonly logLevel: LogLevel
 }

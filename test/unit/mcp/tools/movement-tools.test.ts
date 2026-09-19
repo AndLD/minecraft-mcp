@@ -187,6 +187,37 @@ describe('GoToTool', () => {
   })
 })
 
+describe('the reflex gate', () => {
+  it('refuses to start a task while a survival reflex is acting, and says why', async () => {
+    const { clock, tasks, navigator, scanner } = setup()
+    const gate = { activeReflex: (): string | undefined => 'threat_response' }
+    const goto = new GoToTool(
+      new GoToSkill(navigator, new BlockFinder(scanner)),
+      new TaskLauncher(tasks, clock, gate),
+    )
+
+    const result = await goto.execute(goto.inputSchema.parse({ x: 1, y: 2, z: 3 }), context())
+
+    expect(result.ok).toBe(false)
+    expect(!result.ok && result.error).toContain('threat_response')
+    expect(tasks.current()).toBeUndefined()
+  })
+
+  it('starts tasks normally when no reflex is acting', async () => {
+    const { clock, tasks, navigator, scanner } = setup()
+    const gate = { activeReflex: (): string | undefined => undefined }
+    const goto = new GoToTool(
+      new GoToSkill(navigator, new BlockFinder(scanner)),
+      new TaskLauncher(tasks, clock, gate),
+    )
+
+    void goto.execute(goto.inputSchema.parse({ x: 1, y: 2, z: 3, wait_seconds: 0 }), context())
+    await flush()
+
+    expect(tasks.current()?.name).toBe('goto')
+  })
+})
+
 describe('resume descriptors', () => {
   it('goto records how to start the same trip again, without the wait and replace options', async () => {
     const { goto, tasks } = setup()

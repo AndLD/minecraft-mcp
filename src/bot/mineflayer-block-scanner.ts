@@ -49,6 +49,11 @@ export class MineflayerBlockScanner implements BlockScanner {
     return this.holder.current()?.blockAt(toVec3(position))?.name
   }
 
+  isSolid(position: Position): boolean | undefined {
+    const block = this.holder.current()?.blockAt(toVec3(position))
+    return block === undefined || block === null ? undefined : block.boundingBox === 'block'
+  }
+
   sampleBlocks(radius: number): readonly BlockSummary[] {
     const bot = this.holder.current()
     const origin = bot?.entity?.position

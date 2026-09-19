@@ -75,6 +75,22 @@ describe('MineflayerBlockScanner', () => {
     expect(scanner.findBlocks({ names: ['stone'], maxDistance: 10, count: 5 })).toEqual([])
   })
 
+  it('tells whether a block is solid (something to stand on), or unknown when not loaded', () => {
+    const bot = botAtOrigin()
+    bot.setBlock({ x: 1, y: 63, z: 1 }, 'stone')
+    bot.setBlock({ x: 1, y: 64, z: 1 }, 'air')
+    bot.setBlock({ x: 2, y: 64, z: 1 }, 'water')
+    const scanner = new MineflayerBlockScanner(holderOf(bot))
+
+    expect(scanner.isSolid({ x: 1, y: 63, z: 1 })).toBe(true)
+    expect(scanner.isSolid({ x: 1, y: 64, z: 1 })).toBe(false)
+    expect(scanner.isSolid({ x: 2, y: 64, z: 1 })).toBe(false)
+    expect(scanner.isSolid({ x: 9, y: 9, z: 9 })).toBeUndefined()
+    expect(
+      new MineflayerBlockScanner(holderOf(undefined)).isSolid({ x: 0, y: 0, z: 0 }),
+    ).toBeUndefined()
+  })
+
   it('reads the block at a position', () => {
     const bot = botAtOrigin()
     bot.setBlock({ x: 1, y: 63, z: 1 }, 'dirt')
@@ -149,6 +165,27 @@ describe('MineflayerEntityScanner', () => {
     expect(nearby.map((e) => e.name)).toEqual(['orb', 'cow', 'zombie'])
     expect(nearby.map((e) => e.category)).toEqual(['orb', 'animal', 'hostile'])
     expect(nearby.map((e) => e.distance)).toEqual([1, 2, 4])
+  })
+
+  it('does not list entities that died or were removed, even while they linger for a moment', () => {
+    const bot = botWithEntities()
+    bot.entities['2'] = {
+      id: 2,
+      type: 'hostile',
+      name: 'zombie',
+      position: { x: 4.5, y: 64, z: 0.5 },
+      isDead: true,
+    }
+    bot.entities['3'] = {
+      id: 3,
+      type: 'animal',
+      name: 'cow',
+      position: { x: 2.5, y: 64, z: 0.5 },
+      isValid: false,
+    }
+    const scanner = new MineflayerEntityScanner(holderOf(bot))
+
+    expect(scanner.nearby(10).map((e) => e.name)).toEqual(['orb'])
   })
 
   it('names players by their username', () => {

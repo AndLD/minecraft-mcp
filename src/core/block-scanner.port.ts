@@ -27,6 +27,8 @@ export interface BlockScanner {
   /** Nearest first. Only loaded chunks are searched. */
   findBlocks(query: BlockQuery): readonly BlockInfo[]
   blockAt(position: Position): string | undefined
+  /** True for full solid blocks that can be stood on. Undefined when the block is not loaded. */
+  isSolid(position: Position): boolean | undefined
   /** Counts the non-air blocks in a cube around the bot. */
   sampleBlocks(radius: number): readonly BlockSummary[]
 }

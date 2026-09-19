@@ -119,6 +119,7 @@ export class FakeBlockScanner implements BlockScanner {
   blocks: BlockInfo[] = []
   summaries: BlockSummary[] = []
   blockNames = new Map<string, string>()
+  solid = new Map<string, boolean>()
   readonly queries: BlockQuery[] = []
 
   knownBlockNames(): readonly string[] {
@@ -132,6 +133,10 @@ export class FakeBlockScanner implements BlockScanner {
 
   blockAt(position: Position): string | undefined {
     return this.blockNames.get(`${String(position.x)},${String(position.y)},${String(position.z)}`)
+  }
+
+  isSolid(position: Position): boolean | undefined {
+    return this.solid.get(`${String(position.x)},${String(position.y)},${String(position.z)}`)
   }
 
   sampleBlocks(): readonly BlockSummary[] {
@@ -225,5 +230,22 @@ export class FakeStatusProbe implements ServerStatusProbe {
   probe(host: string, port: number): Promise<ServerStatus | undefined> {
     this.probed.push({ host, port })
     return Promise.resolve(this.status)
+  }
+}
+
+/** A healthy bot on dry land, with optional overrides. */
+export function buildVitals(overrides: Partial<Vitals> = {}): Vitals {
+  return {
+    health: 20,
+    food: 20,
+    saturation: 5,
+    oxygen: 20,
+    inLava: false,
+    inWater: false,
+    headUnderwater: false,
+    position: { x: 0, y: 64, z: 0 },
+    dimension: 'overworld',
+    timeOfDay: 6000,
+    ...overrides,
   }
 }

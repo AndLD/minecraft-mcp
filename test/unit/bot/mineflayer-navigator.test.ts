@@ -24,6 +24,10 @@ class FakeDriver implements PathDriver {
     return this.handle()
   }
 
+  approachEntity(): PathHandle {
+    return this.handle()
+  }
+
   finish(outcome: PathOutcome): void {
     this.settle(outcome)
   }

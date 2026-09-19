@@ -414,6 +414,89 @@ describe('TaskManager', () => {
     })
   })
 
+  describe('suspending for a survival reflex', () => {
+    it('stops the running task with the reason preempted and remembers how to resume it', async () => {
+      const { manager } = setup()
+      const task = controllable()
+      manager.start({ ...task.spec, resume: { tool: 'goto', arguments: { x: 1 } } })
+
+      const stopped = await manager.suspend()
+
+      expect(stopped).toMatchObject({ status: 'cancelled', cancelReason: 'preempted' })
+      expect(manager.current()).toBeUndefined()
+      expect(manager.suspended()?.id).toBe('task-1')
+    })
+
+    it('hands out the resume descriptor once', async () => {
+      const { manager } = setup()
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: { x: 1 } } })
+      await manager.suspend()
+
+      expect(manager.takeSuspended()).toEqual({ tool: 'goto', arguments: { x: 1 } })
+      expect(manager.takeSuspended()).toBeUndefined()
+      expect(manager.suspended()).toBeUndefined()
+    })
+
+    it('has nothing to resume for a task without a descriptor, and forgets it anyway', async () => {
+      const { manager } = setup()
+      manager.start(controllable().spec)
+      await manager.suspend()
+
+      expect(manager.takeSuspended()).toBeUndefined()
+      expect(manager.suspended()).toBeUndefined()
+    })
+
+    it('does nothing when no task is running', async () => {
+      const { manager } = setup()
+
+      expect(await manager.suspend()).toBeUndefined()
+      expect(manager.suspended()).toBeUndefined()
+    })
+
+    it('a stop from the player forgets the suspended task, so nothing resumes against their wish', async () => {
+      const { manager } = setup()
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: {} } })
+      await manager.suspend()
+
+      manager.stopAll()
+
+      expect(manager.suspended()).toBeUndefined()
+    })
+
+    it('an explicit cancel forgets it too, but a preempting cancel does not', async () => {
+      const { manager } = setup()
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: {} } })
+      await manager.suspend()
+
+      await manager.cancel()
+      expect(manager.suspended()).toBeUndefined()
+
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: {} } })
+      await manager.cancel(undefined, 'preempted')
+      expect(manager.suspended()).toBeUndefined() // only suspend() remembers; the reason alone does not
+    })
+
+    it('starting a new task replaces the suspended one', async () => {
+      const { manager } = setup()
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: {} } })
+      await manager.suspend()
+
+      manager.start(controllable('other').spec)
+
+      expect(manager.suspended()).toBeUndefined()
+    })
+
+    it('discardSuspended forgets it directly', async () => {
+      const { manager } = setup()
+      manager.start({ ...controllable().spec, resume: { tool: 'goto', arguments: {} } })
+      await manager.suspend()
+
+      manager.discardSuspended()
+
+      expect(manager.suspended()).toBeUndefined()
+    })
+  })
+
   describe('history', () => {
     it('remembers only the most recent finished tasks', async () => {
       const { manager } = setup({ historyLimit: 2 })

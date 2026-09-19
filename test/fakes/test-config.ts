@@ -16,6 +16,7 @@ export function buildConfig(overrides: Partial<Config> = {}): Config {
     dataDir: path.join(tmpdir(), `minecraft-mcp-tests-${String(process.pid)}`),
     worldProfile: undefined,
     lowHealthThreshold: 8,
+    reflexesEnabled: true,
     logLevel: 'info',
     ...overrides,
   }

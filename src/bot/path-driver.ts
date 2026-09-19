@@ -16,6 +16,8 @@ export interface PathHandle {
 export interface PathDriver {
   goNear(target: Position, range: number): PathHandle
   follow(playerName: string, distance: number): PathHandle
+  /** Chases any entity (a mob to fight, for example) until cancelled. */
+  approachEntity(entityId: number, distance: number): PathHandle
 }
 
 /** Creates the pathfinder plugin's goal objects, so this file does not import the plugin. */
@@ -67,7 +69,21 @@ export class MineflayerPathDriver implements PathDriver {
     )?.entity
     if (entity === undefined)
       return failedHandle(`${playerName} is not in view, so it cannot be followed.`)
+    return this.chase(entity, distance)
+  }
 
+  approachEntity(entityId: number, distance: number): PathHandle {
+    const bot = this.holder.current()
+    if (bot === undefined) return failedHandle('Not connected to a Minecraft world.')
+    const entity = bot.entities[String(entityId)]
+    if (entity === undefined) return failedHandle(`Entity ${String(entityId)} is not in view.`)
+    return this.chase(entity, distance)
+  }
+
+  /** Follows the entity with a dynamic goal until cancelled. */
+  private chase(entity: EntityLike, distance: number): PathHandle {
+    const bot = this.holder.current()
+    if (bot === undefined) return failedHandle('Not connected to a Minecraft world.')
     bot.pathfinder.setGoal(this.goals.followEntity(entity, distance), true)
     let settle: (outcome: PathOutcome) => void = () => undefined
     const outcome = new Promise<PathOutcome>((resolve) => {
