@@ -59,8 +59,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 0 Feasibility spike | done, merged into `development` |
 | 1 Project scaffold | done, merged into `development` |
 | 2 Core skeleton and MCP shell | done, merged into `development` |
-| 3 Movement and perception | implemented on `feature/movement-perception`, awaiting approval |
-| 4 and later | not started |
+| 3 Movement and perception | done, merged into `development` |
+| 4 E2E test harness | implemented on `feature/e2e-harness`, awaiting approval |
+| 5 and later | not started |
 
 ## Phases
 

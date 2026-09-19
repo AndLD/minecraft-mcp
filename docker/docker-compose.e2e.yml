@@ -1,0 +1,14 @@
+# Start the same server the e2e tests use, for manual exploration:
+#   docker compose -f docker/docker-compose.e2e.yml up
+# Then connect the bot with MC_PORT=25565 (or join from the game client at localhost:25565).
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    env_file: e2e-server.env
+    ports:
+      - '25565:25565'
+      - '25575:25575'
+    volumes:
+      - ./config:/config:ro
+    tty: true
+    stdin_open: true

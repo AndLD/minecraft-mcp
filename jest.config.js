@@ -18,6 +18,15 @@ export default {
       displayName: 'integration',
       testMatch: ['<rootDir>/test/integration/**/*.test.ts'],
     },
+    {
+      // Needs Docker: a real Minecraft server in a container. Run with `npm run test:e2e`.
+      ...shared,
+      displayName: 'e2e',
+      testMatch: ['<rootDir>/test/e2e/**/*.e2e.test.ts'],
+      globalSetup: '<rootDir>/test/e2e/support/global-setup.mjs',
+      globalTeardown: '<rootDir>/test/e2e/support/global-teardown.mjs',
+      setupFilesAfterEnv: ['<rootDir>/test/e2e/support/jest-setup.ts'],
+    },
   ],
   // Interface-only files (*.port.ts, *.types.ts) emit no code, so they are not measured.
   collectCoverageFrom: ['src/**/*.ts', '!src/index.ts', '!src/**/*.port.ts', '!src/**/*.types.ts'],
