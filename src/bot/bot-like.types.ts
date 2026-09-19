@@ -52,6 +52,10 @@ export interface RecipeLike {
   readonly result: { readonly id: number; readonly count: number }
   readonly delta: readonly { readonly id: number; readonly count: number }[]
   readonly requiresTable: boolean
+  /** The grid pattern of a shaped recipe (rows of cells; id -1 is an empty cell), or null. */
+  readonly inShape: readonly (readonly { readonly id: number }[])[] | null
+  /** The items of a shapeless recipe, or null. */
+  readonly ingredients: readonly { readonly id: number }[] | null
 }
 
 /** An opened furnace window. */

@@ -341,6 +341,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     crafter: recipes,
     inventory,
     workstations,
+    scheduler,
   })
   const smeltItems = new SmeltItemsSkill({
     inventory,

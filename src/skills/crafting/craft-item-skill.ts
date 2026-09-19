@@ -2,13 +2,20 @@ import { countItems, describeItems, gained } from '../../core/inventory-counts.j
 import type { InventoryReader } from '../../core/inventory.port.js'
 import type { Position } from '../../core/position.types.js'
 import type { Crafter, ItemCount, RecipeBook } from '../../core/recipes.port.js'
+import type { Scheduler } from '../../core/scheduler.port.js'
+import { sleep } from '../../core/sleep.js'
 import { err, ok } from '../../core/result.js'
-import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
-import type { CraftPlan, RecipePlanner } from './recipe-planner.js'
+import type { Skill, SkillContext, SkillFailure, SkillResult } from '../../core/skill.types.js'
+import type { CraftPlan, CraftStep, RecipePlanner } from './recipe-planner.js'
 import type { Workstations } from './workstations.js'
 
 const TABLE = 'crafting_table'
 const MAX_SUGGESTIONS = 8
+/** After a craft the server needs a moment to confirm the new items; the next step must not start before. */
+const ARRIVAL_POLL_MS = 100
+const ARRIVAL_POLLS = 30
+const CRAFT_ATTEMPTS = 3
+const RETRY_DELAY_MS = 700
 
 export interface CraftInput {
   readonly item: string
@@ -36,6 +43,7 @@ export interface CraftItemDeps {
   readonly crafter: Crafter
   readonly inventory: InventoryReader
   readonly workstations: Workstations
+  readonly scheduler: Scheduler
 }
 
 /** Crafts an item, making the intermediate items on the way (logs to planks to sticks) and using or placing a crafting table when the recipe needs one. */
@@ -81,17 +89,8 @@ export class CraftItemSkill implements Skill<CraftInput, CraftOutput>, ItemCraft
         table = ensured.value
         placedTable = !standing
       }
-      const crafted = await deps.crafter.craft(
-        step.item,
-        step.recipe.index,
-        step.times,
-        step.recipe.needsTable ? table : undefined,
-      )
-      if (!crafted.ok)
-        return err({
-          reason: 'craft_failed',
-          message: `Crafting ${step.item} failed: ${crafted.error.message}`,
-        })
+      const failure = await this.runStep(step, table, context)
+      if (failure !== undefined) return err(failure)
       context.progress(`Crafted ${step.item} x${String(step.times)}`)
     }
 
@@ -104,6 +103,60 @@ export class CraftItemSkill implements Skill<CraftInput, CraftOutput>, ItemCraft
       steps: summarize(plan),
       placedTable,
     })
+  }
+
+  /**
+   * One craft, tried again when the game hiccups: right after other inventory changes (a pickup, a placed block)
+   * the server can ignore a craft click, and Mineflayer then reports success or "missing ingredient" although
+   * nothing happened. Retrying after a short settle is what a player would do.
+   */
+  private async runStep(
+    step: CraftStep,
+    table: Position | undefined,
+    context: SkillContext,
+  ): Promise<SkillFailure | undefined> {
+    const { deps } = this
+    const have = (): number => countItems(deps.inventory.snapshot()).get(step.item) ?? 0
+    const wanted = have() + step.times * step.recipe.result.count
+    let problem = ''
+    for (let attempt = 0; attempt < CRAFT_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(deps.scheduler, RETRY_DELAY_MS, context.signal)
+        if (have() >= wanted) return undefined // the confirmation was only late
+      }
+      if (context.signal.aborted) return { reason: 'aborted', message: 'Cancelled.' }
+      const crafted = await deps.crafter.craft(
+        step.item,
+        step.recipe.index,
+        step.times,
+        step.recipe.needsTable ? table : undefined,
+      )
+      if (!crafted.ok) {
+        if (crafted.error.reason !== 'failed')
+          return {
+            reason: 'craft_failed',
+            message: `Crafting ${step.item} failed: ${crafted.error.message}`,
+          }
+        problem = crafted.error.message
+        continue
+      }
+      if (await this.awaitArrival(step.item, wanted, context.signal)) return undefined
+      problem = 'the result never showed up in the inventory'
+    }
+    return {
+      reason: 'craft_failed',
+      message: `Crafting ${step.item} failed after ${String(CRAFT_ATTEMPTS)} tries: ${problem}`,
+    }
+  }
+
+  /** Waits until the inventory shows at least `wanted` of the item (or the signal aborts, which counts as arrived). */
+  private async awaitArrival(item: string, wanted: number, signal: AbortSignal): Promise<boolean> {
+    for (let poll = 0; poll < ARRIVAL_POLLS; poll += 1) {
+      if ((countItems(this.deps.inventory.snapshot()).get(item) ?? 0) >= wanted) return true
+      if (signal.aborted) return true
+      await sleep(this.deps.scheduler, ARRIVAL_POLL_MS, signal)
+    }
+    return (countItems(this.deps.inventory.snapshot()).get(item) ?? 0) >= wanted
   }
 
   private unknownItem(item: string) {

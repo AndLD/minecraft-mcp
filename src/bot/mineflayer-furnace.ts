@@ -3,6 +3,7 @@ import type { ItemStackInfo } from '../core/inventory.port.js'
 import type { Position } from '../core/position.types.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { BotHolder, BotLike, FurnaceLike, ItemLike } from './bot-like.types.js'
+import { toVec3 } from './vec3.js'
 
 const stack = (item: ItemLike | null): ItemStackInfo | undefined =>
   item === null ? undefined : { name: item.name, count: item.count }
@@ -59,7 +60,7 @@ export class MineflayerFurnaceAccess implements FurnaceAccess {
   async open(position: Position): Promise<Result<FurnaceSession>> {
     const bot = this.holder.current()
     if (bot === undefined) return err('Not connected to a Minecraft world.')
-    const block = bot.blockAt(position)
+    const block = bot.blockAt(toVec3(position))
     if (block === null || !block.name.endsWith('furnace')) return err('There is no furnace there.')
     try {
       return ok(new MineflayerFurnaceSession(bot, await bot.openFurnace(block)))

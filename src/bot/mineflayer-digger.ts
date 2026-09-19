@@ -5,6 +5,7 @@ import type { Position } from '../core/position.types.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { BotHolder, BotLike } from './bot-like.types.js'
 import { chooseTool } from './tool-choice.js'
+import { toVec3 } from './vec3.js'
 
 const UNBREAKABLE = new Set(['air', 'cave_air', 'void_air', 'water', 'lava', 'bedrock'])
 
@@ -19,7 +20,7 @@ export class MineflayerDigger implements Digger {
 
   assess(position: Position): DigAssessment | undefined {
     const bot = this.holder.current()
-    const block = bot?.blockAt(position)
+    const block = bot?.blockAt(toVec3(position))
     if (bot === undefined || block === undefined || block === null) return undefined
 
     const data = bot.registry.blocksByName[block.name]
@@ -49,7 +50,7 @@ export class MineflayerDigger implements Digger {
     if (signal.aborted) return fail('aborted', 'Cancelled.')
 
     const assessment = this.assess(position)
-    const block = bot.blockAt(position)
+    const block = bot.blockAt(toVec3(position))
     if (assessment === undefined || block === null)
       return fail('failed', 'That block is not loaded.')
     if (!assessment.diggable) return fail('not_diggable', `${assessment.blockName} cannot be dug.`)

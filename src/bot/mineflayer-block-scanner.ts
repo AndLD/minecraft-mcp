@@ -1,4 +1,3 @@
-import { Vec3 } from 'vec3'
 import type {
   BlockInfo,
   BlockQuery,
@@ -8,10 +7,9 @@ import type {
 import { distanceBetween } from '../core/position.js'
 import type { Position } from '../core/position.types.js'
 import type { BotHolder } from './bot-like.types.js'
+import { toVec3 } from './vec3.js'
 
 const AIR_BLOCKS = new Set(['air', 'cave_air', 'void_air'])
-
-const toVec3 = (position: Position): Vec3 => new Vec3(position.x, position.y, position.z)
 
 export class MineflayerBlockScanner implements BlockScanner {
   constructor(private readonly holder: BotHolder) {}

@@ -1,9 +1,7 @@
-import { Vec3 } from 'vec3'
+import { EYE_HEIGHT } from '../core/reach.js'
 import type { Vitals, VitalsReader } from '../core/vitals.port.js'
 import type { BotHolder } from './bot-like.types.js'
-
-/** How far above the feet the eyes are, in blocks. */
-const EYE_HEIGHT = 1.62
+import { toVec3 } from './vec3.js'
 
 export class MineflayerVitals implements VitalsReader {
   constructor(private readonly holder: BotHolder) {}
@@ -14,7 +12,7 @@ export class MineflayerVitals implements VitalsReader {
     if (bot === undefined || position === undefined) return undefined
 
     const at = (heightAboveFeet: number): string | undefined =>
-      bot.blockAt(new Vec3(position.x, position.y + heightAboveFeet, position.z))?.name
+      bot.blockAt(toVec3({ ...position, y: position.y + heightAboveFeet }))?.name
     const feet = at(0.1)
     const head = at(EYE_HEIGHT)
     return {

@@ -257,15 +257,15 @@ export class FakeBot implements BotLike {
   slots: (ItemLike | null)[] = Array.from({ length: 46 }, () => null)
   /** When set, free slots are worked out from the stacks (64 per slot) instead of `emptySlots`. */
   slotLimit: number | undefined
-  inventory = {
-    items: (): readonly ItemLike[] => this.inventoryItems,
+  inventory = ((owner: FakeBot) => ({
+    items: (): readonly ItemLike[] => owner.inventoryItems,
     emptySlotCount: (): number =>
-      this.slotLimit === undefined
-        ? this.emptySlots
-        : this.slotLimit -
-          this.inventoryItems.reduce((sum, item) => sum + Math.ceil(item.count / STACK_SIZE), 0),
-    slots: this.slots,
-  }
+      owner.slotLimit === undefined
+        ? owner.emptySlots
+        : owner.slotLimit -
+          owner.inventoryItems.reduce((sum, item) => sum + Math.ceil(item.count / STACK_SIZE), 0),
+    slots: owner.slots,
+  }))(this)
   foodSaturation = 5
   oxygenLevel = 20
   readonly equipped: { itemType: number; slot: EquipSlot }[] = []
@@ -289,6 +289,9 @@ export class FakeBot implements BotLike {
   }
 
   blockAt(position: Position): FakeBlock | null {
+    // The real world lookup calls `position.floored()`: a plain { x, y, z } crashes it.
+    if (typeof (position as { floored?: unknown }).floored !== 'function')
+      throw new TypeError('pos.floored is not a function')
     const name = this.blocks.get(key(position))
     if (name === undefined) return null
     return {
@@ -462,8 +465,11 @@ export class FakeBot implements BotLike {
   /** Where a drop lands: it falls until a solid block is below it. */
   private groundLevel(from: Position): number {
     let y = from.y
-    while (y > -64 && this.blockAt({ x: from.x, y: y - 1, z: from.z })?.boundingBox !== 'block')
-      y -= 1
+    const isSolid = (cell: Position): boolean => {
+      const name = this.blocks.get(key(cell))
+      return name !== undefined && !['air', 'cave_air', 'water', 'lava'].includes(name)
+    }
+    while (y > -64 && !isSolid({ x: from.x, y: y - 1, z: from.z })) y -= 1
     return y
   }
 

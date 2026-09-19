@@ -3,6 +3,7 @@ import pathfinderPlugin from 'mineflayer-pathfinder'
 import type { ConnectTarget } from '../core/connection.port.js'
 import type { BotFactory, BotLike } from './bot-like.types.js'
 import { formatHashedSeed } from './hashed-seed.js'
+import { installWindowCrafter } from './install-window-crafter.js'
 
 type EventMethods = 'on' | 'once' | 'removeListener'
 /** Takes entities from `bot.entities`, which are always real ones; TypeScript cannot relate our narrow entity type to Mineflayer's. */
@@ -38,6 +39,8 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
     movements.allow1by1towers = false
     movements.scafoldingBlocks = []
     bot.pathfinder.setMovements(movements)
+    // Only now: Mineflayer's own crafting is injected as the bot joins and would overwrite ours.
+    installWindowCrafter(bot)
   })
 
   // Compile-time guard: every member except the event methods must match exactly.

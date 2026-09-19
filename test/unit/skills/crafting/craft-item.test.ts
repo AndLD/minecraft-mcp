@@ -10,7 +10,9 @@ import {
   FakeVitals,
   buildVitals,
 } from '../../../fakes/fake-ports.js'
+import { FakeClock } from '../../../fakes/fake-clock.js'
 import {
+  AutoScheduler,
   FakePlacer,
   FakeRecipeBook,
   InstantNavigator,
@@ -21,6 +23,7 @@ import {
 const key = (p: Position): string => `${String(p.x)},${String(p.y)},${String(p.z)}`
 
 function setup(items: Record<string, number>) {
+  const clock = new FakeClock()
   const book = new FakeRecipeBook({
     oak_planks: [recipe({ name: 'oak_planks', count: 4 }, [{ name: 'oak_log', count: 1 }])],
     stick: [recipe({ name: 'stick', count: 4 }, [{ name: 'oak_planks', count: 2 }])],
@@ -87,6 +90,7 @@ function setup(items: Record<string, number>) {
     crafter: book,
     inventory,
     workstations,
+    scheduler: new AutoScheduler(clock),
   })
   return { book, scanner, inventory, placer, navigator, skill, counts }
 }
@@ -201,6 +205,57 @@ describe('CraftItemSkill', () => {
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'craft_failed' } })
     expect(!result.ok && result.error.message).toContain('window closed')
+  })
+
+  it('tries again when the game ignores a craft, and succeeds', async () => {
+    const { skill, book } = setup({ oak_planks: 1 })
+    book.transientFailures = 2
+
+    const result = await skill.run({ item: 'button', count: 1 }, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { produced: 1 } })
+    expect(book.crafted).toHaveLength(1)
+  })
+
+  it('tries again when a craft reports success but nothing arrives, without crafting twice when the result was only late', async () => {
+    const { skill, book, counts, inventory } = setup({ oak_planks: 2 })
+    // The first craft is ignored by the server; the second works.
+    const original = book.onCraft
+    let calls = 0
+    book.onCraft = (item, made, times) => {
+      calls += 1
+      if (calls > 1) original(item, made, times)
+    }
+    const { context } = skillContext()
+
+    const result = await skill.run({ item: 'button', count: 1 }, context)
+
+    expect(result.ok).toBe(true)
+    expect(book.crafted).toHaveLength(2)
+    expect(counts.get('button')).toBe(1)
+    expect(inventory.value?.stacks.find((s) => s.name === 'button')?.count).toBe(1)
+  })
+
+  it('gives up after three tries and says what went wrong', async () => {
+    const { skill, book } = setup({ oak_planks: 2 })
+    book.onCraft = () => undefined // the result never arrives
+
+    const result = await skill.run({ item: 'button', count: 1 }, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'craft_failed' } })
+    expect(!result.ok && result.error.message).toContain('after 3 tries')
+    expect(!result.ok && result.error.message).toContain('never showed up')
+    expect(book.crafted).toHaveLength(3)
+  })
+
+  it('does not retry problems that trying again cannot fix', async () => {
+    const { skill, book } = setup({ oak_planks: 1 })
+    book.failure = { reason: 'unknown_recipe', message: 'no such recipe' }
+
+    const result = await skill.run({ item: 'button', count: 1 }, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'craft_failed' } })
+    expect(!result.ok && result.error.message).toContain('no such recipe')
   })
 
   it('stops between steps when cancelled', async () => {

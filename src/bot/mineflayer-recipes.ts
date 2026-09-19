@@ -2,6 +2,7 @@ import type { Position } from '../core/position.types.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { CraftFailure, Crafter, ItemCount, Recipe, RecipeBook } from '../core/recipes.port.js'
 import type { BotHolder, BotLike, RecipeLike } from './bot-like.types.js'
+import { toVec3 } from './vec3.js'
 
 const fail = (reason: CraftFailure['reason'], message: string): Result<never, CraftFailure> =>
   err({ reason, message })
@@ -42,7 +43,7 @@ export class MineflayerRecipes implements RecipeBook, Crafter {
     if (recipe === undefined)
       return fail('unknown_recipe', `There is no recipe ${String(recipeIndex)} for ${item}.`)
 
-    const block = table === undefined ? null : bot.blockAt(table)
+    const block = table === undefined ? null : bot.blockAt(toVec3(table))
     if (recipe.requiresTable && (block === null || block.name !== 'crafting_table'))
       return fail('table_missing', 'That recipe needs a crafting table within reach.')
     try {

@@ -1,0 +1,228 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals'
+import type { Position } from '../../../src/core/position.types.js'
+import { dataOf } from '../support/app-under-test.js'
+import { E2EWorld, GROUND_Y } from '../support/e2e-world.js'
+import { readServerInfo, type ServerInfo } from '../support/server-config.js'
+import { startSession, type E2ESession } from '../support/session.js'
+import { pause, waitUntil } from '../support/wait.js'
+
+const at = (x: number, z: number, height = 0): Position => ({ x, y: GROUND_Y + height, z })
+
+interface TaskView {
+  taskId: string
+  status: string
+  progress: string | null
+  result: Record<string, unknown> | null
+}
+
+describe('gathering, crafting, and smelting on a real Minecraft server', () => {
+  let info: ServerInfo
+  let world: E2EWorld
+  let session: E2ESession
+  let sessionOpen = false
+
+  beforeAll(async () => {
+    info = readServerInfo()
+    world = await E2EWorld.connect(info)
+    await world.setDifficulty('peaceful')
+    await world.setGameRule('doDaylightCycle', false)
+    await world.setGameRule('doMobSpawning', false)
+    await world.setTime('day')
+  })
+
+  beforeEach(async () => {
+    session = await startSession(world, info)
+    sessionOpen = true
+  })
+
+  afterEach(async () => {
+    if (!sessionOpen) return
+    sessionOpen = false
+    await session.close()
+  })
+
+  afterAll(async () => {
+    await world.close()
+  })
+
+  const bot = (): string => session.bot.username
+
+  /** A trunk of `height` logs at the column (x, z). */
+  const plantTree = (x: number, z: number, height: number): Promise<void> =>
+    world.fill(at(x, z), at(x, z, height - 1), 'oak_log')
+
+  /** RCON changes reach the bot a moment later: wait until its own view matches. */
+  const untilBotSees = (names: string[], count: number): Promise<unknown> =>
+    waitUntil(
+      async () => {
+        const result = await session.bot.call('find_blocks', { names })
+        return !result.isError && (result.data as { count: number }).count >= count
+          ? true
+          : undefined
+      },
+      { description: `the bot to see ${String(count)} of ${names.join(', ')}` },
+    )
+
+  /** Waits until the bot's own inventory shows the item, since RCON gives reach the bot a moment later. */
+  const untilBotCarries = (item: string): Promise<unknown> =>
+    waitUntil(
+      async () => {
+        const result = await session.bot.call('get_inventory')
+        const items = result.isError ? [] : (result.data as { items: { name: string }[] }).items
+        return items.some((entry) => entry.name === item) ? true : undefined
+      },
+      { description: `the bot to carry ${item}` },
+    )
+
+  /** Starts a task-running tool and follows it until it is no longer running. */
+  async function runToTheEnd(
+    tool: string,
+    args: Record<string, unknown>,
+    timeoutMs = 100_000,
+  ): Promise<{ failed: boolean; text: string; task: TaskView | undefined }> {
+    const first = await session.bot.call(tool, { wait_seconds: 20, ...args })
+    if (first.isError) return { failed: true, text: first.text, task: undefined }
+    let task = first.data as TaskView
+    if (task.status === 'running') {
+      const finished = await waitUntil(
+        async () => {
+          const status = dataOf<{ task: TaskView }>(await session.bot.call('get_task_status')).task
+          return status.status === 'running' ? undefined : status
+        },
+        { timeoutMs, description: `${tool} to finish` },
+      )
+      task = finished
+    }
+    return { failed: task.status !== 'succeeded', text: JSON.stringify(task), task }
+  }
+
+  /** Fails with the tool's own message, which says why. */
+  function expectSucceeded(run: { failed: boolean; text: string }): void {
+    if (run.failed) throw new Error(`The task did not succeed: ${run.text}`)
+  }
+
+  it('collects logs from a tree and crafts a wooden pickaxe, making planks, sticks, and a crafting table on the way', async () => {
+    await plantTree(-2, -3, 4)
+    await untilBotSees(['oak_log'], 4)
+
+    const collected = await runToTheEnd('collect_block', { blocks: ['logs'], count: 4 })
+
+    expectSucceeded(collected)
+    expect(collected.task?.result).toMatchObject({ mined: 4 })
+    expect(await world.countItem(bot(), 'oak_log')).toBe(4)
+
+    const crafted = await runToTheEnd('craft', { item: 'wooden_pickaxe' })
+
+    expectSucceeded(crafted)
+    expect(crafted.task?.result).toMatchObject({
+      item: 'wooden_pickaxe',
+      produced: 1,
+      placedTable: true,
+    })
+    expect(await world.countItem(bot(), 'wooden_pickaxe')).toBe(1)
+    await untilBotSees(['crafting_table'], 1)
+  })
+
+  it('mines iron ore only with a tool that can harvest it, then smelts the raw iron', async () => {
+    await world.fill(at(3, -4), at(3, -2), 'iron_ore') // three ore blocks in a row
+    await untilBotSees(['iron_ore'], 3)
+
+    await world.give(bot(), 'wooden_pickaxe')
+    await untilBotCarries('wooden_pickaxe')
+    const tooWeak = await runToTheEnd('collect_block', { blocks: ['iron_ore'], count: 3 })
+    expect(tooWeak.failed).toBe(true)
+    expect(tooWeak.text).toContain('no_suitable_tool')
+    expect(await world.isBlock(at(3, -3), 'iron_ore')).toBe(true) // untouched
+
+    await world.give(bot(), 'stone_pickaxe')
+    await untilBotCarries('stone_pickaxe')
+    const mined = await runToTheEnd('collect_block', { blocks: ['iron_ore'], count: 3 })
+    expect(mined.text).not.toContain('reason')
+    expectSucceeded(mined)
+    expect(await world.countItem(bot(), 'raw_iron')).toBe(3)
+
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'coal')
+    await untilBotCarries('furnace')
+    await untilBotCarries('coal')
+    const smelted = await runToTheEnd('smelt', { item: 'raw_iron' })
+
+    expectSucceeded(smelted)
+    expect(smelted.task?.result).toMatchObject({ smelted: 3, produced: 'iron_ingot', fuel: 'coal' })
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
+    expect(await world.countItem(bot(), 'raw_iron')).toBe(0)
+  })
+
+  it('stops collecting the moment the task is cancelled', async () => {
+    await plantTree(-2, -3, 4)
+    await untilBotSees(['oak_log'], 4)
+
+    const started = dataOf<TaskView>(
+      await session.bot.call('collect_block', { blocks: ['oak_log'], count: 4, wait_seconds: 0 }),
+    )
+    expect(started.status).toBe('running')
+    await pause(2500) // long enough to be walking up to, or digging, the first log
+    await session.bot.call('cancel_task')
+
+    await waitUntil(
+      async () => {
+        const status = dataOf<{ task: TaskView }>(await session.bot.call('get_task_status')).task
+        return status.status === 'cancelled' ? true : undefined
+      },
+      { description: 'the task to be cancelled' },
+    )
+    const before = await world.countItem(bot(), 'oak_log')
+    await pause(3000)
+
+    expect(await world.countItem(bot(), 'oak_log')).toBe(before)
+    expect(before).toBeLessThan(4)
+  })
+
+  it('never breaks blocks inside a protected area', async () => {
+    await plantTree(-2, -3, 3)
+    await untilBotSees(['oak_log'], 3)
+    const protectedArea = await session.bot.call('protect_area', {
+      label: 'the old tree',
+      x1: -4,
+      y1: GROUND_Y - 1,
+      z1: -5,
+      x2: 0,
+      y2: GROUND_Y + 6,
+      z2: -1,
+    })
+    // The bot has no world profile to save it in until it has identified the world; connect already did that.
+    expect(protectedArea.isError).toBe(false)
+
+    const result = await session.bot.call('collect_block', {
+      blocks: ['oak_log'],
+      count: 2,
+      wait_seconds: 10,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('protected_area')
+    expect(await world.isBlock(at(-2, -3), 'oak_log')).toBe(true)
+    expect(await world.countItem(bot(), 'oak_log')).toBe(0)
+  })
+
+  it('picks up items lying on the ground', async () => {
+    await world.summonWith(
+      'item',
+      at(-2.5, -3.5, 1),
+      '{Item:{id:"minecraft:apple",count:3},PickupDelay:0}',
+    )
+    const picked = await waitUntil(
+      async () => {
+        const result = await session.bot.call('pickup_items', {
+          items: ['apple'],
+          wait_seconds: 20,
+        })
+        return result.isError ? undefined : (result.data as TaskView)
+      },
+      { description: 'the bot to see the apples and pick them up' },
+    )
+
+    expect(picked.status).toBe('succeeded')
+    expect(await world.countItem(bot(), 'apple')).toBe(3)
+  })
+})

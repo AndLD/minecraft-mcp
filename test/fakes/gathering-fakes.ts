@@ -166,6 +166,8 @@ export class FakeRecipeBook implements RecipeBook, Crafter {
     table: Position | undefined
   }[] = []
   failure: CraftFailure | undefined
+  /** Fails this many of the next crafts, then works again. */
+  transientFailures = 0
   onCraft: (item: string, recipe: Recipe, times: number) => void = () => undefined
 
   constructor(private readonly table: Record<string, readonly Recipe[]>) {}
@@ -194,6 +196,10 @@ export class FakeRecipeBook implements RecipeBook, Crafter {
     table: Position | undefined,
   ): Promise<Result<void, CraftFailure>> {
     if (this.failure !== undefined) return Promise.resolve(err(this.failure))
+    if (this.transientFailures > 0) {
+      this.transientFailures -= 1
+      return Promise.resolve(err({ reason: 'failed', message: 'missing ingredient' }))
+    }
     this.crafted.push({ item, recipeIndex, times, table })
     const found = this.recipesFor(item)[recipeIndex]
     if (found !== undefined) this.onCraft(item, found, times)
