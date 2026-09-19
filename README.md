@@ -52,7 +52,7 @@ npm run build
 | Variable | Default | Description |
 |---|---|---|
 | `MC_HOST` | `localhost` | Host of the Minecraft server |
-| `MC_PORT` | *(required)* | Port of the server. For a LAN world it is random and printed in chat after **Open to LAN** |
+| `MC_PORT` | *(optional)* | Port of the server. When empty, the port is discovered from the LAN world's broadcast (your world announces it every second or so). Set it for a remote server or if multicast is blocked |
 | `MC_VERSION` | `1.21.1` | Minecraft protocol version to use |
 | `MC_USERNAME` | `ClaudeBot` | The bot's in-game name |
 | `MC_AUTH` | `offline` | `offline` or `microsoft` |
@@ -63,11 +63,11 @@ npm run build
 | `LOW_HEALTH_THRESHOLD` | `8` | Health points (of 20) at or below which the bot flees from any threat |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` (logs go to stderr) |
 
-The LAN port changes every time you re-open the world, so the `connect` tool accepts `host` and `port` overrides. You do not need to edit `.env` or restart the MCP server each session.
+The LAN port changes every time you re-open the world. With `MC_PORT` empty the bot finds it by itself; otherwise the `connect` tool accepts `host` and `port` overrides. Either way you do not need to edit `.env` or restart the MCP server each session.
 
 ## Playing
 
-1. Start Minecraft 1.21.1, open your world, press `Esc` → **Open to LAN** → optionally enable cheats → **Start LAN World**. Note the port from the chat message.
+1. Start Minecraft 1.21.1, open your world, press `Esc` → **Open to LAN** → optionally enable cheats → **Start LAN World**. The port is printed in chat, but the bot can also discover it automatically.
 2. Register the server with your MCP client (Claude Code example):
    ```bash
    claude mcp add minecraft -- node /absolute/path/to/minecraft-mcp/dist/index.js
