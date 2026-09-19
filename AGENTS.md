@@ -52,7 +52,7 @@ src/
   skills/               Behaviors: movement, gathering, crafting, hunting, storage, building, discovery
   reflexes/             Always-on survival behaviors (eat, flee, lava, drowning)
   tasks/                TaskManager: one active task, cancellation, progress, timeouts
-  state/                StateStore (file implementation), world profiles, task journal, history log, agent notes, session briefing
+  state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, SessionBriefingBuilder
   knowledge/            WorldKnowledgeStore (domain layer over StateStore): persisted landmarks, discovered structures, containers, storage rules
   mcp/                  MCP server, ToolRegistry, and one file per tool
 test/
@@ -198,6 +198,14 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 - Mineflayer gotcha: halt the pathfinder with `setGoal(null)`, never with its `stop()`. `stop()` only sets a flag that is honored at the next path node, and when the bot is idle the flag lingers and makes the next `goto` fail at once with "Path was stopped" (found in a live test; regression tests cover it).
 - Reflexes can pause/preempt a task and resume it after; they emit events into the event log.
 
+### Persistent state
+
+- Everything worth remembering is saved per world profile under `DATA_DIR/<profile>/` (`notes.json`, `history.json`, `standing-instructions.json`, `journal.json`), and the list of worlds in `DATA_DIR/worlds.json`. Files are `{ "version": n, "data": ... }`, written atomically (temp file, then rename), batched (500 ms), with the previous copy kept as `.bak`. A corrupt file is set aside as `.corrupt` and the backup (or empty defaults) is used, with a warning in the session briefing.
+- **World identification.** After joining, the `WorldIdentifier` builds a fingerprint from the hashed seed (captured from the login packet in `src/bot/mineflayer-bot-factory.ts`, since Mineflayer does not expose it), the spawn point, and the world name (server status message of the day). `matchScore` decides: a matching seed is worth 2 (enough alone), spawn point and name 1 each; different seeds are certainly different worlds. No match creates a profile named after the world; several equal matches or no usable signal at all leave the world unresolved (the briefing tells the agent to ask the player and call `set_world_profile`). `connect(profile)` and `WORLD_PROFILE` are only fallbacks for that case.
+- Each per-world component implements `ProfileScoped` (`attach(store)` / `detach()`); `WorldStateManager` activates them on connect and closes them (flushing) on disconnect. `close()` is safe to call concurrently and every caller waits for the same flush: a shutdown must never outrun a disconnect's write.
+- **Task journal.** `TaskManager` emits start/progress/finish events; `TaskJournal` records them as jobs. Tasks are `interrupted` when they were still running after a crash, or cancelled with reason `disconnected` or `shutdown`; a deliberate stop or a replacement is just `cancelled`. Tasks that can be restarted carry a `resume` descriptor (tool plus arguments); `resume_interrupted_task` calls that tool. Nothing resumes on its own.
+- The history log records the owner's chat, events, and every non-read-only tool call (`HISTORY_IGNORED_TOOLS` lists what is skipped), bounded to 300 entries.
+
 ### Chat and events
 
 - `ChatRouter` receives every chat message: it drops messages from anyone but `MC_OWNER` (when set, case-insensitive), runs fixed commands in code (`stop`, as `ChatCommand` implementations) and turns them into an event, and gives everything else to the `AgentInbox`.
@@ -211,7 +219,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Group | Tools |
 |---|---|
 | Session | `connect`, `disconnect`, `get_status`, `get_session_briefing` |
-| State | `list_worlds`, `set_world_profile`, `resume_interrupted_task`, `discard_interrupted_task`, `get_recent_history`, `remember`, `recall`, `forget` |
+| State | `list_worlds`, `set_world_profile`, `resume_interrupted_task`, `discard_interrupted_task`, `get_recent_history`, `remember`, `recall`, `forget`, `set_standing_instruction`, `remove_standing_instruction` |
 | Chat | `wait_for_chat`, `say`, `whisper` |
 | Perception | `look_around`, `find_blocks`, `get_inventory`, `get_nearby_entities`, `get_player_position` |
 | Movement | `goto`, `follow_player`, `stop` |
@@ -268,8 +276,8 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 
 ## Runtime protocol (for the agent playing through this server)
 
-1. Call `connect` (with the port the user gives you), then read the **session briefing** it returns: world profile, interrupted tasks, standing instructions, landmarks, recent history, and your notes. Tell the user in chat what you found. If the world could not be identified, ask the user for a profile name (`set_world_profile`). Never auto-resume an interrupted task: ask first. Then confirm with `say`.
-2. Save durable context as you learn it: call `remember` for plans, builds, and user preferences that should survive a relaunch. Do not rely on your own session memory.
+1. Call `connect` (with the port the user gives you, or none when the world is opened to LAN); its reply includes the **session briefing**. Read it and tell the user in chat what you found: which saved world this is, how long ago it was last joined, interrupted tasks, standing instructions, and your notes. Follow `nextSteps`. If the world was not identified, ask the user what to call it and call `set_world_profile` (nothing is saved until then). Never resume an interrupted task on your own: ask first, then `resume_interrupted_task` or `discard_interrupted_task`. Then confirm with `say`.
+2. Save durable context as you learn it: call `remember` for plans, builds, and user preferences that should survive a relaunch, and `set_standing_instruction` when the user gives a rule for how to behave from now on (then follow it without asking again). Do not rely on your own session memory.
 3. Enter the listening loop: call `wait_for_chat` (timeout ~30 s). On timeout, call it again. Do not stop looping unless the user says to stop playing.
 4. For each instruction: acknowledge briefly in chat, run the needed tools, report the result in chat. For long tasks, check `get_task_status` and send short progress updates.
 5. Prefer coarse tools (`collect_block`, `build`) over many small calls. Do not micro-manage movement.
