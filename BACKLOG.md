@@ -43,6 +43,13 @@ Give instructions to the bot by speaking instead of typing in game chat. The bot
 - **Bare-floor mining**: asking for `stone` on a stone floor digs the floor blocks next to the bot (never the one underfoot). A "surface only" or "walls only" option could keep the ground intact.
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 
+### Storage
+- **`OrganizeStorage`**: sort everything already in the chests according to the rules.
+- **Craft and place a new chest** when there is no storage space and the player allows it (`no_storage_space` currently falls back to asking).
+- **Ender chests and shulker boxes carried in the inventory** are not handled (placed shulker boxes work like chests).
+- **Free-space knowledge is remembered**, not measured: a container the player emptied since the last scan is still treated as full by the fallback selection until it is scanned again.
+- **Building integration**: `build` fetching missing materials from the container index (comes with the building feature).
+
 ## Maintenance
 - **`npm audit`** reports moderate issues in Mineflayer's authentication dependencies. They are upstream and unused in offline mode; revisit when Mineflayer updates them.
 - **Node and testcontainers**: `testcontainers` is pinned to 11 because 12 needs Node 22.28 or newer. Revisit when the Node baseline moves.

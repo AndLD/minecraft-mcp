@@ -147,7 +147,8 @@ export class TaskJournal implements ProfileScoped {
 
   private update(job: Job, event: TaskEvent): Job {
     const { snapshot } = event
-    if (event.type === 'progress') return { ...job, progress: snapshot.progress ?? null }
+    if (event.type === 'progress' || event.type === 'waiting')
+      return { ...job, progress: snapshot.progress ?? null }
     return {
       ...job,
       status: statusOf(snapshot),
@@ -186,6 +187,7 @@ function statusOf(snapshot: TaskSnapshot): Job['status'] {
     case 'failed':
       return 'failed'
     case 'running':
+    case 'waiting_for_input':
       return 'running'
     case 'cancelled':
       return snapshot.cancelReason === 'disconnected' || snapshot.cancelReason === 'shutdown'

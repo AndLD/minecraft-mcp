@@ -2,7 +2,7 @@ import type { Clock } from '../core/clock.port.js'
 import type { Logger } from '../core/logger.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { Scheduler } from '../core/scheduler.port.js'
-import type { SkillFailure } from '../core/skill.types.js'
+import type { DecisionPrompt, SkillContext, SkillFailure } from '../core/skill.types.js'
 import type { StopHandler } from '../core/stop-handler.port.js'
 import type {
   CancelReason,
@@ -28,6 +28,8 @@ interface TaskEntry {
   readonly settleListeners: (() => void)[]
   finished: boolean
   cancelReason: CancelReason | undefined
+  /** Resolves the question the task is waiting on. */
+  answerPending: ((answer: string | undefined) => void) | undefined
 }
 
 const DEFAULT_HISTORY_LIMIT = 20
@@ -104,6 +106,7 @@ export class TaskManager implements StopHandler {
         failure: undefined,
         cancelReason: undefined,
         resume: spec.resume,
+        pending: undefined,
         startedAt: this.clock.now(),
         finishedAt: undefined,
       },
@@ -111,6 +114,7 @@ export class TaskManager implements StopHandler {
       settleListeners,
       finished: false,
       cancelReason: undefined,
+      answerPending: undefined,
     }
     this.tasks.set(id, entry)
     this.activeId = id
@@ -119,12 +123,31 @@ export class TaskManager implements StopHandler {
     const update = (patch: Partial<TaskSnapshot>): void => {
       entry.snapshot = { ...entry.snapshot, ...patch }
     }
-    const context = {
+    const context: SkillContext = {
       signal: controller.signal,
       progress: (message: string): void => {
         if (entry.finished) return
         update({ progress: message })
         this.emit({ type: 'progress', snapshot: entry.snapshot })
+      },
+      ask: (prompt: DecisionPrompt): Promise<string | undefined> => {
+        if (entry.finished || controller.signal.aborted) return Promise.resolve(undefined)
+        return new Promise((resolve) => {
+          const onAbort = (): void => {
+            settle(undefined)
+          }
+          const settle = (answer: string | undefined): void => {
+            controller.signal.removeEventListener('abort', onAbort)
+            entry.answerPending = undefined
+            if (!entry.finished) update({ status: 'running', pending: undefined })
+            resolve(answer)
+          }
+          entry.answerPending = settle
+          controller.signal.addEventListener('abort', onAbort, { once: true })
+          update({ status: 'waiting_for_input', pending: prompt })
+          this.emit({ type: 'waiting', snapshot: entry.snapshot })
+          for (const listener of [...entry.settleListeners]) listener() // wake whoever waits for the task
+        })
       },
     }
 
@@ -155,7 +178,12 @@ export class TaskManager implements StopHandler {
   waitFor(id: string, timeoutMs: number, signal?: AbortSignal): Promise<TaskSnapshot | undefined> {
     const entry = this.tasks.get(id)
     if (entry === undefined) return Promise.resolve(undefined)
-    if (entry.finished || timeoutMs <= 0 || signal?.aborted === true)
+    if (
+      entry.finished ||
+      entry.snapshot.status === 'waiting_for_input' ||
+      timeoutMs <= 0 ||
+      signal?.aborted === true
+    )
       return Promise.resolve(entry.snapshot)
 
     return new Promise((resolve) => {
@@ -171,6 +199,26 @@ export class TaskManager implements StopHandler {
       signal?.addEventListener('abort', done, { once: true })
       entry.settleListeners.push(done)
     })
+  }
+
+  /**
+   * Gives a waiting task the player's answer, and lets it carry on. Fails when the task is not waiting or the answer is
+   * not one of the offered options.
+   */
+  answer(decision: string, id?: string): Result<TaskSnapshot> {
+    const targetId = id ?? this.activeId
+    const entry = targetId === undefined ? undefined : this.tasks.get(targetId)
+    if (entry === undefined || entry.finished || entry.snapshot.pending === undefined)
+      return err(
+        targetId === undefined
+          ? 'No task is waiting for an answer.'
+          : `Task ${targetId} is not waiting for an answer.`,
+      )
+    const { options } = entry.snapshot.pending
+    if (!options.includes(decision)) return err(`Choose one of: ${options.join(', ')}.`)
+    entry.answerPending?.(decision)
+    this.emit({ type: 'progress', snapshot: entry.snapshot })
+    return ok(entry.snapshot)
   }
 
   /** Cancels the task (default: the running one) and waits until it has stopped. */
@@ -237,7 +285,12 @@ export class TaskManager implements StopHandler {
     patch: Partial<Pick<TaskSnapshot, 'status' | 'result' | 'failure' | 'cancelReason'>>,
   ): void {
     entry.finished = true
-    entry.snapshot = { ...entry.snapshot, ...patch, finishedAt: this.clock.now() }
+    entry.snapshot = {
+      ...entry.snapshot,
+      ...patch,
+      pending: undefined,
+      finishedAt: this.clock.now(),
+    }
     if (this.activeId === entry.snapshot.id) this.activeId = undefined
     for (const listener of [...entry.settleListeners]) listener()
     this.emit({ type: 'finished', snapshot: entry.snapshot })

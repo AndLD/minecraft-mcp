@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events'
 import minecraftData from 'minecraft-data'
 import prismarineRecipe from 'prismarine-recipe'
+import { FakeContainerWindow } from './container-window-fake.js'
+import type { ContainerWindowLike } from '../../src/bot/window-transfer.js'
 import type {
   BlockLike,
   BotEvents,
@@ -235,6 +237,19 @@ export class FakeBot implements BotLike {
   worldSeed: string | undefined = 'a1b2c3d4e5f60718'
   entities: Record<string, EntityLike> = {}
   players: Record<string, PlayerLike> = {}
+  /** What a ray hits; tests set it (or leave null for "nothing"). */
+  rayHit: { name: string; position: Position } | null = null
+  readonly rays: { from: Position; direction: Position; range: number }[] = []
+  world = {
+    raycast: (
+      from: Position,
+      direction: Position,
+      range: number,
+    ): { name: string; position: Position } | null => {
+      this.rays.push({ from, direction, range })
+      return this.rayHit
+    },
+  }
   registry = {
     blocksByName: {
       air: { id: 0 },
@@ -363,7 +378,10 @@ export class FakeBot implements BotLike {
       const dx = from.x - center.x
       const dz = from.z - center.z
       const away = Math.hypot(dx, dz)
-      if (away <= stop) return
+      if (away <= stop) {
+        this.pickUpNearby() // already there: anything lying next to the bot is picked up
+        return
+      }
       this.moveTo({
         x: center.x + (dx / away) * stop,
         y: Math.min(from.y, center.y),
@@ -421,6 +439,13 @@ export class FakeBot implements BotLike {
   /** Moves the bot and picks up any dropped items it lands next to. */
   moveTo(position: Position): void {
     this.entity = { position }
+    this.pickUpNearby()
+  }
+
+  /** Items within reach of the bot are picked up, as the game does when they lie next to it. */
+  pickUpNearby(): void {
+    const position = this.entity?.position
+    if (position === undefined) return
     for (const [id, entity] of Object.entries(this.entities)) {
       if (entity.name !== 'item') continue
       if (
@@ -524,6 +549,57 @@ export class FakeBot implements BotLike {
     this.setBlock(target, name)
     this.placed.push({ name, position: target })
     return Promise.resolve()
+  }
+
+  /** Container contents by block cell; each is the container's slot list. */
+  readonly containers = new Map<string, (ItemLike | null)[]>()
+  /** Slots per container (27 for a chest, 54 for a double chest). */
+  containerSlots = 27
+  readonly openedContainers: string[] = []
+  windows: FakeContainerWindow[] = []
+
+  /** Puts items into the container at a position, opening no window. */
+  stock(position: Position, name: string, count: number): void {
+    const slots = this.slotsAt(position)
+    let left = count
+    for (let i = 0; i < slots.length && left > 0; i += 1) {
+      if (slots[i] !== null) continue
+      const put = Math.min(left, name === 'ender_pearl' ? 16 : 64)
+      slots[i] = { name, count: put }
+      left -= put
+    }
+  }
+
+  /** How many of an item are in the container at a position. */
+  inContainer(position: Position, name: string): number {
+    return this.slotsAt(position)
+      .filter((item) => item?.name === name)
+      .reduce((sum, item) => sum + (item?.count ?? 0), 0)
+  }
+
+  private slotsAt(position: Position): (ItemLike | null)[] {
+    const id = key(position)
+    let slots = this.containers.get(id)
+    if (slots === undefined) {
+      slots = Array.from({ length: this.containerSlots }, () => null)
+      this.containers.set(id, slots)
+    }
+    return slots
+  }
+
+  openContainerWindow(block: BlockLike): Promise<ContainerWindowLike> {
+    const at = (block as FakeBlock).position
+    this.openedContainers.push(key(at))
+    const window = new FakeContainerWindow(
+      this.slotsAt(at),
+      this.inventoryItems,
+      (container, player) => {
+        this.containers.set(key(at), container)
+        this.inventoryItems = player
+      },
+    )
+    this.windows.push(window)
+    return Promise.resolve(window)
   }
 
   openFurnace(block: BlockLike): Promise<FurnaceLike> {

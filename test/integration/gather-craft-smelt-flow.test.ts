@@ -234,6 +234,7 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
       blocks: ['oak_log'],
       count: 4,
       wait_seconds: 30,
+      on_inventory_full: 'stop',
     })
 
     expect(result.isError).toBe(true)

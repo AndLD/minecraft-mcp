@@ -53,6 +53,7 @@ export class TaskLauncher {
       case 'cancelled':
         return toolFail('The task was cancelled before it finished.')
       case 'running':
+      case 'waiting_for_input':
       case 'succeeded':
         return toolOk(view)
     }
