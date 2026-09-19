@@ -32,6 +32,7 @@ npm run typecheck   # tsc --noEmit
 6. **Strict TypeScript.** `strict`, `noUncheckedIndexedAccess`, no `any` (use `unknown` and narrow).
 7. **All code must be testable.** Inject dependencies through constructors, inject `Clock` and `Random` (no direct `Date.now()`, `Math.random()`, or bare timers in logic), keep wiring in `createApp()`, and keep Mineflayer behind thin adapters. If something is hard to test, fix the design, not the test.
 8. **Follow Git Flow** (see below). Never commit directly to `main` or `development`.
+9. **Never run live tests against the operator's real LAN world without asking first.** The operator supervises the work but is often away from the computer. Before any live test (connecting the bot to their running game, scripted checks, interactive sessions), ask in chat whether they are ready and wait for a clear yes; do this every time, even if an earlier live test was approved. Unit, integration, and Docker e2e tests run against fakes or a throwaway server and need no confirmation.
 
 ## Architecture
 
