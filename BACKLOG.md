@@ -39,7 +39,7 @@ One agent running N bots in the same world. Left for later on purpose; the analy
 
 ### Farming extras
 
-Left out of the farming feature in the plan: shearing sheep, milking cows, collecting eggs, honey; sugar cane, bamboo, melons, pumpkins, cocoa, nether wart; tree farms; composters; redstone auto-farms (observers, pistons, hoppers).
+Left out of the farming feature in the plan: shearing sheep, milking cows, collecting eggs, honey; sugar cane, bamboo, melons, pumpkins, cocoa, nether wart; composters; redstone auto-farms (observers, pistons, hoppers).
 
 ## Deferred from finished work
 

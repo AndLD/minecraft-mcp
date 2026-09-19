@@ -94,7 +94,7 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 | Storage | Remember chests you point at, keep item kinds in designated chests (or any chest), find items across chests, offload and return when the inventory is full |
 | Building | Place blocks from blueprints (floors, walls, shelters, simple houses), material checks *(planned)* |
 | Excavation and mining | Dig pits, quarries with stair walls and a water landing, tunnels, and branch mines, with torches, tool swapping, and a rule that stops a tunnel next to lava or water *(planned)* |
-| Farming | Lay out a watered, fenced, lit crop field or an animal pen, plant and harvest ripe crops with replanting, and breed animals up to a herd size, keeping pets and the last breeding pair safe *(planned)* |
+| Farming | Lay out a watered, fenced, lit crop field or an animal pen, plant and harvest ripe crops with replanting, breed animals up to a herd size (keeping pets and the last breeding pair safe), and plant groves of trees around a spot with room to grow *(planned)* |
 | Railways | Lay rail lines on the surface or underground, in a resource-saving or a fast variant, and place a minecart *(planned)* |
 | Teleport | Teleport to you on request when the server allows commands *(planned)* |
 | World discovery | Wander to find villages, temples, and other structures; explore caves and canyons with torches for ores, spawners, and structures; remember where they are *(planned)* |

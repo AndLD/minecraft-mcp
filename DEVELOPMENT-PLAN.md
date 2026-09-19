@@ -73,7 +73,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 14 Excavation and mining | not started (added) |
 | 15 Railways | not started (added) |
 | 16 World discovery, including caves and canyons | not started (cave flow added) |
-| 17 Farming: crops and animals | not started (added; needs the construction engine for laying out farms) |
+| 17 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
 | 18 Hardening and polish | not started (was 14) |
 
 ## Phases
@@ -391,13 +391,13 @@ The bot can walk to you, but sometimes you want it next to you at once (it is fa
   - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
 - **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
 
-### Phase 17: Farming, crops and animals (2 sessions)
+### Phase 17: Farming, crops, animals, and trees (2.5 sessions)
 
-Hunting takes animals from the world and never adds any, and food stops when the wild herds run out. Farming closes that loop: grow crops, breed animals, keep a steady supply.
+Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
 **Design decision: layout is building, tending is not.** A vegetable garden or a pen *is* a buildable structure, so laying one out belongs to the construction engine (a new `PlanProvider`, executed by `PlanExecutor`, with `SiteSafety` and `LightManager`). But planting, harvesting, replanting, and breeding are recurring operations on *whatever farm exists*, including one the player built by hand, so they are ordinary skills with no dependency on the engine. Merging them into "building" would make every harvest a build plan; keeping them apart lets the tending skills work on the player's own farms and on ones the bot built.
 
-- Branches: `feature/crop-farming` (layout provider and crop tending), then `feature/animal-farming` (pens and breeding). Start after the construction engine; the tending skills themselves do not need it and could go earlier if wanted.
+- Branches: `feature/crop-farming` (layout provider and crop tending), then `feature/animal-farming` (pens and breeding), then `feature/tree-farming` (groves and replanting). Start after the construction engine; the tending skills themselves do not need it and could go earlier if wanted.
 - **Farm layout (engine clients):**
   - `CropFieldProvider`: parameters `width`, `length`, crop type. Tilled plots with a water channel so every plot is within 4 blocks of water, a fence with a gate, torches for light, optionally a chest and a composter. Needs a hoe and seeds; the plan preview lists what is missing. Tool: `build_farm` with `kind: field`.
   - `AnimalPenProvider`: fenced pen with a gate, sized for the species and herd (`entity cramming` limits the animals per block), water optional. `build_farm` with `kind: pen`.
@@ -409,13 +409,18 @@ Hunting takes animals from the world and never adds any, and food stops when the
 - **Animal breeding (plain skills):**
   - `BreedAnimalsSkill`: feed pairs of adults of a species the right food (wheat for cows, sheep, and mooshrooms; carrots, potatoes, or beetroot for pigs; seeds for chickens; carrots for rabbits), waits for the babies, respects the 5-minute breeding cooldown and the 20-minute growing time, and never breeds tamed, named, or ridden animals. It stops at the pen's capacity or the requested herd size.
   - `HerdManager`: keeps a herd at a target size by breeding up and by culling the surplus with `hunt_animals`, which keeps its breeding floor of two adults. Reuses `PenDetector` and the animal catalog.
-- Tools: `build_farm`, `plant_crops`, `harvest_crops`, `breed_animals`, `tend_farm`, `list_farms`, `register_farm`.
+- **Tree farming** ("plant a forest of 10 trees around our house"):
+  - `TreeGroveProvider` (an engine client): turns "N trees" plus an area (around a position, a landmark, a protected area, or a registered structure; `around` a house means a ring at a distance) into sapling positions on dirt or grass. It keeps the spacing each species needs to grow (light and free space above, at least 2 blocks between oaks and birches, a 2×2 spot for spruce, jungle, and dark oak that only grow big from four saplings), keeps clear of doors, paths, and farms, and previews the positions before anything is placed. Tool: `plant_trees` (`species`, `count`, and an area).
+  - Saplings come from the inventory; when short, the bot collects them by breaking leaves (`collect_block` already knows `leaves`), or asks. Bone meal speeds growth when the bot has some and the request says so.
+  - `TendGroveSkill`: a pass over a registered grove: replants a sapling where a tree was felled (also after `collect_block` on logs, when the grove is registered), clears trees that grew wrongly, and reports growth. Groves are registered in the `FarmRegistry` like fields and pens, so a grove is not cut down by accident: felling from a registered grove is a deliberate `harvest_trees` call that replants.
+  - Tools: `plant_trees`, `harvest_trees`, and the grove shows in `list_farms`.
+- Tools: `build_farm`, `plant_crops`, `harvest_crops`, `breed_animals`, `tend_farm`, `plant_trees`, `harvest_trees`, `list_farms`, `register_farm`.
 - Safety and rules: farms are protected areas for other tasks; lighting and water are checked before planting; night work follows the threat policy; a tool that would trample farmland fails with a typed reason.
 - **Tests:**
-  - unit: `CropFieldProvider` (plot and water layout, every plot within 4 blocks of water, gate, materials), crop age reading, `HarvestCropsSkill` (mature only, replant, seed reserve), `PlantCropsSkill` (hoeing, free plots, no trampling), `BreedAnimalsSkill` (right food per species, cooldowns, floor, protected animals, capacity), `HerdManager` (breed up, cull down), `FarmRegistry`
-  - integration: `build_farm` through the tool layer on a stateful fake world produces the expected block grid; plant, grow (fake time), harvest, and replant cycle; breed to a target herd size
-  - e2e: `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size
-- **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair.
+  - unit: `CropFieldProvider` (plot and water layout, every plot within 4 blocks of water, gate, materials), crop age reading, `HarvestCropsSkill` (mature only, replant, seed reserve), `PlantCropsSkill` (hoeing, free plots, no trampling), `BreedAnimalsSkill` (right food per species, cooldowns, floor, protected animals, capacity), `HerdManager` (breed up, cull down), `FarmRegistry`, `TreeGroveProvider` (ring around a structure, species spacing, 2×2 spots, avoided cells, sapling count and shortfall), `TendGroveSkill` (replant, wrongly placed trees)
+  - integration: `build_farm` through the tool layer on a stateful fake world produces the expected block grid; plant, grow (fake time), harvest, and replant cycle; breed to a target herd size; plant a small grove around a spot and check the saplings' positions, replant after felling
+  - e2e: `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size; saplings planted around a point with the right spacing and grown with bone meal
+- **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair; "plant a forest of 10 trees around the house" places 10 saplings with room to grow, and felling them later replants.
 
 ### Phase 18: Hardening and polish (1 session)
 
