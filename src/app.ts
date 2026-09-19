@@ -512,6 +512,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     emit: (type, message) => {
       inbox.pushEvent({ type, message })
     },
+    waitMs: config.unclaimedDropWaitSeconds * 1000,
     clock,
     scheduler,
   })

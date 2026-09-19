@@ -81,7 +81,7 @@ describe('SetDropRecoveryPolicyTool', () => {
     expect(s.standing.all().drop_recovery_policy).toBeUndefined()
   })
 
-  it('fails without an active world', async () => {
+  it('fails without an active world', () => {
     const tool = new SetDropRecoveryPolicyTool(new DropRecoveryPolicy(), new StandingInstructions())
 
     expect(tool.execute(tool.inputSchema.parse({ policy: 'skip' }))).toMatchObject({ ok: false })

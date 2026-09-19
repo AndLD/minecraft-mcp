@@ -6,7 +6,7 @@ import type { DropRecoveryPolicy } from '../../state/drop-recovery-policy.js'
 import type { DropRecords } from '../../state/drop-records.js'
 import { describeBrief } from './item-counts.js'
 
-/** How long a player gets to pick up what was thrown for them before the bot takes it back. */
+/** The standing default for how long a player gets to pick up what was thrown for them. */
 export const UNCLAIMED_WAIT_MS = 60_000
 
 export interface UnclaimedDrop {
@@ -30,6 +30,8 @@ export interface UnclaimedDropsDeps {
   readonly policy: DropRecoveryPolicy
   readonly recovery: { start(recordId: string): Promise<void> }
   readonly emit: (type: string, message: string) => void
+  /** How long thrown items may lie there before the bot takes them back. */
+  readonly waitMs: number
   readonly clock: Clock
   readonly scheduler: Scheduler
 }
@@ -66,9 +68,9 @@ export class UnclaimedDropHandler implements UnclaimedSink {
     }
     deps.emit(
       'drop_recovery',
-      `Nobody picked up ${what} (at ${spot}). The bot takes them back in about a minute unless told otherwise (skip_drop_recovery).`,
+      `Nobody picked up ${what} (at ${spot}). The bot takes them back in about ${String(Math.round(deps.waitMs / 1000))} seconds unless told otherwise (skip_drop_recovery).`,
     )
-    const wait = Math.max(0, drop.at + UNCLAIMED_WAIT_MS - deps.clock.now())
+    const wait = Math.max(0, drop.at + deps.waitMs - deps.clock.now())
     deps.scheduler.after(wait, () => {
       void deps.recovery.start(added.value.id)
     })

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createApp, type App } from '../../../src/app.js'
+import type { Config } from '../../../src/config/config.types.js'
 import { buildConfig } from '../../fakes/test-config.js'
 import type { ServerInfo } from './server-config.js'
 
@@ -37,6 +38,8 @@ export interface StartAppOptions {
   readonly owner: string
   /** Reuse a state directory (a restart). By default each app gets its own temporary one, removed on shutdown. */
   readonly dataDir?: string
+  /** Settings that differ from the defaults, for example a shorter wait before unclaimed items are taken back. */
+  readonly config?: Partial<Config>
 }
 
 /** The real app (real Mineflayer, real pathfinder) pointed at the e2e server, with a real MCP client in front. */
@@ -51,6 +54,7 @@ export async function startApp(info: ServerInfo, options: StartAppOptions): Prom
       owner: options.owner,
       dataDir,
       logLevel: 'warn',
+      ...options.config,
     }),
   )
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()

@@ -36,6 +36,7 @@ async function setup(attached = true) {
     emit: (type, message) => {
       events.push({ type, message })
     },
+    waitMs: UNCLAIMED_WAIT_MS,
     clock,
     scheduler,
   })

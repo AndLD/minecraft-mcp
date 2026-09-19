@@ -27,6 +27,7 @@ describe('loadConfig', () => {
       dataDir: './data',
       worldProfile: undefined,
       lowHealthThreshold: 8,
+      unclaimedDropWaitSeconds: 60,
       reflexesEnabled: true,
       logLevel: 'info',
     })
@@ -48,6 +49,7 @@ describe('loadConfig', () => {
       DATA_DIR: '/var/mc',
       WORLD_PROFILE: 'survival1',
       LOW_HEALTH_THRESHOLD: '6',
+      UNCLAIMED_DROP_WAIT_SECONDS: '20',
       REFLEXES_ENABLED: 'false',
       LOG_LEVEL: 'debug',
     })
@@ -62,6 +64,7 @@ describe('loadConfig', () => {
       dataDir: '/var/mc',
       worldProfile: 'survival1',
       lowHealthThreshold: 6,
+      unclaimedDropWaitSeconds: 20,
       reflexesEnabled: false,
       logLevel: 'debug',
     })

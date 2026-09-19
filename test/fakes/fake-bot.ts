@@ -309,7 +309,14 @@ export class FakeBot implements BotLike {
         ? owner.emptySlots
         : owner.slotLimit -
           owner.inventoryItems.reduce((sum, item) => sum + Math.ceil(item.count / STACK_SIZE), 0),
-    slots: owner.slots,
+    /** Armor and off hand (set through `slots`), plus the carried items from slot 9 on, like the real window. */
+    get slots(): (ItemLike | null)[] {
+      const merged = [...owner.slots]
+      owner.inventoryItems.forEach((item, index) => {
+        merged[9 + index] ??= item
+      })
+      return merged
+    },
   }))(this)
   foodSaturation = 5
   oxygenLevel = 20
