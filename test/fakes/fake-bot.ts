@@ -75,6 +75,27 @@ export interface FakeBlock extends BlockLike {
   readonly position: Position
 }
 
+/** The metadata keys the game data lists for an ageable animal (`baby` is index 16). */
+export const ANIMAL_KEYS = [
+  'shared_flags',
+  'air_supply',
+  'custom_name',
+  'custom_name_visible',
+  'silent',
+  'no_gravity',
+  'pose',
+  'ticks_frozen',
+  'living_entity_flags',
+  'health',
+  'effect_particles',
+  'effect_ambience',
+  'arrow_count',
+  'stinger_count',
+  'sleeping_pos',
+  'mob_flags',
+  'baby',
+]
+
 const SMELT_MS_PER_ITEM = 10_000
 const FUEL_ITEMS_PER_UNIT: Record<string, number> = {
   coal: 8,
@@ -85,6 +106,8 @@ const FUEL_ITEMS_PER_UNIT: Record<string, number> = {
 }
 const SMELTS_TO: Record<string, string> = {
   raw_iron: 'iron_ingot',
+  beef: 'cooked_beef',
+  porkchop: 'cooked_porkchop',
   iron_ore: 'iron_ingot',
   oak_log: 'charcoal',
   sand: 'glass',
@@ -245,6 +268,12 @@ export class FakeBot implements BotLike {
     },
     items: {},
     recipes: {},
+    entitiesByName: {
+      cow: { metadataKeys: ANIMAL_KEYS },
+      sheep: { metadataKeys: [...ANIMAL_KEYS, 'wool'] },
+      pig: { metadataKeys: [...ANIMAL_KEYS, 'saddle'] },
+      wolf: { metadataKeys: [...ANIMAL_KEYS, 'flags', 'owneruuid'] },
+    },
   } as BotLike['registry']
   inventoryItems: ItemLike[] = []
   emptySlots = 36

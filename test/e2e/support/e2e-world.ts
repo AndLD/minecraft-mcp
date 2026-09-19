@@ -157,6 +157,13 @@ export class E2EWorld {
     return (await this.command(`execute if entity ${selector}`, true)).includes('Test passed')
   }
 
+  /** How many entities match the selector, for example `@e[type=cow]`. */
+  async countEntities(selector: string): Promise<number> {
+    const response = await this.command(`execute if entity ${selector}`, true)
+    if (!response.includes('Test passed')) return 0
+    return Number(/count: (\d+)/.exec(response)?.[1] ?? 1)
+  }
+
   async damage(player: string, amount: number): Promise<void> {
     await this.command(`damage ${player} ${String(amount)} minecraft:generic`)
   }

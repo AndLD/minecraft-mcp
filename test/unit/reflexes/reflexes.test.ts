@@ -168,6 +168,27 @@ describe('AutoEat', () => {
     expect(reflex.wants(reflexState({ food: 6, now: 5 * 60_000 }))).toBe(true)
   })
 
+  it('tells its owner of the reflex when it is hungry with nothing to eat, but not when it can eat', async () => {
+    const calls: string[] = []
+    const inventory = new FakeInventory()
+    inventory.value = { stacks: [], emptySlots: 30, heldItem: undefined }
+    const reflex = new AutoEat({
+      inventory,
+      catalog: new FakeFoodCatalog(),
+      eater: new FakeEater(),
+      onNoFood: () => {
+        calls.push('no food')
+      },
+    })
+    const state = reflexState({ food: 6, now: 0 })
+
+    await reflex.run(new FakeReflexContext(), state)
+    inventory.value = { stacks: [{ name: 'bread', count: 1 }], emptySlots: 30, heldItem: undefined }
+    await reflex.run(new FakeReflexContext(), state)
+
+    expect(calls).toEqual(['no food'])
+  })
+
   it('does not want to act while not connected to a world (no inventory)', () => {
     const reflex = new AutoEat({
       inventory: new FakeInventory(),

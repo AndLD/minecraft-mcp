@@ -49,10 +49,10 @@ src/
   chat/                 AgentInbox (chat + events buffer with wait), ChatRouter (owner filter, fixed commands, inbox), StopCommand
   session/              SessionService: decides where to connect (request, config, LAN discovery) and connects
   perception/           Services built on scanner ports: BlockFinder (name check + suggestions), SurroundingsDescriber, notable-block table
-  skills/               Behaviors: movement/, gathering/ (CollectBlocks, PickupItems, DropCollector), crafting/ (RecipePlanner, CraftItem, Workstations), smelting/ (SmeltItems, fuel and smelting tables); later hunting, storage, building, discovery
+  skills/               Behaviors: movement/, gathering/ (CollectBlocks, PickupItems, DropCollector), crafting/ (RecipePlanner, CraftItem, Workstations), smelting/ (SmeltItems, fuel and smelting tables); hunting/ (HuntAnimals, AttackEntity, AnimalCatalog, PenDetector, LowFoodResponder); later storage, building, discovery
   reflexes/             ReflexEngine (priority arbitration, task pausing/resuming) and the reflexes: AvoidLava, Drowning, ThreatResponse (threat policy table), AutoEat
   tasks/                TaskManager: one active task, cancellation, progress, timeouts
-  state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, ProtectedAreas, SessionBriefingBuilder
+  state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, ProtectedAreas, FoodPolicy, SessionBriefingBuilder
   knowledge/            WorldKnowledgeStore (domain layer over StateStore): persisted landmarks, discovered structures, containers, storage rules
   mcp/                  MCP server, ToolRegistry, and one file per tool
 test/
@@ -74,6 +74,7 @@ Skills receive only the ports they need, never a whole bot.
 | `Navigator` | go to a position or player, follow a player; every call takes an `AbortSignal` (aborting halts the bot) |
 | `BlockScanner` | block names, find blocks by name (nearest first), read a block, summarize blocks around the bot |
 | `EntityScanner` | nearby entities (nearest first), player lookup (online, visible, position) |
+| `AnimalScanner` | animals nearby with baby, name tag, owner, saddle, rider, and dead flags (read from the entity metadata); lookup by id |
 | `InventoryReader` | snapshot of the bot inventory (stacks, free slots, held item) |
 | `Digger` | assess a block (diggable? which tools harvest it? do we carry one?) and dig it with the best tool; aborting stops the dig |
 | `DroppedItemScanner` | items lying on the ground near the bot (name, count, position) |
@@ -216,6 +217,14 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 - **Mineflayer's `bot.craft` is unreliable on 1.21** (found by the e2e tests, not fixable by retries): it predicts clicks on the client, and since 1.17 the server silently ignores a click whose window state is stale, so crafts fail half way (ingredients left in the grid, a stack left on the cursor, "missing ingredient"). `WindowCrafter` (`src/bot/window-crafter.ts`) crafts by clicking instead: after every click it waits a few ticks, after every grid change it syncs the window with the server, it checks that the server offered the expected result, and takes it with a shift-click. It is installed as `bot.craft` by `installWindowCrafter` **after spawn** (Mineflayer injects its own craft plugin as the bot joins and would overwrite it earlier).
 - Protected areas (`protect_area`, `unprotect_area`, `list_protected_areas`) are boxes saved per world by `ProtectedAreas`; `collect_block` consults them through `AreaGuard`.
 
+### Hunting and food
+
+- `HuntAnimalsSkill` (`hunt_animals`): goal is `item` + `count` (items gained, matched by name; `wool` means any colour; a cooked name such as `cooked_beef` hunts the raw meat and cooks it) or `species` + `count` (animals killed). It picks the nearest huntable animal, kills it through `AnimalKiller` (shared `Combatant`, 1-second slices, give up on an animal after 20 s of chasing), picks up the drops with `DropCollector`, and repeats. Stops are typed: `no_animals`, `protected`, `breeding_floor`, `inventory_full`, `time_limit`, `unreachable`, `aborted`; the message and `detail` say what was done, and the result reports the animal counts before and after. A resumed hunt only does what is left.
+- **What is never hunted** (`animal-catalog.ts`, pure and table-driven): anything not in `HUNTABLE_SPECIES` (cow, mooshroom, pig, sheep, chicken, rabbit), animals with a name tag, tamed (owner set), saddled or ridden ones, babies, animals in pens (`PenDetector`: fences, fence gates, walls, or iron bars within 3 blocks on at least 3 sides), and the last two adults of a species in view (`BREEDING_FLOOR`; all adults in view count, protected ones included). Each can be overridden by a `hunt_animals` parameter; `attack_entity` needs `force` for a protected one.
+- Animal facts come from entity metadata: `bot.registry.entitiesByName[name].metadataKeys` names each index (`baby`, `custom_name`, `owneruuid`, `saddle`). Leashed animals are not detected (Mineflayer does not expose the lead).
+- **Low food.** `FoodPolicy` (`ask` default, `hunt_and_cook`, `stop`; tool `set_food_policy`, mirrored as the standing instruction `food_policy` so the briefing shows it) is applied by `LowFoodResponder` when `AutoEat` finds the bot hungry with nothing to eat (at most every 5 minutes): `ask` pushes a `needs_decision` event, `hunt_and_cook` starts `hunt_animals` for 3 animals with cooking (through the tool registry, 2 seconds later so the eating reflex has finished; no agent round trip), `stop` cancels the running task.
+- The e2e scenarios need a difficulty above peaceful for the hunger test (on peaceful the food bar refills by itself).
+
 ### Tasks
 
 - The `TaskManager` (also the default `StopHandler`) runs **one** active task at a time. Starting a new one requires cancelling or queueing the current one explicitly.
@@ -314,7 +323,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 5. Prefer coarse tools (`collect_block`, `build`) over many small calls. Do not micro-manage movement.
 6. If a request is ambiguous or risky (destroying player builds, going far, lava), ask in chat first.
 7. Never grief: do not break blocks inside player-built structures unless asked. Respect landmarks marked as protected.
-8. Hunting: use `list_huntable_animals` before large hunts. Never attack tamed or named animals, and keep the breeding-pair floor unless the user overrides it. When food is low and no instruction covers it, ask the user; if they said "hunt when you run out of food", set `set_food_policy` as a standing instruction and do not ask again.
+8. Hunting: use `list_huntable_animals` before large hunts, and hunt with `hunt_animals` ("get me 10 steaks" is `item: cooked_beef, count: 10`). Never attack tamed or named animals, and keep the breeding-pair floor unless the user overrides it (when it stops with `breeding_floor`, tell the user the herd is at its minimum and offer to override). A `needs_decision` event about food means the bot is hungry with nothing to eat: ask the user; if they say to hunt whenever food runs out, call `set_food_policy` with `hunt_and_cook` and do not ask again.
 9. Storage: when the user points at a chest or describes what belongs where, register it (`register_container`, `set_storage_rule`) and confirm in chat. When a task pauses with a `needs_decision` event (for example inventory full), ask the user in chat and pass the answer to `resume_task`. If the user's instruction already allows it ("bring resources to the home chest when there is no space"), set `on_inventory_full` on the call or `set_storage_policy` as a standing instruction and do not ask again. Never empty containers marked protected.
 10. Handover: when the user asks for items, call `give_items` (it fetches from inventory, then chests). If the phrase is ambiguous (for example "wood"), ask which item; if the tool reports a `shortfall`, tell the user what is missing and offer to gather, craft, or hunt it. Do not give away reserved items (current tools, armor, food) unless explicitly asked, and prefer chest mode for large amounts.
 11. Drop recovery: when a `bot_died` event arrives, tell the user where it happened. Recovery runs automatically by default; if the user says to leave it, call `skip_drop_recovery` and give them the coordinates. If recovery pauses with a hazard `needs_decision`, explain the risk and ask; never send the bot into lava or void on your own.
