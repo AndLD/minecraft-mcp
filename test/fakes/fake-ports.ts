@@ -1,3 +1,4 @@
+import type { ServerStatus, ServerStatusProbe } from '../../src/core/server-status.port.js'
 import type {
   BlockInfo,
   BlockQuery,
@@ -216,3 +217,13 @@ export class FakeNavigator implements Navigator {
 }
 
 type NavResult = Result<Position, NavigationFailure>
+
+export class FakeStatusProbe implements ServerStatusProbe {
+  status: ServerStatus | undefined
+  readonly probed: { host: string; port: number }[] = []
+
+  probe(host: string, port: number): Promise<ServerStatus | undefined> {
+    this.probed.push({ host, port })
+    return Promise.resolve(this.status)
+  }
+}

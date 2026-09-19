@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createApp, type App } from '../../../src/app.js'
@@ -6,6 +9,7 @@ import { FakeBot } from '../../fakes/fake-bot.js'
 import { FakeClock } from '../../fakes/fake-clock.js'
 import { FakeLogger } from '../../fakes/fake-logger.js'
 import { FakeScheduler } from '../../fakes/fake-scheduler.js'
+import { FakeStatusProbe } from '../../fakes/fake-ports.js'
 import { FakeSocket } from '../../fakes/fake-socket.js'
 import { buildConfig } from '../../fakes/test-config.js'
 
@@ -21,6 +25,9 @@ export interface Harness {
   readonly client: Client
   readonly bot: FakeBot
   readonly socket: FakeSocket
+  readonly statusProbe: FakeStatusProbe
+  /** The temp directory the app saves its state in. */
+  readonly dataDir: string
   readonly clock: FakeClock
   readonly scheduler: FakeScheduler
   readonly logger: FakeLogger
@@ -39,6 +46,10 @@ export interface Harness {
 export interface HarnessOptions {
   /** When false the fake bot does not spawn by itself, so a test can fail the join. */
   readonly autoSpawn?: boolean
+  /** Reuse a state directory, to simulate restarting the server. */
+  readonly dataDir?: string
+  /** The bot the factory hands out (default: a new FakeBot). */
+  readonly bot?: FakeBot
 }
 
 export async function createHarness(
@@ -48,11 +59,14 @@ export async function createHarness(
   const clock = new FakeClock(Date.UTC(2026, 8, 19, 12, 0, 0))
   const scheduler = new FakeScheduler(clock)
   const logger = new FakeLogger()
-  const bot = new FakeBot()
+  const bot = options.bot ?? new FakeBot()
   const socket = new FakeSocket()
+  const statusProbe = new FakeStatusProbe()
+  const dataDir = options.dataDir ?? mkdtempSync(path.join(tmpdir(), 'minecraft-mcp-it-'))
   const connectTargets: { host: string; port: number }[] = []
 
-  const app = createApp(buildConfig({ port: 34231, owner: 'Andrey_Knight', ...config }), {
+  const app = createApp(buildConfig({ port: 34231, owner: 'Andrey_Knight', dataDir, ...config }), {
+    statusProbe,
     clock,
     scheduler,
     logger,
@@ -86,6 +100,8 @@ export async function createHarness(
     client,
     bot,
     socket,
+    statusProbe,
+    dataDir,
     clock,
     scheduler,
     logger,

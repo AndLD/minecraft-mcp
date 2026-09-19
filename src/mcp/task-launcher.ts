@@ -24,7 +24,7 @@ export class TaskLauncher {
   ) {}
 
   async launch(spec: TaskSpec, options: LaunchOptions): Promise<ToolResult> {
-    if (options.replace) await this.tasks.cancel()
+    if (options.replace) await this.tasks.cancel(undefined, 'replaced')
     const started = this.tasks.start(spec)
     if (!started.ok) return toolFail(started.error)
 

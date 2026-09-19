@@ -3,10 +3,14 @@ import type { Connection, ConnectTarget } from '../core/connection.port.js'
 import type { LanDiscovery } from '../core/lan-discovery.port.js'
 import type { Logger } from '../core/logger.js'
 import { err, ok, type Result } from '../core/result.js'
+import type { WorldFingerprint, WorldIdentifier } from '../core/world-identifier.port.js'
+import type { WorldOpenResult, WorldStateManager } from '../state/world-state-manager.js'
 
 export interface ConnectRequest {
   readonly host?: string | undefined
   readonly port?: number | undefined
+  /** A name for the world, used only when it cannot be recognized automatically. */
+  readonly profile?: string | undefined
 }
 
 export interface ConnectedSession {
@@ -16,6 +20,8 @@ export interface ConnectedSession {
   readonly port: number
   /** Set when the port was discovered from the LAN announcement. */
   readonly worldName: string | undefined
+  /** How the world was identified and which saved state is active. */
+  readonly world: WorldOpenResult
 }
 
 export interface SessionServiceOptions {
@@ -23,6 +29,8 @@ export interface SessionServiceOptions {
   readonly connection: Connection
   readonly lanDiscovery: LanDiscovery
   readonly logger: Logger
+  readonly identifier: WorldIdentifier
+  readonly worldState: WorldStateManager
   /** How long to listen for a LAN announcement when no port is known. */
   readonly discoveryTimeoutMs?: number
 }
@@ -35,6 +43,8 @@ export class SessionService {
   private readonly connection: Connection
   private readonly lanDiscovery: LanDiscovery
   private readonly logger: Logger
+  private readonly identifier: WorldIdentifier
+  private readonly worldState: WorldStateManager
   private readonly discoveryTimeoutMs: number
 
   constructor(options: SessionServiceOptions) {
@@ -42,6 +52,8 @@ export class SessionService {
     this.connection = options.connection
     this.lanDiscovery = options.lanDiscovery
     this.logger = options.logger
+    this.identifier = options.identifier
+    this.worldState = options.worldState
     this.discoveryTimeoutMs = options.discoveryTimeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS
   }
 
@@ -78,12 +90,58 @@ export class SessionService {
     this.logger.info('Connecting', { host, port })
     const result = await this.connection.connect(target)
     if (!result.ok) return result
+    const world = await this.openWorld(
+      target,
+      worldName,
+      request.profile ?? this.config.worldProfile,
+    )
     return ok({
       username: result.value.username,
       version: result.value.version,
       host,
       port,
       worldName,
+      world,
     })
+  }
+
+  /** Binds the connected world to a profile name (when identification needed help, or to rename). */
+  async nameWorld(name: string): Promise<Result<WorldOpenResult>> {
+    const target = this.connection.target
+    if (this.connection.state !== 'connected' || target === undefined) {
+      return err('Not connected to a Minecraft world. Call connect first.')
+    }
+    const fingerprint = await this.fingerprintOf(target, undefined)
+    const opened = await this.worldState.bind(name, fingerprint)
+    return opened.resolution.kind === 'invalid_name'
+      ? err(`"${name}" is not a usable profile name: use letters or digits.`)
+      : ok(opened)
+  }
+
+  /** Recognizes the world automatically; a given name is only the fallback when that fails. */
+  private async openWorld(
+    target: ConnectTarget,
+    worldNameHint: string | undefined,
+    fallbackName: string | undefined,
+  ): Promise<WorldOpenResult> {
+    const fingerprint = await this.fingerprintOf(target, worldNameHint)
+    const opened = await this.worldState.open(fingerprint)
+    const unresolved =
+      opened.resolution.kind === 'needs_name' || opened.resolution.kind === 'ambiguous'
+    return unresolved && fallbackName !== undefined
+      ? this.worldState.bind(fallbackName, fingerprint)
+      : opened
+  }
+
+  private async fingerprintOf(
+    target: ConnectTarget,
+    worldNameHint: string | undefined,
+  ): Promise<WorldFingerprint> {
+    try {
+      return await this.identifier.identify(target, worldNameHint)
+    } catch (error) {
+      this.logger.warn('Could not identify the world', { error })
+      return { seed: null, worldName: worldNameHint ?? null, spawn: null }
+    }
   }
 }

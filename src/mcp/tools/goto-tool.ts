@@ -87,6 +87,7 @@ export class GoToTool implements ToolDefinition<typeof schema> {
       {
         name: this.skill.name,
         description,
+        resume: { tool: this.name, arguments: resumeArguments(input) },
         run: (ctx) => this.skill.run({ target, within: input.within }, ctx),
       },
       {
@@ -96,4 +97,10 @@ export class GoToTool implements ToolDefinition<typeof schema> {
       },
     )
   }
+}
+
+/** What it takes to start the same trip again (without the wait and replace options). */
+function resumeArguments(input: z.output<typeof schema>): Record<string, unknown> {
+  const { wait_seconds: _wait, replace: _replace, ...rest } = input
+  return rest
 }

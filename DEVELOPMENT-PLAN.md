@@ -60,8 +60,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 1 Project scaffold | done, merged into `development` |
 | 2 Core skeleton and MCP shell | done, merged into `development` |
 | 3 Movement and perception | done, merged into `development` |
-| 4 E2E test harness | implemented on `feature/e2e-harness`, awaiting approval |
-| 5 and later | not started |
+| 4 E2E test harness | done, merged into `development` |
+| 5 Persistent state | implemented on `feature/persistent-state`, awaiting approval |
+| 6 and later | not started |
 
 ## Phases
 

@@ -43,6 +43,7 @@ export class FollowPlayerTool implements ToolDefinition<typeof schema> {
       {
         name: this.skill.name,
         description: `Follow ${player}`,
+        resume: { tool: this.name, arguments: { player, distance: input.distance } },
         run: (ctx) => this.skill.run({ player, distance: input.distance }, ctx),
       },
       {

@@ -4,7 +4,7 @@ import { err, ok, type Result } from '../core/result.js'
 import type { Scheduler } from '../core/scheduler.port.js'
 import type { SkillFailure } from '../core/skill.types.js'
 import type { StopHandler } from '../core/stop-handler.port.js'
-import type { TaskSnapshot, TaskSpec } from './task.types.js'
+import type { CancelReason, TaskEvent, TaskSnapshot, TaskSpec } from './task.types.js'
 
 export interface TaskManagerOptions {
   readonly clock: Clock
@@ -21,6 +21,7 @@ interface TaskEntry {
   readonly controller: AbortController
   readonly settleListeners: (() => void)[]
   finished: boolean
+  cancelReason: CancelReason | undefined
 }
 
 const DEFAULT_HISTORY_LIMIT = 20
@@ -39,6 +40,7 @@ export class TaskManager implements StopHandler {
   private readonly tasks = new Map<string, TaskEntry>()
   private counter = 0
   private activeId: string | undefined
+  private readonly eventListeners = new Set<(event: TaskEvent) => void>()
 
   constructor(options: TaskManagerOptions) {
     this.clock = options.clock
@@ -46,6 +48,14 @@ export class TaskManager implements StopHandler {
     this.logger = options.logger
     this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY_LIMIT
     this.cancelGraceMs = options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS
+  }
+
+  /** Observes every task starting, reporting progress, and finishing (used by the task journal). */
+  onEvent(listener: (event: TaskEvent) => void): () => void {
+    this.eventListeners.add(listener)
+    return () => {
+      this.eventListeners.delete(listener)
+    }
   }
 
   /** The running task, if any. */
@@ -84,15 +94,19 @@ export class TaskManager implements StopHandler {
         progress: undefined,
         result: undefined,
         failure: undefined,
+        cancelReason: undefined,
+        resume: spec.resume,
         startedAt: this.clock.now(),
         finishedAt: undefined,
       },
       controller,
       settleListeners,
       finished: false,
+      cancelReason: undefined,
     }
     this.tasks.set(id, entry)
     this.activeId = id
+    this.emit({ type: 'started', snapshot: entry.snapshot })
 
     const update = (patch: Partial<TaskSnapshot>): void => {
       entry.snapshot = { ...entry.snapshot, ...patch }
@@ -100,7 +114,9 @@ export class TaskManager implements StopHandler {
     const context = {
       signal: controller.signal,
       progress: (message: string): void => {
-        if (!entry.finished) update({ progress: message })
+        if (entry.finished) return
+        update({ progress: message })
+        this.emit({ type: 'progress', snapshot: entry.snapshot })
       },
     }
 
@@ -116,7 +132,8 @@ export class TaskManager implements StopHandler {
         })
       }
       if (entry.finished) return // Already released after a cancel that was not honored.
-      if (controller.signal.aborted) this.finish(entry, { status: 'cancelled' })
+      if (controller.signal.aborted)
+        this.finish(entry, { status: 'cancelled', cancelReason: entry.cancelReason })
       else if (outcome.ok) this.finish(entry, { status: 'succeeded', result: outcome.value })
       else this.finish(entry, { status: 'failed', failure: outcome.error })
     })()
@@ -149,18 +166,19 @@ export class TaskManager implements StopHandler {
   }
 
   /** Cancels the task (default: the running one) and waits until it has stopped. */
-  async cancel(id?: string): Promise<TaskSnapshot | undefined> {
+  async cancel(id?: string, reason: CancelReason = 'requested'): Promise<TaskSnapshot | undefined> {
     const targetId = id ?? this.activeId
     const entry = targetId === undefined ? undefined : this.tasks.get(targetId)
     if (entry === undefined || entry.finished) return entry?.snapshot
 
+    entry.cancelReason = reason
     entry.controller.abort()
     await this.waitFor(entry.snapshot.id, this.cancelGraceMs)
     if (!this.hasFinished(entry)) {
       this.logger.warn('Task did not stop in time; releasing it anyway', {
         task: entry.snapshot.id,
       })
-      this.finish(entry, { status: 'cancelled' })
+      this.finish(entry, { status: 'cancelled', cancelReason: entry.cancelReason })
     }
     return entry.snapshot
   }
@@ -177,13 +195,18 @@ export class TaskManager implements StopHandler {
 
   private finish(
     entry: TaskEntry,
-    patch: Partial<Pick<TaskSnapshot, 'status' | 'result' | 'failure'>>,
+    patch: Partial<Pick<TaskSnapshot, 'status' | 'result' | 'failure' | 'cancelReason'>>,
   ): void {
     entry.finished = true
     entry.snapshot = { ...entry.snapshot, ...patch, finishedAt: this.clock.now() }
     if (this.activeId === entry.snapshot.id) this.activeId = undefined
     for (const listener of [...entry.settleListeners]) listener()
+    this.emit({ type: 'finished', snapshot: entry.snapshot })
     this.prune()
+  }
+
+  private emit(event: TaskEvent): void {
+    for (const listener of this.eventListeners) listener(event)
   }
 
   private prune(): void {

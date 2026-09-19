@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createApp, type App } from '../../../src/app.js'
@@ -21,6 +24,8 @@ export function dataOf<T = Record<string, unknown>>(result: ToolCallResult): T {
 export interface AppUnderTest {
   readonly app: App
   readonly username: string
+  /** Where this app saves its state. Reuse it to simulate restarting the server. */
+  readonly dataDir: string
   call(name: string, args?: Record<string, unknown>): Promise<ToolCallResult>
   shutdown(): Promise<void>
 }
@@ -30,16 +35,21 @@ export interface StartAppOptions {
   readonly username: string
   /** The player whose chat counts as instructions. */
   readonly owner: string
+  /** Reuse a state directory (a restart). By default each app gets its own temporary one, removed on shutdown. */
+  readonly dataDir?: string
 }
 
 /** The real app (real Mineflayer, real pathfinder) pointed at the e2e server, with a real MCP client in front. */
 export async function startApp(info: ServerInfo, options: StartAppOptions): Promise<AppUnderTest> {
+  const ownsDataDir = options.dataDir === undefined
+  const dataDir = options.dataDir ?? mkdtempSync(path.join(tmpdir(), 'minecraft-mcp-e2e-'))
   const app = createApp(
     buildConfig({
       host: info.host,
       port: info.minecraftPort,
       username: options.username,
       owner: options.owner,
+      dataDir,
       logLevel: 'warn',
     }),
   )
@@ -51,6 +61,7 @@ export async function startApp(info: ServerInfo, options: StartAppOptions): Prom
   return {
     app,
     username: options.username,
+    dataDir,
     async call(name, args = {}) {
       const result = await client.callTool({ name, arguments: args }, undefined, {
         timeout: 90_000,
@@ -63,6 +74,7 @@ export async function startApp(info: ServerInfo, options: StartAppOptions): Prom
     async shutdown() {
       await client.close()
       await app.shutdown()
+      if (ownsDataDir) rmSync(dataDir, { recursive: true, force: true })
     },
   }
 }
