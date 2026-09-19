@@ -328,6 +328,92 @@ describe('TaskManager', () => {
     })
   })
 
+  describe('events and cancel reasons', () => {
+    it('tells listeners when a task starts, reports progress, and finishes', async () => {
+      const { manager } = setup()
+      const seen: string[] = []
+      manager.onEvent((event) =>
+        seen.push(`${event.type}:${event.snapshot.status}:${event.snapshot.progress ?? '-'}`),
+      )
+      const task = controllable()
+
+      manager.start(task.spec)
+      task.context()?.progress('halfway')
+      task.finish(ok(1))
+      await flush()
+
+      expect(seen).toEqual([
+        'started:running:-',
+        'progress:running:halfway',
+        'finished:succeeded:halfway',
+      ])
+    })
+
+    it('stops notifying a listener that unsubscribed', () => {
+      const { manager } = setup()
+      const seen: string[] = []
+      const stop = manager.onEvent((event) => seen.push(event.type))
+      stop()
+
+      manager.start(controllable().spec)
+
+      expect(seen).toEqual([])
+    })
+
+    it('records why a task was cancelled: requested by default, or the reason given', async () => {
+      const { manager } = setup()
+      manager.start(controllable().spec)
+      await manager.cancel()
+      manager.start(controllable().spec)
+      await manager.cancel(undefined, 'disconnected')
+
+      expect(manager.get('task-1')).toMatchObject({
+        status: 'cancelled',
+        cancelReason: 'requested',
+      })
+      expect(manager.get('task-2')).toMatchObject({
+        status: 'cancelled',
+        cancelReason: 'disconnected',
+      })
+    })
+
+    it('keeps the reason when a stubborn task is released after the grace period', async () => {
+      const { manager, scheduler } = setup({ cancelGraceMs: 1000 })
+      manager.start(controllable('stubborn', false).spec)
+
+      const cancelling = manager.cancel(undefined, 'shutdown')
+      scheduler.advance(1000)
+      await cancelling
+
+      expect(manager.get('task-1')?.cancelReason).toBe('shutdown')
+    })
+
+    it('has no cancel reason for tasks that were not cancelled, and carries the resume descriptor', async () => {
+      const { manager } = setup()
+      const task = controllable()
+      const spec = { ...task.spec, resume: { tool: 'goto', arguments: { x: 1 } } }
+
+      manager.start(spec)
+      task.finish(ok(1))
+      await flush()
+
+      expect(manager.get('task-1')).toMatchObject({
+        cancelReason: undefined,
+        resume: { tool: 'goto', arguments: { x: 1 } },
+      })
+    })
+
+    it('stopAll counts as a requested cancel', async () => {
+      const { manager } = setup()
+      manager.start(controllable().spec)
+
+      manager.stopAll()
+      await flush()
+
+      expect(manager.get('task-1')?.cancelReason).toBe('requested')
+    })
+  })
+
   describe('history', () => {
     it('remembers only the most recent finished tasks', async () => {
       const { manager } = setup({ historyLimit: 2 })

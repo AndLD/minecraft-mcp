@@ -3,11 +3,22 @@ import type { Result } from '../core/result.js'
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 
+/** Why a task was cancelled. Only `requested` (the owner or agent asked) is a deliberate stop. */
+export type CancelReason = 'requested' | 'replaced' | 'disconnected' | 'shutdown'
+
+/** How to start the same task again: the tool and the arguments that launched it. */
+export interface ResumeDescriptor {
+  readonly tool: string
+  readonly arguments: Readonly<Record<string, unknown>>
+}
+
 export interface TaskSpec {
   /** Short machine-friendly name, for example `goto`. */
   readonly name: string
   /** One line for humans, for example `Go to 10, 64, -5`. */
   readonly description: string
+  /** Lets an interrupted task be offered for resuming after a relaunch. */
+  readonly resume?: ResumeDescriptor
   run(context: SkillContext): Promise<Result<unknown, SkillFailure>>
 }
 
@@ -20,7 +31,15 @@ export interface TaskSnapshot {
   readonly progress: string | undefined
   readonly result: unknown
   readonly failure: SkillFailure | undefined
+  /** Set when the status is `cancelled`. */
+  readonly cancelReason: CancelReason | undefined
+  readonly resume: ResumeDescriptor | undefined
   /** Epoch milliseconds. */
   readonly startedAt: number
   readonly finishedAt: number | undefined
+}
+
+export interface TaskEvent {
+  readonly type: 'started' | 'progress' | 'finished'
+  readonly snapshot: TaskSnapshot
 }

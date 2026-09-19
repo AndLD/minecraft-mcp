@@ -2,10 +2,24 @@ import type { Logger } from '../core/logger.js'
 import { toolFail } from './tool-result.js'
 import type { ToolContext, ToolDefinition, ToolResult } from './tool.types.js'
 
+export interface ToolCall {
+  readonly name: string
+  readonly args: unknown
+  readonly result: ToolResult
+}
+
+export interface ToolRegistryOptions {
+  /** Called after every tool call finishes (used for the history log). */
+  readonly onCall?: (call: ToolCall) => void
+}
+
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolDefinition>()
 
-  constructor(private readonly logger: Logger) {}
+  constructor(
+    private readonly logger: Logger,
+    private readonly options: ToolRegistryOptions = {},
+  ) {}
 
   /** Registering the same name twice is a programming error. */
   register(tool: ToolDefinition): this {
@@ -19,6 +33,12 @@ export class ToolRegistry {
   }
 
   async call(name: string, args: unknown, context: ToolContext): Promise<ToolResult> {
+    const result = await this.run(name, args, context)
+    this.options.onCall?.({ name, args, result })
+    return result
+  }
+
+  private async run(name: string, args: unknown, context: ToolContext): Promise<ToolResult> {
     const tool = this.tools.get(name)
     if (tool === undefined) return toolFail(`Unknown tool: ${name}`)
 

@@ -52,6 +52,9 @@ export interface BotLike {
   readonly entity: { readonly position: Position } | undefined
   readonly game: { readonly dimension: string }
   readonly time: { readonly timeOfDay: number }
+  readonly spawnPoint: Position
+  /** The hashed world seed (hex) from the login packet. Set by our factory, not by Mineflayer. */
+  readonly worldSeed?: string | undefined
   readonly entities: Readonly<Record<string, EntityLike>>
   readonly players: Readonly<Record<string, PlayerLike>>
   readonly registry: { readonly blocksByName: Readonly<Record<string, { readonly id: number }>> }

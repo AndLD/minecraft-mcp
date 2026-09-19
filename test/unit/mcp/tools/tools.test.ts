@@ -18,6 +18,7 @@ import {
 } from '../../../fakes/fake-ports.js'
 import { FakeScheduler } from '../../../fakes/fake-scheduler.js'
 import { buildConfig } from '../../../fakes/test-config.js'
+import { buildStateStack, FakeWorldIdentifier } from '../../../fakes/state-fakes.js'
 
 const context = (signal: AbortSignal = new AbortController().signal): ToolContext => ({ signal })
 
@@ -30,13 +31,16 @@ function inboxSetup() {
 describe('ConnectTool', () => {
   function setup() {
     const connection = new FakeConnection()
+    const stack = buildStateStack()
     const session = new SessionService({
       config: buildConfig({ port: 25565 }),
       connection,
       lanDiscovery: new FakeLanDiscovery(),
       logger: new FakeLogger(),
+      identifier: new FakeWorldIdentifier(),
+      worldState: stack.worldState,
     })
-    return { tool: new ConnectTool(session), connection }
+    return { tool: new ConnectTool(session, stack.briefing), connection }
   }
 
   it('connects and reports the session', async () => {
@@ -44,7 +48,7 @@ describe('ConnectTool', () => {
 
     const result = await tool.execute({ port: 34231 })
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       data: {
         connected: true,
@@ -52,7 +56,7 @@ describe('ConnectTool', () => {
         version: '1.21.1',
         host: 'localhost',
         port: 34231,
-        worldName: undefined,
+        briefing: { world: { profile: 'survival' }, previousSession: null },
       },
     })
   })

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { AgentInbox } from './chat/agent-inbox.js'
@@ -12,6 +13,8 @@ import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
 import { MineflayerInventory } from './bot/mineflayer-inventory.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
+import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
+import { MineflayerWorldIdentifier } from './bot/mineflayer-world-identifier.js'
 import { createPathGoals } from './bot/path-goals.js'
 import { MineflayerPathDriver, type GoalFactory } from './bot/path-driver.js'
 import { UdpLanDiscovery } from './bot/udp-lan-discovery.js'
@@ -21,6 +24,7 @@ import type { Connection } from './core/connection.port.js'
 import type { DatagramSocketFactory } from './core/datagram-socket.port.js'
 import type { Logger } from './core/logger.js'
 import type { Random } from './core/random.port.js'
+import type { ServerStatusProbe } from './core/server-status.port.js'
 import type { Scheduler } from './core/scheduler.port.js'
 import type { StopHandler } from './core/stop-handler.port.js'
 import { StderrLogger } from './infra/stderr-logger.js'
@@ -33,6 +37,11 @@ import { TaskLauncher } from './mcp/task-launcher.js'
 import { ToolRegistry } from './mcp/tool-registry.js'
 import { ConnectTool } from './mcp/tools/connect-tool.js'
 import { DisconnectTool } from './mcp/tools/disconnect-tool.js'
+import {
+  DiscardInterruptedTaskTool,
+  ResumeInterruptedTaskTool,
+  type ToolInvoker,
+} from './mcp/tools/journal-tools.js'
 import { FindBlocksTool } from './mcp/tools/find-blocks-tool.js'
 import { FollowPlayerTool } from './mcp/tools/follow-player-tool.js'
 import { GetInventoryTool } from './mcp/tools/get-inventory-tool.js'
@@ -41,13 +50,35 @@ import { GetPlayerPositionTool } from './mcp/tools/get-player-position-tool.js'
 import { GetStatusTool } from './mcp/tools/get-status-tool.js'
 import { GoToTool } from './mcp/tools/goto-tool.js'
 import { LookAroundTool } from './mcp/tools/look-around-tool.js'
+import {
+  ForgetTool,
+  GetRecentHistoryTool,
+  RecallTool,
+  RememberTool,
+  RemoveStandingInstructionTool,
+  SetStandingInstructionTool,
+} from './mcp/tools/memory-tools.js'
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
+import {
+  GetSessionBriefingTool,
+  ListWorldsTool,
+  SetWorldProfileTool,
+} from './mcp/tools/world-tools.js'
 import { WaitForChatTool } from './mcp/tools/wait-for-chat-tool.js'
 import { WhisperTool } from './mcp/tools/whisper-tool.js'
 import { BlockFinder } from './perception/block-finder.js'
 import { SurroundingsDescriber } from './perception/surroundings.js'
 import { SessionService } from './session/session-service.js'
+import { FileStateStore } from './state/file-state-store.js'
+import { describeToolCall } from './state/history-format.js'
+import { InstructionLog } from './state/instruction-log.js'
+import { NotesStore } from './state/notes-store.js'
+import { SessionBriefingBuilder } from './state/session-briefing.js'
+import { StandingInstructions } from './state/standing-instructions.js'
+import { TaskJournal } from './state/task-journal.js'
+import { WorldRegistry } from './state/world-registry.js'
+import { WorldStateManager } from './state/world-state-manager.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
 import { TaskManager } from './tasks/task-manager.js'
@@ -62,6 +93,8 @@ export interface AppDeps {
   readonly botFactory: BotFactory
   /** Creates the UDP socket that listens for LAN world announcements. */
   readonly socketFactory: DatagramSocketFactory
+  /** Reads a server's message of the day, to name its world. Tests pass a stub. */
+  readonly statusProbe: ServerStatusProbe
   /** Creates the pathfinder's goal objects. Tests pass a stub. */
   readonly pathGoals: GoalFactory
   /** What the owner's "stop" cancels. Defaults to the task manager. */
@@ -77,6 +110,7 @@ export interface App {
   readonly inbox: AgentInbox
   readonly session: SessionService
   readonly tasks: TaskManager
+  readonly worldState: WorldStateManager
   readonly registry: ToolRegistry
   readonly mcpServer: McpServer
   /** Serves MCP over the given transport (stdio in production, in-memory in tests). */
@@ -97,6 +131,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const botFactory = overrides.botFactory ?? createMineflayerBot
   const socketFactory = overrides.socketFactory ?? createUdpSocket
   const pathGoals = overrides.pathGoals ?? createPathGoals()
+  const statusProbe = overrides.statusProbe ?? new MinecraftServerStatusProbe()
 
   const connection = new MineflayerConnection({ factory: botFactory, scheduler, logger })
   const chat = new MineflayerChat(connection)
@@ -115,7 +150,43 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const stopHandler = overrides.stopHandler ?? tasks
   const lanDiscovery = new UdpLanDiscovery(socketFactory, scheduler)
 
-  const inbox = new AgentInbox({ clock, scheduler })
+  // Everything that belongs to one world profile, saved under DATA_DIR/<profile>/.
+  const notes = new NotesStore(clock)
+  const history = new InstructionLog(clock)
+  const standing = new StandingInstructions()
+  const journal = new TaskJournal(clock, tasks)
+  const worldState = new WorldStateManager({
+    registry: new WorldRegistry({
+      store: new FileStateStore({ directory: config.dataDir, scheduler, logger }),
+      clock,
+    }),
+    storeForProfile: (profile) =>
+      new FileStateStore({ directory: path.join(config.dataDir, profile), scheduler, logger }),
+    components: [notes, history, standing, journal],
+    logger,
+  })
+  const briefing = new SessionBriefingBuilder({
+    clock,
+    worldState,
+    journal,
+    notes,
+    standing,
+    history,
+  })
+
+  const inbox = new AgentInbox({
+    clock,
+    scheduler,
+    onMessage: (message) => {
+      history.record(
+        'chat',
+        `${message.sender}${message.whisper ? ' (whisper)' : ''}: ${message.text}`,
+      )
+    },
+    onEvent: (event) => {
+      history.record('event', `${event.type}: ${event.message}`)
+    },
+  })
   const router = new ChatRouter({
     inbox,
     logger,
@@ -126,7 +197,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     router.handle(message)
   })
   connection.onEvent((event) => {
-    if (event.type === 'disconnected' || event.type === 'kicked') tasks.stopAll()
+    if (event.type === 'disconnected' || event.type === 'kicked') {
+      // Cancel first, so the journal records the tasks as interrupted, then release the world's state.
+      void tasks.cancel(undefined, 'disconnected').then(() => worldState.close())
+    }
     switch (event.type) {
       case 'connected':
         inbox.pushEvent({ type: 'connected', message: `Bot ${event.username} joined the world.` })
@@ -143,11 +217,24 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     }
   })
 
-  const session = new SessionService({ config, connection, lanDiscovery, logger })
+  const session = new SessionService({
+    config,
+    connection,
+    lanDiscovery,
+    logger,
+    identifier: new MineflayerWorldIdentifier(connection, statusProbe),
+    worldState,
+  })
   const blockFinder = new BlockFinder(blocks)
   const launcher = new TaskLauncher(tasks, clock)
-  const registry = new ToolRegistry(logger)
-    .register(new ConnectTool(session))
+  const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
+  const registry = new ToolRegistry(logger, {
+    onCall: (call) => {
+      const line = describeToolCall(call)
+      if (line !== undefined) history.record('tool', line)
+    },
+  })
+    .register(new ConnectTool(session, briefing))
     .register(new DisconnectTool(connection))
     .register(new GetStatusTool(connection, vitals, inbox))
     .register(new WaitForChatTool(connection, inbox))
@@ -163,6 +250,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GetTaskStatusTool(tasks, clock))
     .register(new CancelTaskTool(tasks, clock))
     .register(new StopTool(tasks, clock))
+    .register(new GetSessionBriefingTool(briefing))
+    .register(new ListWorldsTool(worldState))
+    .register(new SetWorldProfileTool(session, briefing))
+    .register(new ResumeInterruptedTaskTool(journal, invoke))
+    .register(new DiscardInterruptedTaskTool(journal))
+    .register(new GetRecentHistoryTool(history))
+    .register(new RememberTool(notes))
+    .register(new RecallTool(notes))
+    .register(new ForgetTool(notes))
+    .register(new SetStandingInstructionTool(standing))
+    .register(new RemoveStandingInstructionTool(standing))
   const mcpServer = createMcpServer(registry)
 
   return {
@@ -174,12 +272,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inbox,
     session,
     tasks,
+    worldState,
     registry,
     mcpServer,
     serve: (transport) => mcpServer.connect(transport),
     shutdown: async () => {
-      await tasks.cancel()
+      await tasks.cancel(undefined, 'shutdown')
       await connection.disconnect()
+      await worldState.close()
       await mcpServer.close()
     },
   }

@@ -1,6 +1,7 @@
 import type { DatagramSocketFactory } from '../core/datagram-socket.port.js'
 import type { LanDiscovery, LanDiscoveryOptions, LanWorld } from '../core/lan-discovery.port.js'
 import type { Scheduler } from '../core/scheduler.port.js'
+import { splitMotd } from './motd.js'
 
 export const LAN_MULTICAST_ADDRESS = '224.0.2.60'
 export const LAN_MULTICAST_PORT = 4445
@@ -16,13 +17,8 @@ export function parseLanAnnouncement(text: string): LanWorld | undefined {
   const port = Number(portText)
   if (port < 1 || port > 65535) return undefined
 
-  const separator = motd.indexOf(' - ')
-  if (separator < 0) return { port, worldName: motd.trim(), hostPlayer: undefined }
-  return {
-    port,
-    hostPlayer: motd.slice(0, separator).trim(),
-    worldName: motd.slice(separator + 3).trim(),
-  }
+  const { hostPlayer, worldName } = splitMotd(motd)
+  return { port, hostPlayer, worldName }
 }
 
 export class UdpLanDiscovery implements LanDiscovery {

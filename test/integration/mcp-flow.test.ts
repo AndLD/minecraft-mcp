@@ -23,24 +23,37 @@ describe('MCP server over an in-memory transport', () => {
 
     const { tools } = await client.listTools()
 
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'cancel_task',
-      'connect',
-      'disconnect',
-      'find_blocks',
-      'follow_player',
-      'get_inventory',
-      'get_nearby_entities',
-      'get_player_position',
-      'get_status',
-      'get_task_status',
-      'goto',
-      'look_around',
-      'say',
-      'stop',
-      'wait_for_chat',
-      'whisper',
-    ])
+    expect(tools.map((t) => t.name).sort()).toEqual(
+      [
+        'cancel_task',
+        'connect',
+        'disconnect',
+        'discard_interrupted_task',
+        'find_blocks',
+        'follow_player',
+        'forget',
+        'get_inventory',
+        'get_nearby_entities',
+        'get_player_position',
+        'get_recent_history',
+        'get_session_briefing',
+        'get_status',
+        'get_task_status',
+        'goto',
+        'list_worlds',
+        'look_around',
+        'recall',
+        'remember',
+        'remove_standing_instruction',
+        'resume_interrupted_task',
+        'say',
+        'set_standing_instruction',
+        'set_world_profile',
+        'stop',
+        'wait_for_chat',
+        'whisper',
+      ].sort(),
+    )
     for (const tool of tools) {
       expect(tool.description).toBeTruthy()
       expect(tool.inputSchema.type).toBe('object')
@@ -89,12 +102,13 @@ describe('MCP server over an in-memory transport', () => {
 
       const result = await h.call('connect', { port: 34231 })
 
-      expect(result.data).toEqual({
+      expect(result.data).toMatchObject({
         connected: true,
         username: 'ClaudeBot',
         version: '1.21.1',
         host: 'localhost',
         port: 34231,
+        briefing: { world: { profile: 'world-a1b2c3' } },
       })
       expect(h.connectTargets).toEqual([{ host: 'localhost', port: 34231 }])
     })

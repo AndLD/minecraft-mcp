@@ -187,6 +187,50 @@ describe('GoToTool', () => {
   })
 })
 
+describe('resume descriptors', () => {
+  it('goto records how to start the same trip again, without the wait and replace options', async () => {
+    const { goto, tasks } = setup()
+
+    void goto.execute(
+      goto.inputSchema.parse({ x: 10, y: 64, z: 5, within: 3, wait_seconds: 0, replace: true }),
+      context(),
+    )
+    await flush()
+
+    expect(tasks.current()?.resume).toEqual({
+      tool: 'goto',
+      arguments: { x: 10, y: 64, z: 5, within: 3, max_distance: 32 },
+    })
+  })
+
+  it('goto by player or block keeps that target', async () => {
+    const { goto, tasks } = setup()
+
+    void goto.execute(
+      goto.inputSchema.parse({ player: 'Andrey_Knight', wait_seconds: 0 }),
+      context(),
+    )
+    await flush()
+
+    expect(tasks.current()?.resume).toMatchObject({
+      tool: 'goto',
+      arguments: { player: 'Andrey_Knight' },
+    })
+  })
+
+  it('follow_player records the player and distance', async () => {
+    const { follow, tasks } = setup()
+
+    void follow.execute(follow.inputSchema.parse({ distance: 4, wait_seconds: 0 }), context())
+    await flush()
+
+    expect(tasks.current()?.resume).toEqual({
+      tool: 'follow_player',
+      arguments: { player: 'Andrey_Knight', distance: 4 },
+    })
+  })
+})
+
 describe('FollowPlayerTool', () => {
   it('starts following the owner by default and answers quickly with "running"', async () => {
     const { follow, navigator, scheduler } = setup()

@@ -63,6 +63,8 @@ export class FakeBot implements BotLike {
   entity: BotLike['entity'] = { position: { x: 10, y: 64, z: -5 } }
   game = { dimension: 'overworld' }
   time = { timeOfDay: 6000 }
+  spawnPoint: Position = { x: 48, y: 81, z: 32 }
+  worldSeed: string | undefined = 'a1b2c3d4e5f60718'
   entities: Record<string, EntityLike> = {}
   players: Record<string, PlayerLike> = {}
   registry = {

@@ -7,6 +7,9 @@ export interface AgentInboxOptions {
   readonly scheduler: Scheduler
   /** Maximum buffered chat messages and events (each); the oldest are dropped first. */
   readonly capacity?: number
+  /** Called for every chat message and event that reaches the inbox (for the history log). */
+  readonly onMessage?: (message: ChatMessage) => void
+  readonly onEvent?: (event: BotEvent) => void
 }
 
 export interface WaitResult extends InboxBatch {
@@ -29,6 +32,8 @@ export class AgentInbox {
   private readonly clock: Clock
   private readonly scheduler: Scheduler
   private readonly capacity: number
+  private readonly onMessage: ((message: ChatMessage) => void) | undefined
+  private readonly onEvent: ((event: BotEvent) => void) | undefined
   private messages: ChatMessage[] = []
   private events: BotEvent[] = []
   private dropped = 0
@@ -38,6 +43,8 @@ export class AgentInbox {
     this.clock = options.clock
     this.scheduler = options.scheduler
     this.capacity = options.capacity ?? DEFAULT_CAPACITY
+    this.onMessage = options.onMessage
+    this.onEvent = options.onEvent
   }
 
   get pendingCount(): number {
@@ -45,7 +52,9 @@ export class AgentInbox {
   }
 
   pushMessage(message: Omit<ChatMessage, 'receivedAt'>): void {
-    this.messages.push({ ...message, receivedAt: this.clock.now() })
+    const stamped = { ...message, receivedAt: this.clock.now() }
+    this.messages.push(stamped)
+    this.onMessage?.(stamped)
     if (this.messages.length > this.capacity) {
       this.messages.shift()
       this.dropped += 1
@@ -54,7 +63,9 @@ export class AgentInbox {
   }
 
   pushEvent(event: Omit<BotEvent, 'at'>): void {
-    this.events.push({ ...event, at: this.clock.now() })
+    const stamped = { ...event, at: this.clock.now() }
+    this.events.push(stamped)
+    this.onEvent?.(stamped)
     if (this.events.length > this.capacity) {
       this.events.shift()
       this.dropped += 1
