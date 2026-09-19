@@ -61,6 +61,7 @@ npm run build
 | `DATA_DIR` | `./data` | Where per-world state is persisted (`DATA_DIR/<profile>/`: landmarks, structures, chests, rules, task journal, history, notes) |
 | `WORLD_PROFILE` | *(empty)* | Fallback world name, used only when the world cannot be identified automatically (the bot normally recognizes your world by itself from its seed, spawn point, and name). The `connect` tool can also take a `profile` |
 | `LOW_HEALTH_THRESHOLD` | `8` | Health points (of 20) at or below which the bot flees from any threat |
+| `REFLEXES_ENABLED` | `true` | Survival reflexes run by themselves (auto-eat, fight, flee, avoid lava, surface for air). Turn off only for testing |
 | `LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` (logs go to stderr) |
 
 The LAN port changes every time you re-open the world. With `MC_PORT` empty the bot finds it by itself; otherwise the `connect` tool accepts `host` and `port` overrides. Either way you do not need to edit `.env` or restart the MCP server each session.
