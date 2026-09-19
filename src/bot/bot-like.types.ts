@@ -1,5 +1,6 @@
 import type { ConnectTarget } from '../core/connection.port.js'
 import type { Position } from '../core/position.types.js'
+import type { ContainerWindowLike } from './window-transfer.js'
 
 export interface BotEvents {
   spawn: () => void
@@ -26,6 +27,9 @@ export interface EntityLike {
   readonly isDead?: boolean | undefined
   /** Raw entity metadata by index; `registry.entitiesByName[name].metadataKeys` names the indexes. */
   readonly metadata?: readonly unknown[] | undefined
+  /** Where the entity looks, in radians (Mineflayer's convention: yaw 0 faces -z, positive pitch looks up). */
+  readonly yaw?: number | undefined
+  readonly pitch?: number | undefined
   /** Entities riding this one. */
   readonly passengers?: readonly unknown[] | undefined
   /** For item entities: what lies on the ground. */
@@ -106,6 +110,14 @@ export interface BotLike {
   readonly worldSeed?: string | undefined
   readonly entities: Readonly<Record<string, EntityLike>>
   readonly players: Readonly<Record<string, PlayerLike>>
+  /** Only `raycast` is used: the first block a ray hits, for "the chest the player looks at". */
+  readonly world: {
+    raycast(
+      from: Position,
+      direction: Position,
+      range: number,
+    ): { readonly name: string; readonly position: Position } | null
+  }
   readonly registry: {
     readonly blocksByName: Readonly<
       Record<
@@ -121,7 +133,7 @@ export interface BotLike {
       >
     >
     readonly itemsByName: Readonly<Record<string, { readonly id: number }>>
-    readonly items: Readonly<Record<number, { readonly name: string }>>
+    readonly items: Readonly<Record<number, { readonly name: string; readonly stackSize?: number }>>
     readonly entitiesByName: Readonly<
       Record<string, { readonly metadataKeys?: readonly string[] | undefined }>
     >
@@ -162,6 +174,8 @@ export interface BotLike {
   /** Places the item in hand against the face (a unit vector) of a block returned by `blockAt`. */
   placeBlock(reference: BlockLike, face: Position): Promise<void>
   openFurnace(block: BlockLike): Promise<FurnaceLike>
+  /** Opens a chest, barrel, or shulker box for `WindowTransfer`. Installed by our factory after spawn. */
+  openContainerWindow(block: BlockLike): Promise<ContainerWindowLike>
   /** Every recipe for the item; those needing a table are included when `craftingTable` is true. */
   recipesAll(
     itemType: number,

@@ -34,7 +34,7 @@ describe('createApp', () => {
 
     const app = createApp(parsed.value)
 
-    expect(app.registry.list()).toHaveLength(39)
+    expect(app.registry.list()).toHaveLength(52)
     expect(app.clock.now()).toBeGreaterThan(0)
     expect(app.random.next()).toBeLessThan(1)
     expect(app.connection.state).toBe('disconnected')

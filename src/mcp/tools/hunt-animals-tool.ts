@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { HUNTABLE_SPECIES_NAMES, goalForItem } from '../../skills/hunting/animal-catalog.js'
 import type { HuntAnimalsSkill, HuntGoal } from '../../skills/hunting/hunt-animals-skill.js'
+import { INVENTORY_FULL_KINDS } from '../../state/storage-policy.js'
 import type { TaskLauncher } from '../task-launcher.js'
 import { toolFail } from '../tool-result.js'
 import type { ToolContext, ToolDefinition } from '../tool.types.js'
@@ -62,6 +63,18 @@ const schema = z
       .max(1800)
       .default(300)
       .describe('Give up after this long.'),
+    on_inventory_full: z
+      .enum(INVENTORY_FULL_KINDS)
+      .optional()
+      .describe(
+        'What to do when the inventory fills up: "offload_and_return" (take things to the chests by the storage rules, come back, carry on), "ask" (pause and wait for resume_task), or "stop". Defaults to the standing set_storage_policy, which defaults to ask.',
+      ),
+    deposit_cooked: z
+      .boolean()
+      .default(false)
+      .describe(
+        'After cooking, put the cooked meat into a container by the storage rules (the food rule, else any chest with room).',
+      ),
     ...taskOptionsShape,
   })
   .refine((input) => (input.item === undefined) !== (input.species === undefined), {
@@ -132,6 +145,8 @@ export class HuntAnimalsTool implements ToolDefinition<typeof schema> {
               includePens: input.include_pens,
               cook,
               timeLimitMs: input.time_limit_seconds * 1000,
+              onInventoryFull: input.on_inventory_full,
+              depositCooked: input.deposit_cooked,
               onProgress: (done) => {
                 progress.done = done
               },

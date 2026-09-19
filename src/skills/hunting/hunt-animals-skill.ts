@@ -18,6 +18,9 @@ import {
   type Protection,
 } from './animal-catalog.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
+import type { ItemDepositor } from '../storage/deposit-items-skill.js'
+import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
+import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { PenDetector } from './pen-detector.js'
 
 /** What ends a hunt. */
@@ -37,6 +40,10 @@ export interface HuntInput {
   /** Cook the raw meat gained afterwards. */
   readonly cook: boolean
   readonly timeLimitMs: number
+  /** What to do when the inventory is full; the standing policy when undefined. */
+  readonly onInventoryFull?: InventoryFullKind | undefined
+  /** Deposit the cooked meat into a container (by the storage rules) when done. */
+  readonly depositCooked?: boolean
   /** Called with how much of the goal is done, so a caller can track what is left. */
   readonly onProgress?: (done: number) => void
 }
@@ -51,6 +58,12 @@ export interface HuntOutput {
   readonly cooked: readonly ItemCount[]
   /** Set when cooking was asked for but failed; the hunt itself succeeded. */
   readonly cookProblem?: string
+  /** What was put into containers, when asked for. */
+  readonly deposited?: readonly {
+    readonly container: string
+    readonly items: readonly ItemCount[]
+  }[]
+  readonly depositProblem?: string
 }
 
 export interface HuntAnimalsDeps {
@@ -61,6 +74,8 @@ export interface HuntAnimalsDeps {
   readonly smelter: ItemSmelter
   readonly pens: PenDetector
   readonly clock: Clock
+  readonly full?: InventoryFullHandler
+  readonly depositor?: ItemDepositor
 }
 
 const MAX_SKIPS = 30
@@ -108,6 +123,7 @@ export class HuntAnimalsSkill implements Skill<HuntInput, HuntOutput> {
     const skip = new Set<number>()
     let killed = 0
     await deps.combatant.equipBestGear()
+    const fullSession = deps.full?.begin(input.onInventoryFull)
 
     const done = (): number =>
       input.goal.kind === 'animals' ? killed : this.itemsGained(before, input.goal.item)
@@ -132,8 +148,13 @@ export class HuntAnimalsSkill implements Skill<HuntInput, HuntOutput> {
       const snapshot = deps.inventory.snapshot()
       if (snapshot === undefined)
         return stop('not_connected', 'Not connected to a Minecraft world.')
-      if (snapshot.emptySlots === 0)
-        return stop('inventory_full', 'The inventory is full. Free some space, then hunt again.')
+      if (snapshot.emptySlots === 0) {
+        if (fullSession === undefined)
+          return stop('inventory_full', 'The inventory is full. Free some space, then hunt again.')
+        const outcome = await fullSession.handle(context)
+        if (outcome.kind === 'stop') return stop('inventory_full', outcome.message)
+        continue
+      }
       if (skip.size >= MAX_SKIPS)
         return stop('unreachable', 'Too many animals could not be caught.')
 
@@ -166,6 +187,10 @@ export class HuntAnimalsSkill implements Skill<HuntInput, HuntOutput> {
 
     const gainedItems = gained(before, countItems(deps.inventory.snapshot()))
     const cooking = input.cook ? await this.cook(gainedItems, context) : { cooked: [] }
+    const storing =
+      input.depositCooked === true && cooking.cooked.length > 0
+        ? await this.deposit(cooking.cooked, context)
+        : {}
     return ok({
       killed,
       goal: input.goal,
@@ -173,6 +198,7 @@ export class HuntAnimalsSkill implements Skill<HuntInput, HuntOutput> {
       speciesBefore,
       speciesAfter: countSpecies(deps.animals.nearby(input.radius), input.species),
       ...cooking,
+      ...storing,
     })
   }
 
@@ -200,6 +226,30 @@ export class HuntAnimalsSkill implements Skill<HuntInput, HuntOutput> {
       floor ? 'breeding_floor' : 'protected',
       `The animals left were not hunted: ${list}${floor ? ' (the last breeding pair is kept; say so to override)' : ''}.`,
     )
+  }
+
+  /** Puts the cooked food into a container by the storage rules; a failure is reported, not fatal. */
+  private async deposit(
+    cooked: readonly ItemCount[],
+    context: SkillContext,
+  ): Promise<{
+    deposited?: readonly { container: string; items: readonly ItemCount[] }[]
+    depositProblem?: string
+  }> {
+    if (this.deps.depositor === undefined) return { depositProblem: 'Depositing is not available.' }
+    const result = await this.deps.depositor.run(
+      {
+        specs: cooked.map((item) => item.name),
+        includeReserved: true,
+        container: undefined,
+        count: undefined,
+        maxDistance: 64,
+      },
+      context,
+    )
+    return result.ok
+      ? { deposited: result.value.deposited }
+      : { depositProblem: result.error.message }
   }
 
   /** Cooks the raw meat that the hunt brought in. A failure is reported, not fatal. */

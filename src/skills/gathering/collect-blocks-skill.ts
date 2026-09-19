@@ -11,6 +11,8 @@ import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { BlockFinder } from '../../perception/block-finder.js'
 import { expandBlockNames } from './block-aliases.js'
+import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
+import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { DropCollector } from './drop-collector.js'
 
 /** Walk to within this many blocks of a block before digging (dig reach is 4.5 from the eyes). */
@@ -35,6 +37,8 @@ export interface CollectInput {
   /** How many blocks to break. */
   readonly count: number
   readonly maxDistance: number
+  /** What to do when the inventory is full; the standing policy when undefined. */
+  readonly onInventoryFull?: InventoryFullKind | undefined
   /** Called after every block, so a caller can track what is left. */
   readonly onMined?: (mined: number) => void
 }
@@ -55,6 +59,8 @@ export interface CollectBlocksDeps {
   readonly vitals: VitalsReader
   readonly drops: DropCollector
   readonly guard: AreaGuard
+  /** Decides what happens when the inventory is full; without it the task stops. */
+  readonly full?: InventoryFullHandler
 }
 
 const keyOf = (position: Position): string =>
@@ -78,6 +84,7 @@ export class CollectBlocksSkill implements Skill<CollectInput, CollectOutput> {
     let mined = 0
     let streak = 0
     let lastFailure = ''
+    const fullSession = deps.full?.begin(input.onInventoryFull)
 
     const stop = (reason: string, message: string): SkillResult<CollectOutput> =>
       err({
@@ -91,11 +98,16 @@ export class CollectBlocksSkill implements Skill<CollectInput, CollectOutput> {
       const snapshot = deps.inventory.snapshot()
       if (snapshot === undefined)
         return stop('not_connected', 'Not connected to a Minecraft world.')
-      if (snapshot.emptySlots === 0)
-        return stop(
-          'inventory_full',
-          'The inventory is full. Free some space (store or drop items), then collect again.',
-        )
+      if (snapshot.emptySlots === 0) {
+        if (fullSession === undefined)
+          return stop(
+            'inventory_full',
+            'The inventory is full. Free some space (store or drop items), then collect again.',
+          )
+        const outcome = await fullSession.handle(context)
+        if (outcome.kind === 'stop') return stop('inventory_full', outcome.message)
+        continue
+      }
 
       const found = deps.finder.find({ names, maxDistance: input.maxDistance, count: CANDIDATES })
       if (!found.ok) return err({ reason: 'unknown_block', message: found.error })

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { CollectBlocksSkill } from '../../skills/gathering/collect-blocks-skill.js'
 import { BLOCK_ALIAS_NAMES } from '../../skills/gathering/block-aliases.js'
+import { INVENTORY_FULL_KINDS } from '../../state/storage-policy.js'
 import type { TaskLauncher } from '../task-launcher.js'
 import type { ToolContext, ToolDefinition } from '../tool.types.js'
 import { taskOptionsShape } from './task-schema.js'
@@ -30,6 +31,12 @@ const schema = z.object({
     .max(64)
     .default(32)
     .describe('How far to search from the bot, in blocks (1-64).'),
+  on_inventory_full: z
+    .enum(INVENTORY_FULL_KINDS)
+    .optional()
+    .describe(
+      'What to do when the inventory fills up: "offload_and_return" (take things to the chests by the storage rules, come back, carry on), "ask" (pause and wait for resume_task), or "stop". Defaults to the standing set_storage_policy, which defaults to ask.',
+    ),
   ...taskOptionsShape,
 })
 
@@ -40,7 +47,7 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     '(only blocks that touch open space are dug), never digs straight down, next to lava, or inside protected areas. ' +
     'Long jobs continue in the background: poll get_task_status when the reply has status "running". Result: blocks mined and ' +
     'what the inventory gained. Fails with a reason such as block_not_found, no_suitable_tool (say what to craft first), ' +
-    'inventory_full (free space and call again for the remaining count), protected_area, or unreachable; the message says how ' +
+    'inventory_full (only when the policy is stop or the player said stop; otherwise a full inventory pauses the task, or offloads to chests), protected_area, or unreachable; the message says how ' +
     'many were collected before it stopped.'
   readonly inputSchema = schema
 
@@ -69,6 +76,7 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
               names: input.blocks,
               count: input.count,
               maxDistance: input.max_distance,
+              onInventoryFull: input.on_inventory_full,
               onMined: (mined) => {
                 progress.remaining = input.count - mined
               },

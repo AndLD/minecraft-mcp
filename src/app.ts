@@ -12,6 +12,7 @@ import { MineflayerBlockScanner } from './bot/mineflayer-block-scanner.js'
 import { MineflayerChat } from './bot/mineflayer-chat.js'
 import { MineflayerConnection } from './bot/mineflayer-connection.js'
 import { createMineflayerBot } from './bot/mineflayer-bot-factory.js'
+import { MineflayerContainerAccess } from './bot/mineflayer-container-access.js'
 import { MineflayerDigger } from './bot/mineflayer-digger.js'
 import { MineflayerDroppedItems } from './bot/mineflayer-dropped-items.js'
 import { MineflayerEater } from './bot/mineflayer-eater.js'
@@ -19,7 +20,9 @@ import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
 import { MineflayerFoodCatalog } from './bot/mineflayer-food-catalog.js'
 import { MineflayerFurnaceAccess } from './bot/mineflayer-furnace.js'
 import { MineflayerInventory } from './bot/mineflayer-inventory.js'
+import { MineflayerItemFacts } from './bot/mineflayer-item-facts.js'
 import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
+import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
 import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
@@ -76,6 +79,24 @@ import { AttackEntityTool } from './mcp/tools/attack-entity-tool.js'
 import { HuntAnimalsTool } from './mcp/tools/hunt-animals-tool.js'
 import { ListHuntableAnimalsTool } from './mcp/tools/list-huntable-animals-tool.js'
 import { SetFoodPolicyTool } from './mcp/tools/set-food-policy-tool.js'
+import {
+  LabelContainerTool,
+  ListContainersTool,
+  RegisterContainerTool,
+  RemoveContainerTool,
+} from './mcp/tools/container-tools.js'
+import {
+  ListStorageRulesTool,
+  RemoveStorageRuleTool,
+  SetStorageRuleTool,
+} from './mcp/tools/storage-rule-tools.js'
+import {
+  DepositItemsTool,
+  FindItemsTool,
+  ScanContainersTool,
+  WithdrawItemsTool,
+} from './mcp/tools/storage-task-tools.js'
+import { ResumeTaskTool, SetStoragePolicyTool } from './mcp/tools/storage-policy-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -104,10 +125,13 @@ import { ThreatResponse } from './reflexes/threat-response.js'
 import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
+import { ContainerIndex } from './state/container-index.js'
 import { FoodPolicy } from './state/food-policy.js'
 import { InstructionLog } from './state/instruction-log.js'
 import { NotesStore } from './state/notes-store.js'
 import { ProtectedAreas } from './state/protected-areas.js'
+import { StoragePolicy } from './state/storage-policy.js'
+import { StorageRules } from './state/storage-rules.js'
 import { SessionBriefingBuilder } from './state/session-briefing.js'
 import { StandingInstructions } from './state/standing-instructions.js'
 import { TaskJournal } from './state/task-journal.js'
@@ -126,6 +150,13 @@ import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
 import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
 import { PenDetector } from './skills/hunting/pen-detector.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
+import { ContainerSelector } from './skills/storage/container-selector.js'
+import { ContainerVisitor } from './skills/storage/container-visitor.js'
+import { DepositItemsSkill } from './skills/storage/deposit-items-skill.js'
+import { FindItemsSkill } from './skills/storage/find-items-skill.js'
+import { InventoryFullHandler } from './skills/storage/inventory-full-handler.js'
+import { ScanContainersSkill } from './skills/storage/scan-containers-skill.js'
+import { WithdrawItemsSkill } from './skills/storage/withdraw-items-skill.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
 import { TaskManager } from './tasks/task-manager.js'
@@ -205,6 +236,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const standing = new StandingInstructions()
   const protectedAreas = new ProtectedAreas()
   const foodPolicy = new FoodPolicy()
+  const containerIndex = new ContainerIndex(clock)
+  const storageRules = new StorageRules()
+  const storagePolicy = new StoragePolicy()
   const journal = new TaskJournal(clock, tasks)
   const worldState = new WorldStateManager({
     registry: new WorldRegistry({
@@ -213,7 +247,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     }),
     storeForProfile: (profile) =>
       new FileStateStore({ directory: path.join(config.dataDir, profile), scheduler, logger }),
-    components: [notes, history, standing, journal, protectedAreas, foodPolicy],
+    components: [
+      notes,
+      history,
+      standing,
+      journal,
+      protectedAreas,
+      foodPolicy,
+      containerIndex,
+      storageRules,
+      storagePolicy,
+    ],
     logger,
   })
   // Survival reflexes: run by themselves, with no round trip to the agent.
@@ -304,6 +348,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       history.record('event', `${event.type}: ${event.message}`)
     },
   })
+  // A task that waits for the player's decision tells the agent, who asks the player.
+  tasks.onEvent((event) => {
+    if (event.type !== 'waiting' || event.snapshot.pending === undefined) return
+    inbox.pushEvent({
+      type: 'needs_decision',
+      message: `Task ${event.snapshot.id} (${event.snapshot.description}) is waiting: ${event.snapshot.pending.message} Options: ${event.snapshot.pending.options.join(', ')}.`,
+    })
+  })
   const router = new ChatRouter({
     inbox,
     logger,
@@ -359,6 +411,43 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     spots: new PlacementSpotFinder(blocks),
   })
   const dropCollector = new DropCollector({ drops, navigator, scheduler })
+  // Storage: containers, rules, and what to do when the inventory is full.
+  const itemFacts = new MineflayerItemFacts(connection)
+  const visitor = new ContainerVisitor({
+    blocks,
+    navigator,
+    containers: new MineflayerContainerAccess(connection, itemFacts),
+    index: containerIndex,
+  })
+  const selector = new ContainerSelector(containerIndex, storageRules, itemFacts)
+  const depositItems = new DepositItemsSkill({
+    inventory,
+    vitals,
+    index: containerIndex,
+    selector,
+    visitor,
+    facts: itemFacts,
+  })
+  const scanContainers = new ScanContainersSkill({ vitals, index: containerIndex, visitor })
+  const withdrawItems = new WithdrawItemsSkill({
+    inventory,
+    vitals,
+    index: containerIndex,
+    visitor,
+    facts: itemFacts,
+  })
+  const findItems = new FindItemsSkill({
+    index: containerIndex,
+    scanner: scanContainers,
+    facts: itemFacts,
+  })
+  const inventoryFull = new InventoryFullHandler({
+    policy: storagePolicy,
+    depositor: depositItems,
+    navigator,
+    vitals,
+    inventory,
+  })
   const collectBlocks = new CollectBlocksSkill({
     blocks,
     finder: blockFinder,
@@ -368,6 +457,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     vitals,
     drops: dropCollector,
     guard: protectedAreas,
+    full: inventoryFull,
   })
   const craftItem = new CraftItemSkill({
     book: recipes,
@@ -397,6 +487,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     smelter: smeltItems,
     pens,
     clock,
+    full: inventoryFull,
+    depositor: depositItems,
   })
   const attackEntity = new AttackEntitySkill({ animals, combatant, drops: dropCollector, clock })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
@@ -434,6 +526,27 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ListHuntableAnimalsTool(animals, pens))
     .register(new AttackEntityTool(attackEntity, launcher))
     .register(new SetFoodPolicyTool(foodPolicy, standing))
+    .register(
+      new RegisterContainerTool(
+        containerIndex,
+        storageRules,
+        blocks,
+        new MineflayerLookTarget(connection),
+        config.owner,
+      ),
+    )
+    .register(new LabelContainerTool(containerIndex, storageRules))
+    .register(new RemoveContainerTool(containerIndex, storageRules))
+    .register(new ListContainersTool(containerIndex, storageRules))
+    .register(new ScanContainersTool(scanContainers, launcher))
+    .register(new SetStorageRuleTool(containerIndex, storageRules, itemFacts))
+    .register(new ListStorageRulesTool(containerIndex, storageRules))
+    .register(new RemoveStorageRuleTool(storageRules))
+    .register(new DepositItemsTool(depositItems, launcher))
+    .register(new WithdrawItemsTool(withdrawItems, launcher))
+    .register(new FindItemsTool(findItems, launcher))
+    .register(new SetStoragePolicyTool(storagePolicy, standing))
+    .register(new ResumeTaskTool(tasks, clock))
     .register(new ProtectAreaTool(protectedAreas))
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))

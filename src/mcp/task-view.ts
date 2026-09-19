@@ -14,6 +14,7 @@ export function taskView(snapshot: TaskSnapshot, clock: Clock): Record<string, u
     progress: snapshot.progress ?? null,
     result: snapshot.result ?? null,
     failure: snapshot.failure ?? null,
+    waitingFor: snapshot.pending ?? null,
     cancelReason: snapshot.cancelReason ?? null,
     startedAt: iso(snapshot.startedAt),
     finishedAt: snapshot.finishedAt === undefined ? null : iso(snapshot.finishedAt),
