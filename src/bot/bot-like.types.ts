@@ -24,6 +24,10 @@ export interface EntityLike {
    * or a target. Set by our factory from Mineflayer's `entityDead` event, which never marks the entity itself.
    */
   readonly isDead?: boolean | undefined
+  /** Raw entity metadata by index; `registry.entitiesByName[name].metadataKeys` names the indexes. */
+  readonly metadata?: readonly unknown[] | undefined
+  /** Entities riding this one. */
+  readonly passengers?: readonly unknown[] | undefined
   /** For item entities: what lies on the ground. */
   getDroppedItem?(): ItemLike | null
 }
@@ -118,6 +122,9 @@ export interface BotLike {
     >
     readonly itemsByName: Readonly<Record<string, { readonly id: number }>>
     readonly items: Readonly<Record<number, { readonly name: string }>>
+    readonly entitiesByName: Readonly<
+      Record<string, { readonly metadataKeys?: readonly string[] | undefined }>
+    >
     /** Keyed by the id of the item that is made. Only the keys are used. */
     readonly recipes: Readonly<Record<string, unknown>>
     readonly foodsByName: Readonly<

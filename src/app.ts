@@ -7,6 +7,7 @@ import { StopCommand } from './chat/stop-command.js'
 import type { BotFactory } from './bot/bot-like.types.js'
 import { MineflayerCombatDriver } from './bot/combat-driver.js'
 import { MeleeCombatant } from './bot/melee-combatant.js'
+import { MineflayerAnimalScanner } from './bot/mineflayer-animal-scanner.js'
 import { MineflayerBlockScanner } from './bot/mineflayer-block-scanner.js'
 import { MineflayerChat } from './bot/mineflayer-chat.js'
 import { MineflayerConnection } from './bot/mineflayer-connection.js'
@@ -71,6 +72,10 @@ import {
 } from './mcp/tools/memory-tools.js'
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
+import { AttackEntityTool } from './mcp/tools/attack-entity-tool.js'
+import { HuntAnimalsTool } from './mcp/tools/hunt-animals-tool.js'
+import { ListHuntableAnimalsTool } from './mcp/tools/list-huntable-animals-tool.js'
+import { SetFoodPolicyTool } from './mcp/tools/set-food-policy-tool.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -99,6 +104,7 @@ import { ThreatResponse } from './reflexes/threat-response.js'
 import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
+import { FoodPolicy } from './state/food-policy.js'
 import { InstructionLog } from './state/instruction-log.js'
 import { NotesStore } from './state/notes-store.js'
 import { ProtectedAreas } from './state/protected-areas.js'
@@ -114,6 +120,11 @@ import { Workstations } from './skills/crafting/workstations.js'
 import { CollectBlocksSkill } from './skills/gathering/collect-blocks-skill.js'
 import { DropCollector } from './skills/gathering/drop-collector.js'
 import { PickupItemsSkill } from './skills/gathering/pickup-items-skill.js'
+import { AttackEntitySkill } from './skills/hunting/attack-entity-skill.js'
+import { HUNTABLE_SPECIES_NAMES } from './skills/hunting/animal-catalog.js'
+import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
+import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
+import { PenDetector } from './skills/hunting/pen-detector.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
@@ -193,6 +204,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const history = new InstructionLog(clock)
   const standing = new StandingInstructions()
   const protectedAreas = new ProtectedAreas()
+  const foodPolicy = new FoodPolicy()
   const journal = new TaskJournal(clock, tasks)
   const worldState = new WorldStateManager({
     registry: new WorldRegistry({
@@ -201,7 +213,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     }),
     storeForProfile: (profile) =>
       new FileStateStore({ directory: path.join(config.dataDir, profile), scheduler, logger }),
-    components: [notes, history, standing, journal, protectedAreas],
+    components: [notes, history, standing, journal, protectedAreas, foodPolicy],
     logger,
   })
   // Survival reflexes: run by themselves, with no round trip to the agent.
@@ -220,6 +232,25 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
         { signal: new AbortController().signal },
       )
     ).ok
+  // What to do when the bot is hungry with nothing to eat: the player's standing food policy, applied in code.
+  const lowFood = new LowFoodResponder({
+    policy: foodPolicy,
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+    startHunt: async () => {
+      const result = await invoke(
+        'hunt_animals',
+        { species: HUNTABLE_SPECIES_NAMES, count: 3, cook: true, wait_seconds: 0 },
+        { signal: new AbortController().signal },
+      )
+      return { ok: result.ok, message: result.ok ? '' : result.error }
+    },
+    stopTask: async () => {
+      await tasks.cancel(undefined, 'requested')
+    },
+    scheduler,
+  })
   const reflexes = new ReflexEngine({
     reflexes: [
       new AvoidLava({ blocks, navigator, locomotion, safeSpots }),
@@ -235,6 +266,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
         inventory,
         catalog: new MineflayerFoodCatalog(connection),
         eater: new MineflayerEater(connection),
+        onNoFood: () => {
+          lowFood.respond()
+        },
       }),
     ],
     vitals,
@@ -351,6 +385,20 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     clock,
     scheduler,
   })
+
+  // Hunting.
+  const animals = new MineflayerAnimalScanner(connection)
+  const pens = new PenDetector(blocks)
+  const huntAnimals = new HuntAnimalsSkill({
+    animals,
+    combatant,
+    drops: dropCollector,
+    inventory,
+    smelter: smeltItems,
+    pens,
+    clock,
+  })
+  const attackEntity = new AttackEntitySkill({ animals, combatant, drops: dropCollector, clock })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -382,6 +430,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new CraftTool(craftItem, launcher))
     .register(new SmeltTool(smeltItems, launcher))
     .register(new ListRecipesTool(recipes, planner, inventory))
+    .register(new HuntAnimalsTool(huntAnimals, launcher))
+    .register(new ListHuntableAnimalsTool(animals, pens))
+    .register(new AttackEntityTool(attackEntity, launcher))
+    .register(new SetFoodPolicyTool(foodPolicy, standing))
     .register(new ProtectAreaTool(protectedAreas))
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))

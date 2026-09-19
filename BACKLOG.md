@@ -30,6 +30,13 @@ Give instructions to the bot by speaking instead of typing in game chat. The bot
 - **Night shelter**: build or dig in when night falls far from a bed. Same dependency.
 - **E2E scenario for a reflex pausing and resuming a real task**: covered by integration tests only.
 
+### Hunting
+- **Leashed animals** are not detected as protected (Mineflayer does not expose leads); the pen heuristic covers most cases.
+- **Pen heuristic** only knows fences, gates, walls, and iron bars; a pen made of other blocks (stone walls, glass) is not recognized.
+- **Cooking in smokers and campfires**: `smelt` uses a regular furnace only.
+- **Fish and other food**: only livestock is huntable; fishing, farming, and foraging are not covered.
+- **Deposit cooked food in chests** once the storage feature exists.
+
 ### Gathering, crafting, smelting
 - **Blast furnace and smoker**: `smelt` only uses a regular furnace (twice as slow for ores and food).
 - **Reaching high logs**: tall tree trunks cannot be finished from the ground because the bot never pillars up. Options: allow towering with a safe block, or leave the top logs.

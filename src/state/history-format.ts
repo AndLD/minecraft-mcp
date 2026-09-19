@@ -16,6 +16,7 @@ export const HISTORY_IGNORED_TOOLS: ReadonlySet<string> = new Set([
   'get_inventory',
   'list_recipes',
   'list_protected_areas',
+  'list_huntable_animals',
 ])
 
 /** One line for the history log, or undefined when the call is not worth recording. */

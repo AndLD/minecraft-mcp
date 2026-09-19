@@ -34,6 +34,11 @@ export interface SmeltOutput {
   readonly fuel: string
 }
 
+/** What other skills (cooking after a hunt) need from smelting. */
+export interface ItemSmelter {
+  run(input: SmeltInput, context: SkillContext): Promise<SkillResult<SmeltOutput>>
+}
+
 export interface SmeltItemsDeps {
   readonly inventory: InventoryReader
   readonly furnaces: FurnaceAccess
@@ -48,7 +53,7 @@ export interface SmeltItemsDeps {
  * Smelts items in a furnace: finds one (or places one, crafting it if needed), loads fuel and items, waits, and
  * collects the output. Whatever is left in the furnace when it stops for any reason goes back into the inventory.
  */
-export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput> {
+export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmelter {
   readonly name = 'smelt'
 
   constructor(private readonly deps: SmeltItemsDeps) {}

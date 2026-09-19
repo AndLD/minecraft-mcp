@@ -63,8 +63,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 4 E2E test harness | done, merged into `development` |
 | 5 Persistent state | done, merged into `development` |
 | 6 Survival reflexes | done, merged into `development` |
-| 7 Gathering, crafting, smelting | implemented on `feature/gather-craft-smelt`, awaiting approval |
-| 8 and later | not started |
+| 7 Gathering, crafting, smelting | done, merged into `development` |
+| 8 Hunting and food | implemented on `feature/hunting`, awaiting approval |
+| 9 and later | not started |
 
 ## Phases
 
@@ -189,6 +190,7 @@ Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffol
 The tools before this phase cannot hunt: perception can list entities and the reflexes only fight hostile mobs on their own, so there is no way to attack a specific passive animal, chase it, and collect the drops. This phase adds that flow.
 
 - Branch: `feature/hunting`.
+- **As built:** as planned, plus `AnimalScanner` (a new port over entity metadata) and `AnimalKiller` shared by `hunt_animals` and `attack_entity`. The goal is `item` + `count` or `species` + `count`. Not built: leash detection (Mineflayer does not expose the lead) and the "pause and wait for `resume_task`" flavor of the low-food decision: the `ask` policy emits a `needs_decision` event and the agent asks the player, and `set_food_policy` makes the decision standing. Cooked food is not deposited in chests yet (the storage feature comes later).
 - Reuses: `Combatant` (survival reflexes phase), `Navigator` and `EntityScanner` (movement phase), `PickupItems` and `SmeltItems` (gathering phase).
 - `AnimalCatalog` (data table): species → drops and behavior notes (cow: beef and leather, pig: porkchop, sheep: mutton and wool, chicken: chicken and feathers, rabbit: rabbit meat, rabbit hide, and others), plus protection rules that exclude:
   - tamed animals (owner set), animals with a custom name, leashed animals, saddled or ridden animals

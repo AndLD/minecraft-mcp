@@ -15,6 +15,8 @@ export interface AutoEatOptions {
   readonly inventory: InventoryReader
   readonly catalog: FoodCatalog
   readonly eater: Eater
+  /** Called when the bot is hungry and has nothing to eat (at most every few minutes). */
+  readonly onNoFood?: () => void
 }
 
 /** Keeps the food bar up with the best food in the inventory, without stopping the current task. */
@@ -40,6 +42,7 @@ export class AutoEat implements Reflex {
       context.emit(
         `Hungry (food ${String(state.vitals.food)}/20) but there is nothing safe to eat.`,
       )
+      this.options.onNoFood?.()
       return { resumeTask: true }
     }
     const result = await this.options.eater.eat(food)
