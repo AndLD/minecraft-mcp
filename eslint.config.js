@@ -30,6 +30,16 @@ export default defineConfig(
           message: 'Use the injected Clock.',
         },
       ],
+      'no-restricted-globals': [
+        'error',
+        { name: 'setTimeout', message: 'Use the injected Scheduler.' },
+        { name: 'setInterval', message: 'Use the injected Scheduler.' },
+        { name: 'setImmediate', message: 'Use the injected Scheduler.' },
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
@@ -45,7 +55,7 @@ export default defineConfig(
         {
           patterns: [
             {
-              group: ['mineflayer', 'mineflayer-*', 'prismarine-*', 'minecraft-protocol'],
+              regex: '^(mineflayer|mineflayer-[^/]*|prismarine-[^/]*|minecraft-protocol)(/.*)?$',
               message: 'Only src/bot may import Mineflayer.',
             },
           ],
@@ -56,12 +66,20 @@ export default defineConfig(
   {
     // The only places allowed to touch the real clock, randomness, and stdio.
     files: ['src/infra/**/*.ts'],
-    rules: { 'no-restricted-properties': 'off', 'no-restricted-syntax': 'off' },
+    rules: {
+      'no-restricted-properties': 'off',
+      'no-restricted-syntax': 'off',
+      'no-restricted-globals': 'off',
+    },
   },
   {
     // Tests may use the real clock and randomness to assert the system sources.
     files: ['test/**/*.ts'],
-    rules: { 'no-restricted-properties': 'off', 'no-restricted-syntax': 'off' },
+    rules: {
+      'no-restricted-properties': 'off',
+      'no-restricted-syntax': 'off',
+      'no-restricted-globals': 'off',
+    },
   },
   prettier,
 )
