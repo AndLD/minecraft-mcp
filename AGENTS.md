@@ -87,6 +87,7 @@ Skills receive only the ports they need, never a whole bot.
 | `FurnaceAccess` | open a furnace: put input and fuel, take output, input, and fuel back |
 | `InventoryReader` / `InventoryWriter` | contents; throw items out (`toss`) |
 | `Gaze` | turn to face a point (then wait for the server to learn the direction) |
+| `ServerCommands` | which commands the server offers the bot (from its command list), and typing one (`/tp`) and reading the server's reply, classified as ok, no permission, unknown command, error, or no reply |
 | `DeathWatcher` | reports each death (place, dimension, what was carried and worn, the server's message) once the bot has respawned; reads what is carried now |
 | `ContainerAccess` | open a chest, barrel, or shulker box (a double chest is one container): read its contents, deposit and withdraw by item name, close |
 | `ItemFacts` | what the game data says about items: exists, food, block, stack size |
@@ -256,6 +257,13 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 - **Unclaimed handover drops.** When `give_items` (drop mode) ends with items nobody picked up, `UnclaimedDropHandler` writes an `unclaimed` record (`at` is the moment of the throw) and, unless the call said `recollect_unclaimed: false` or the standing policy for `unclaimed` is `skip`, has `AutoRecovery` fetch them `UNCLAIMED_DROP_WAIT_SECONDS` (default 60) after the throw. Only the thrown item names within 12 blocks of the spot are taken. Nothing left there means `gone` (somebody took them).
 - **Tools.** `set_drop_recovery_policy` (`auto` or `skip`, per situation `death`, `unclaimed`, or both; mirrored as the standing instruction `drop_recovery_policy`), `skip_drop_recovery` (cancels a running or waiting recovery and marks the records `abandoned`, returning the coordinates), `recover_drops`, `list_death_records` (both kinds).
 - **Gotcha found while building it.** The `AvoidLava` reflex also fires for lava next to the bot, so a spot with lava right beside the items makes the reflex pull the task back and forth; the attempt limit is what ends it. Death drops, the snapshot, and the keepInventory check depend on `bot.inventory.slots` (all slots, including armor and the off hand), not `bot.inventory.items()`.
+
+### Server commands and teleporting
+
+- `ServerCommands` (`MineflayerServerCommands`) types a command as chat (`/tp ...`) and waits up to 1.5 s for the server's answer (`messagestr` lines that are not another player's `<name> text`). `available(command)` reads the command list the server sent at login (`declare_commands`, parsed by `commandNamesFrom`, stored by the factory as `bot.commandNames`): the server only lists what this player may use, so a missing `tp` means "not an operator, or cheats are off". The list is resent when `/op` or `/deop` happens, so `get_status` (`commands.canTeleport`: true, false, or null before the list arrives) follows it live.
+- `TeleportSkill` (`teleport_to_player`, `teleport_to_position`): `no_permission` (with the exact instructions: open the world to LAN with "Allow cheats: ON", then the host types `/op <bot name>`; the bot cannot grant this itself) without sending anything when `tp` is not offered; `player_not_online`; `unknown_command`; `teleport_failed` with the server's words. It then checks that the bot really moved (a server may answer nothing). A player target puts the bot on the player's own block, so it steps to a safe spot beside them (no lava or water, solid ground, headroom).
+- **Only on the player's request.** The tool descriptions say so, and no reflex, task, or responder ever calls them. Teleporting can also cross dimensions, and it skips everything between: use it because the player asked, not because walking is slow.
+- Reply classification is by wording (`classifyReply`), because the text arrives without colours. Anything unrecognised counts as success and the skill verifies the effect, so a misjudged reply costs a clearer message, never a wrong action.
 
 ### Tasks
 

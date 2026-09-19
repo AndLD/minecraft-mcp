@@ -104,7 +104,14 @@ describe('GetStatusTool', () => {
 
     expect(tool.execute()).toEqual({
       ok: true,
-      data: { state: 'disconnected', target: null, vitals: null, pendingInbox: 0, reflexes: null },
+      data: {
+        state: 'disconnected',
+        target: null,
+        vitals: null,
+        pendingInbox: 0,
+        commands: { canTeleport: null },
+        reflexes: null,
+      },
     })
   })
 
@@ -130,6 +137,7 @@ describe('GetStatusTool', () => {
         target: { host: 'localhost', port: 34231, username: 'ClaudeBot', version: '1.21.1' },
         vitals: vitals.vitals,
         pendingInbox: 1,
+        commands: { canTeleport: null },
         reflexes: null,
       },
     })

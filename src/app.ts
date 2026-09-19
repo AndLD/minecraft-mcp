@@ -29,6 +29,7 @@ import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
 import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
+import { MineflayerServerCommands } from './bot/mineflayer-server-commands.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
 import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
 import { MineflayerWorldIdentifier } from './bot/mineflayer-world-identifier.js'
@@ -117,6 +118,7 @@ import {
   UnprotectAreaTool,
 } from './mcp/tools/protected-area-tools.js'
 import { SmeltTool } from './mcp/tools/smelt-tool.js'
+import { TeleportToPlayerTool, TeleportToPositionTool } from './mcp/tools/teleport-tools.js'
 import {
   GetSessionBriefingTool,
   ListWorldsTool,
@@ -162,6 +164,7 @@ import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
 import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
 import { PenDetector } from './skills/hunting/pen-detector.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
+import { TeleportSkill } from './skills/commands/teleport-skill.js'
 import { AutoRecovery } from './skills/recovery/auto-recovery.js'
 import { DeathResponder } from './skills/recovery/death-responder.js'
 import { DropIgnoreList } from './skills/recovery/drop-ignore-list.js'
@@ -616,6 +619,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     depositor: depositItems,
   })
   const attackEntity = new AttackEntitySkill({ animals, combatant, drops: dropCollector, clock })
+  // Server commands (teleporting), which only work when the server lets the bot use them.
+  const serverCommands = new MineflayerServerCommands(connection, scheduler)
+  const teleport = new TeleportSkill({
+    commands: serverCommands,
+    vitals,
+    navigator,
+    entities,
+    spots: safeSpots,
+    scheduler,
+    botName: () => connection.target?.username,
+  })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -627,10 +641,16 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ConnectTool(session, briefing))
     .register(new DisconnectTool(connection))
     .register(
-      new GetStatusTool(connection, vitals, inbox, {
-        enabled: config.reflexesEnabled,
-        activeReflex: () => reflexes.activeReflex(),
-      }),
+      new GetStatusTool(
+        connection,
+        vitals,
+        inbox,
+        {
+          enabled: config.reflexesEnabled,
+          activeReflex: () => reflexes.activeReflex(),
+        },
+        serverCommands,
+      ),
     )
     .register(new WaitForChatTool(connection, inbox))
     .register(new SayTool(chat))
@@ -675,6 +695,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GiveItemsTool(giveItems, launcher, config.owner))
     .register(new DropItemsTool(dropItems, launcher))
     .register(new ResolveItemTool(new ItemResolver(itemFacts), inventory, containerIndex))
+    .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
+    .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))
     .register(new SkipDropRecoveryTool(dropRecords, tasks, clock))
     .register(new SetDropRecoveryPolicyTool(dropPolicy, standing))

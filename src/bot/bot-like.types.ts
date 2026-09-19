@@ -114,6 +114,8 @@ export interface BotLike {
   readonly spawnPoint: Position
   /** The hashed world seed (hex) from the login packet. Set by our factory, not by Mineflayer. */
   readonly worldSeed?: string | undefined
+  /** The commands the server offers this player (from its `declare_commands` packet). Set by our factory, not by Mineflayer. */
+  readonly commandNames?: readonly string[] | undefined
   readonly entities: Readonly<Record<string, EntityLike>>
   readonly players: Readonly<Record<string, PlayerLike>>
   /** Only `raycast` is used: the first block a ray hits, for "the chest the player looks at". */

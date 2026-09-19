@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { AgentInbox } from '../../chat/agent-inbox.js'
 import type { Connection } from '../../core/connection.port.js'
+import type { ServerCommands } from '../../core/server-commands.port.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import { toolOk } from '../tool-result.js'
 import type { ToolDefinition } from '../tool.types.js'
@@ -13,7 +14,9 @@ export class GetStatusTool implements ToolDefinition<typeof schema> {
     'Reports the connection state (disconnected, connecting, connected), the server target, and, when connected, ' +
     'the bot health (0-20), food (0-20), position (x, y, z in blocks), dimension, and time of day (ticks, 0-23999). ' +
     'Also reports how many chat messages and events are waiting for wait_for_chat, and whether the survival reflexes ' +
-    '(auto-eat, fighting, fleeing, avoiding lava) are enabled and which one is acting right now.'
+    '(auto-eat, fighting, fleeing, avoiding lava) are enabled and which one is acting right now. `commands.canTeleport` says whether ' +
+    'the server lets the bot teleport (true, false, or null before the server has sent its command list); when false, ' +
+    'the host must allow cheats and type /op <bot name>.'
   readonly inputSchema = schema
 
   constructor(
@@ -21,6 +24,7 @@ export class GetStatusTool implements ToolDefinition<typeof schema> {
     private readonly vitals: VitalsReader,
     private readonly inbox: AgentInbox,
     private readonly reflexes?: { readonly enabled: boolean; activeReflex(): string | undefined },
+    private readonly commands?: ServerCommands,
   ) {}
 
   execute() {
@@ -38,6 +42,7 @@ export class GetStatusTool implements ToolDefinition<typeof schema> {
             },
       vitals: this.vitals.read() ?? null,
       pendingInbox: this.inbox.pendingCount,
+      commands: { canTeleport: this.commands?.available('tp') ?? null },
       reflexes:
         this.reflexes === undefined
           ? null

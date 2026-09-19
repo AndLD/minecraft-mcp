@@ -82,6 +82,8 @@ describe('MCP server over an in-memory transport', () => {
         'set_standing_instruction',
         'set_world_profile',
         'stop',
+        'teleport_to_player',
+        'teleport_to_position',
         'wait_for_chat',
         'whisper',
       ].sort(),

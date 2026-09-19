@@ -2,6 +2,7 @@ import mineflayer from 'mineflayer'
 import pathfinderPlugin from 'mineflayer-pathfinder'
 import type { ConnectTarget } from '../core/connection.port.js'
 import type { BotFactory, BotLike } from './bot-like.types.js'
+import { commandNamesFrom } from './command-tree.js'
 import { formatHashedSeed } from './hashed-seed.js'
 import { installContainerWindows } from './install-container-windows.js'
 import { installWindowCrafter } from './install-window-crafter.js'
@@ -29,6 +30,11 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
       if (worldSeed !== undefined) Object.assign(bot, { worldSeed })
     },
   )
+  // The server lists the commands this player may use, and sends the list again when operator rights change.
+  bot._client.on('declare_commands', (packet: unknown) => {
+    const commandNames = commandNamesFrom(packet)
+    if (commandNames !== undefined) Object.assign(bot, { commandNames })
+  })
   // Mineflayer announces a death but leaves the entity as it was until it is removed a moment later.
   bot.on('entityDead', (entity) => {
     Object.assign(entity, { isDead: true })
