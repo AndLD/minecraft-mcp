@@ -288,8 +288,11 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Handover | `give_items`, `drop_items`, `resolve_item` |
 | Drop recovery | `set_drop_recovery_policy`, `skip_drop_recovery`, `recover_drops`, `list_death_records` |
 | Storage | `register_container`, `label_container`, `list_containers`, `scan_containers`, `set_storage_rule`, `list_storage_rules`, `remove_storage_rule`, `deposit_items`, `withdraw_items`, `find_items`, `set_storage_policy` |
-| Building | `build`, `list_blueprints`, `place_block` |
-| Discovery | `explore_for_structure`, `list_known_structures`, `set_landmark`, `list_landmarks` |
+| Building | `build`, `list_blueprints`, `place_block`, `preview_build` |
+| Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine), `preview_excavation` |
+| Railways | `plan_railway`, `build_railway`, `place_minecart` |
+| Server commands | `teleport_to_player`, `teleport_to_position` (only on the player's request, and only when the server allows commands) |
+| Discovery | `explore_for_structure`, `explore_caves`, `list_known_structures`, `set_landmark`, `list_landmarks` |
 | Tasks | `get_task_status`, `cancel_task`, `resume_task` |
 
 ## Coding conventions

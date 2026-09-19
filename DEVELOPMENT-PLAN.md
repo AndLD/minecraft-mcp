@@ -66,8 +66,14 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 7 Gathering, crafting, smelting | done, merged into `development` |
 | 8 Hunting and food | done, merged into `development` |
 | 9 Storage and containers | done, merged into `development` |
-| 10 Item handover | implemented on `feature/item-handover`, awaiting approval |
-| 11 and later | not started |
+| 10 Item handover | done, merged into `development` |
+| 11 Drop recovery | not started |
+| 12 Server commands and teleport | not started (added) |
+| 13 Construction engine and building | not started (building now sits on a shared engine) |
+| 14 Excavation and mining | not started (added) |
+| 15 Railways | not started (added) |
+| 16 World discovery, including caves and canyons | not started (cave flow added) |
+| 17 Hardening and polish | not started (was 14) |
 
 ## Phases
 
@@ -283,20 +289,79 @@ The plan had no death handling at all, and nothing about items the bot has dropp
   - e2e: the bot holding items is killed through RCON, respawns, and recovers its items automatically; "skip" leaves them and reports the coordinates; a death spot surrounded by lava (built via RCON) leads to asking and not to a second death; an unclaimed handover drop is collected back after the timeout, and left when `recollect_unclaimed` is false
 - **Exit criteria:** after the bot dies, it tells you where and recovers its stuff by itself; telling it to skip stops the attempt and gives you the coordinates; a dangerous spot is never entered without asking you.
 
-### Phase 12: Building (1.5 sessions)
+### Phase 12: Server commands and teleport (½ session)
 
-- Port: `Placer`. Domain: `Blueprint` (relative block placements), `BlueprintProvider` registry.
-- Providers: `Box`/`Walls`/`Floor`, `Shelter` (1×2 emergency), `SmallHouse`, plus a JSON blueprint loader for custom builds.
-- `BuildSkill`: material requirement calculation, missing-materials report (so the agent can gather first), layer-by-layer placement, scaffolding (pillar up) for elevated placement, verification pass, retry of failed blocks.
-- Tools: `build`, `list_blueprints`, `place_block`. Missing materials can be fetched from the container index (uses the storage phase's `FindItems`/`WithdrawItems`).
-- Branch: `feature/building`.
+The bot can walk to you, but sometimes you want it next to you at once (it is far away, in a cave, or across water). When the server allows commands, it can teleport to you.
+
+- Branch: `feature/server-commands`.
+- **What the server must allow:** on a LAN world "Allow cheats" must be on, **and the bot must be an operator** (`/op ClaudeBot`, typed by you as the host; cheats alone only make the host an operator). The bot cannot grant this to itself. Without it the tool answers `no_permission` with these instructions, and the agent offers walking (`goto`) instead.
+- Port `ServerCommands`: `available(command)` (from the command tree the server sends at login, with a harmless probe as fallback) and `run(command)`, which sends the command, waits (bounded) for the server's reply in chat, and classifies it: `ok`, `no_permission`, `unknown_command`, `error` (with the server's text). Reusable later for the optional `/locate` accelerator in world discovery.
+- Tools: `teleport_to_player` (player defaults to the owner) and `teleport_to_position`. **Only on your request**: the description tells the agent so, and no reflex or task ever teleports on its own. `get_status` reports whether commands and teleporting are available.
+- Arrival: `/tp` puts the bot at the player's exact position, so it steps aside to a safe standing spot next to them (not in a wall, over lava, or in the air), and reports where it stands.
+- **Tests:** unit: reply classification (success, no permission, unknown command, other errors, timeout), availability from a command tree, `TeleportSkill` (safe spot search, denied, timeout, aborted); integration: the tool through the MCP layer with a fake connection; e2e: the bot is opped through RCON and teleports to a player standing far away (arrives within 3 blocks, on solid ground); without op the answer is `no_permission` with the explanation.
+- **Exit criteria:** "teleport to me" puts the bot next to you when commands are enabled, and explains exactly what to enable when they are not.
+
+### Phase 13: Construction engine and building (2 sessions)
+
+**Design decision: one shared engine, not one big feature.** Building, excavation, and railways all do the same thing: turn a shape into an ordered list of block operations (break here, place there, light there), then carry it out safely, resumably, and within the bot's means (tools, materials, light, hazards). Their differences (what shape, what stops it) are small. Merging them into one feature would make one huge, untestable branch; keeping them apart would build the same executor three times. So this phase builds the engine and delivers **building** as its first client, and the excavation and railway phases are further clients that add only their shape generators and rules.
+
+- **`WorkPlan`**: an ordered list of `WorkStep`s (`break` a cell, `place` a block at a cell against a support face, `light` a spot, `check` something), plus where the bot should stand for each. Shape generators implement `PlanProvider` (Open/Closed: a new shape is a new class): blueprints for building here, `ExcavationProvider`s in the excavation phase, a rail route provider in the railway phase.
+- **`PlanExecutor`**: runs a plan step by step with walking between standing spots, tool choice and durability (swap to a fresh tool, craft one, or stop `no_tools`), material accounting (a **preview** reports what is missing before anything is done, so the agent can gather first), the inventory-full policy from the storage phase, protected areas, a persisted cursor so an interrupted plan resumes where it stopped, a verification pass, and retries of failed steps. Reflexes pause and resume it like any task.
+- **`SiteSafety`** (shared by every client): the *hazard envelope* check (fluids, falling blocks, cave breakthroughs, drops: see the excavation phase) and the `LightManager` (reads the light level of the spot, places a torch when it is below `min_light` and no torch is closer than the spacing; crafts or fetches torches).
+- `Placer` grows `placeAgainst(reference, face)`, so torches go on walls, stairs and rails face the right way, and blocks can be placed from the side or from below.
+- **Building on top of it** (original scope of this phase): domain `Blueprint` (relative block placements) and the `BlueprintProvider` registry. Providers: `Box`/`Walls`/`Floor`, `Shelter` (1×2 emergency), `SmallHouse`, plus a JSON blueprint loader for custom builds. `BuildSkill` = `PlanExecutor` over a blueprint plan (scaffolding by pillaring up for elevated placement). Tools: `build`, `list_blueprints`, `place_block`, `preview_build`. Missing materials can be fetched from the container index (the storage phase's `FindItems` and `WithdrawItems`).
+
+- Branches: `feature/construction-engine` (the engine, with a first building client) and `feature/building` (the blueprint library and house).
 - **Tests:**
-  - unit: blueprint providers (deterministic output, dimensions, door position, material counts), `BuildSkill` against a fake `Placer` and a grid-based fake world (ordering, scaffolding, retries, verification pass, missing materials)
+  - unit: `PlanExecutor` against a grid-based fake world (ordering, standing spots, tool swap, material preview, resume from the cursor, verification, retries), `SiteSafety`, blueprint providers (deterministic output, dimensions, door position, material counts), `BuildSkill` (scaffolding, missing materials)
   - integration: `build` through the tool layer on a stateful fake world produces the expected block grid
   - e2e: build a small house on flat ground from supplied materials, then verify the block layout in the world through RCON; missing-materials report when the inventory is empty
 - **Exit criteria:** "build a small house here" gathers or reports missing materials, then produces a complete, enterable house with a door.
 
-### Phase 13: World discovery (1.5 sessions)
+### Phase 14: Excavation and mining (2 sessions)
+
+`collect_block` is deliberately conservative: it only digs blocks that touch open air, never tunnels, and never digs straight down (that is why "dig a 3×3×2 pit" is refused). Digging pits, quarries, tunnels, and mines needs its own tool, with its own rules and a plan you can preview.
+
+- Branch: `feature/excavation`. Built on the construction engine (`WorkPlan`, `PlanExecutor`, `SiteSafety`).
+- **Shapes** (each an `ExcavationProvider`; a new shape is a new class):
+  - `pit` (width × length × depth, for example 3×3×2), `shaft`, and `staircase_down` (a diagonal descent).
+  - `quarry`: width × length (for example 5×5) down to a target level, given either as `to_y` or as `above_bedrock` (levels above the world's lowest layer: −64 in the overworld, so 9 means y = −55, confirmed; the Nether and the End bottom out at 0). **The default target is `above_bedrock: 9`** when the request names no other level. Dug top-down, layer by layer. `wall_style: stairs` leaves a **spiral staircase of solid steps along the walls** so the way out is always walkable; the **optional** `water_landing` (off by default, only when the request asks for it) digs a 2×2×2 pit at the bottom (kept away from the tunnel entrance) and fills it with water from buckets, so you can jump from the top and land unhurt, then walk back up the stairs. Buckets are fetched from the inventory or storage, or crafted from iron; without the option no buckets are needed.
+  - `tunnel`: width × height × length in a direction (default 1×2). Starts anywhere, for example at the bottom of a quarry. **A tunnel has no branches unless they are asked for.**
+  - `branch_mine`: a primary tunnel plus side branches on both sides, perpendicular, every `spacing` blocks (default 3: two blocks of wall between neighbouring branches), each `branch_length` long. Only used when the request describes branches or a mine; a plain "dig a tunnel" never adds them. The pattern reveals ore on both sides and above and below every branch.
+  - **Sizes are numbers, phrasing is the agent's job.** Players describe sizes in many ways ("3×3×2", "1 wide, 5 high, 50 deep", "a 2-high tunnel, 40 long", "5 by 5"). The agent extracts width, height, length (or depth), and direction from the request and passes them as separate numbers; the server never parses free text. When the phrasing is ambiguous (for example which of three numbers is the height), the agent asks, and `preview_excavation` echoes the interpreted dimensions, so a wrong reading is seen before anything is dug.
+- **The hazard rule** (the rule about lava and water, stated precisely). Before the bot breaks any block, it looks at that block and at the six blocks that touch it, and at the cells that will become the wall, floor, and ceiling beside the new opening. **If any of them is lava or water (source or flowing), the block is not broken and that branch ends there**: breaking it would let the fluid flow into the tunnel. With `seal_hazards` the exposed face is plugged with a solid block; either way the result records `hit_lava` or `hit_water` with the position, and the other branches carry on. The same check also ends a branch on: an open cavity or ravine ahead (a *cave breakthrough*, recorded so cave exploration can use it, and lit), a column of sand or gravel directly above the opening (it would fall in: supported with a block, or the branch ends `falling_blocks`), a monster spawner (reported, never broken), unloaded chunks, chests and rails and other player-placed blocks, and protected areas.
+- **Safe vertical work:** the bot never digs the cell it stands on unless the plan is a designed stair, it never stands where the cell below is lava, void, or a drop of more than 3, and quarries are dug in layers from a ramp, so there is always a walkable way out.
+- **Light** (shared `LightManager`): a torch is placed whenever the light at the bot is below `min_light` (default 7; monsters spawn only at light level 0 in 1.21, so anything above 0 stops spawning and 7 also keeps it visible), and at least every `torch_spacing` blocks in tunnels (default 6), on alternating sides of quarry stairs, and at every branch junction. Torches are crafted (coal or charcoal + sticks) or fetched; with none left the work stops with `no_torches`, and the agent asks.
+- **Ores:** any ore that touches the dug space is mined, vein by vein (a flood fill with a size limit, under the same hazard rule). The bot does not use its knowledge of buried blocks to steer towards ores: it digs the pattern, as a player would.
+- **Spoil:** a big quarry moves thousands of blocks. **By default it follows the standing storage policy** (`set_storage_policy`: ask, offload and return, or stop), like every other task; nothing new is decided silently. A request can say otherwise, per call or as a standing instruction: `spoil_policy: discard_junk` (drop cobblestone, dirt, gravel, deepslate, and the like beyond a small stock, away from the work) or `offload` (chests by the storage rules).
+- **Tools:** the best pickaxe (and shovel for soft blocks); when durability runs low it takes the next one, crafts a spare if the materials are there, and otherwise stops with `no_tools`. Food and threats are handled by the reflexes, which pause and resume the work.
+- **Progress and resume:** the plan cursor is saved, so an interrupted dig (a disconnect, a fight, a full inventory) resumes from where it stopped.
+- **Tools (MCP):** `excavate` (a `shape` plus its parameters and the options above; sizes as separate numbers), `preview_excavation` (block count, tool wear, torches, buckets, and time estimate, and what is missing), and the results describe every branch that ended early.
+- **Tests:**
+  - unit: each provider's geometry (deterministic cells, dimensions, stair continuity, water pit placement, branch spacing on both sides), the hazard rule on synthetic grids (fluid at each of the six neighbours and at the wall, floor, and ceiling cells, cave breakthrough, falling blocks, spawner, protected area), `LightManager` (threshold and spacing with a fake light source), tool swapping and durability, ore vein flood fill with its limit, spoil policies
+  - integration: `excavate` through the tool layer on a grid-based fake world: shape produced, branch ends on lava, inventory-full offload during a quarry, resume after an interruption
+  - e2e: a 3×3×2 pit dug and verified through RCON; a small quarry (5×5, a few levels) with stair walls and a water pit: every step block exists, the bot walks out and in again, the pit holds water; a tunnel that stops one block before lava and before water placed by RCON, with the fluid untouched; a branch mine whose branch positions match the spacing; torches present where the rule says
+- **Exit criteria:** "dig a 3×3×2 pit" works; "dig a 5×5 quarry down to 9 above the bedrock with stair walls and a water landing, then a 50-block tunnel with side branches every 3 blocks, torches all the way" runs to the end (or stops for a stated reason such as lava, no torches, or no tools) and reports what it found.
+
+### Phase 15: Railways (2 sessions)
+
+- Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
+- **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
+- **Two variants:**
+  - `economy`: plain rails, with a **powered rail every `spacing` blocks on level track (default 8; 7 to 10 allowed) and every 3 blocks on slopes**, each fed by its own redstone torch.
+  - `rich`: powered rails all the way, for the best speed. Power passes from one powered rail to the next up to 8 rails away, so a redstone torch is needed about every 9 rails, not one per rail.
+  - Both place a torch or redstone block for power next to each powered rail in a way that has to be verified in the game (the power layout is chosen by an e2e run: a minecart must actually accelerate along the test line).
+- **Materials** (worked out by the planner and the recipe book): rails (6 iron ingots and a stick make 16), powered rails (6 gold ingots, a stick, and redstone make 6), redstone torches (redstone and a stick), minecarts (5 iron ingots), support blocks. A shortage is reported per item, with the offer to gather, smelt, or fetch it.
+- **Trolley:** `place_minecart` puts a minecart on a rail (by default at the start of the line); riding it is up to you.
+- **Verification:** after laying, the bot walks the line and checks every rail's presence, orientation, and powered state, and re-lays what is wrong.
+- Tools: `plan_railway` (dry run), `build_railway`, `place_minecart`.
+- **Tests:**
+  - unit: route planning on synthetic terrain (slopes, turns, gaps, water, obstacles; `surface` versus `underground`), spacing rules for both variants (level and sloped runs), rail orientation at corners and slopes, material calculation, verification
+  - integration: `build_railway` through the tool layer on a grid-based fake world, including a tunnel section
+  - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
+- **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
+
+### Phase 16: World discovery, including caves and canyons (2 sessions)
 
 - `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
 - `StructureSignature` implementations detected from loaded chunks and entities:
@@ -309,16 +374,26 @@ The plan had no death handling at all, and nothing about items the bot has dropp
 - Optional accelerator: if the bot is opped, use `/locate structure ...` to seed targets; falls back to physical exploration.
 - Tools (all state goes through `StateStore`): `explore_for_structure`, `list_known_structures`, `set_landmark`, `list_landmarks`.
 - Branch: `feature/world-discovery`.
+- **Cave and canyon exploration** (`feature/cave-exploration`, built after the excavation phase because it needs its lighting and hazard rules):
+  - `CaveMap` reads the loaded chunks and finds the underground open space: connected air below the surface (caves, tunnels, abandoned mineshafts), and ravines (deep, narrow, open-to-sky canyons), each with entrances and unexplored frontier cells.
+  - `CaveExplorer` (an `ExplorationStrategy`): nearest-frontier first, with limits (depth range, distance from the entrance, time), breadcrumbs so it can always walk back to the entrance, and a `return_to_start` stop condition (few torches left, low health, hunger, time up).
+  - **Lighting on the way**: torches are placed in dark spots by the shared `LightManager` (block light below `min_light`, with a minimum spacing), on the right-hand wall going in so the way out is lit. Torches are crafted from coal or charcoal and sticks, or fetched from storage; without any left the flow stops (`no_torches`) instead of going on in the dark.
+  - **What it looks for** (`find`): resources given by name or group (`diamond_ore`, `ores`, ...), or, when none are named, the valuable ones: diamond, gold, redstone, lapis, emerald, ancient debris (in the Nether); mob spawners (recorded with the spawned mob); and rare structures: mineshaft (rails, fences, chest minecarts), dungeon (mossy cobblestone room), stronghold, geode. Finds are recorded in the knowledge store with coordinates and reported in chat as they happen. With `mine: true` the ores it passes are mined (vein by vein, under the excavation hazard rule); by default it only reports them.
+  - **Safety**: reflexes stay active (skeletons and creepers are fled from; the warden and the deep dark are avoided: an ancient city is reported and never entered); lava and water are never approached (the hazard rule below); no unsafe drops: the pathfinder's drop limit stays at 3 and the deferred **fall-damage guard** (water-bucket landing) is built in this feature because caves have drops; no diving.
+  - Tool: `explore_caves` (`find`, `mine`, `max_distance`, `max_minutes`, `min_light`), results through `list_known_structures`.
+  - **Tests**: unit: `CaveMap` on synthetic grids (connected components, ravine detection, entrances, frontier), `CaveExplorer` (no revisits, budgets, breadcrumb return, torch spacing with a fake light source, each stop condition), find rules (specified versus default valuables, spawner, structure signatures); integration: explore → find → persist → new app instance still lists it; e2e: a cave carved via RCON with a diamond ore and a spawner at its far end and a lava pocket beside the path: the bot finds both, lights the way, never touches the lava, and walks back out; the torches are where the light rule says.
+  - **Exit criteria:** "explore this cave for diamonds" makes the bot go in, light its way, report where it found diamonds, spawners, or other structures, and come back out alive.
 - **Tests:**
   - unit: each `StructureSignature` against synthetic block/entity grids (positive, negative, near-miss), exploration strategies (deterministic with a fake `Random`, no revisits, respect bounds), `ExploreForStructure` (found, time/distance limit, abort)
   - integration: `WorldKnowledgeStore` against a real temp directory (persist, reload, corrupt file handling); explore → discover → persist → new app instance still lists the structure
   - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
 - **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
 
-### Phase 14: Hardening and polish (1 session)
+### Phase 17: Hardening and polish (1 session)
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
+- Review of the shared safety rules (hazard envelope, light, drops) across excavation, railways, and cave exploration.
 - Branch: `feature/hardening`.
 - Tests: reconnect and shutdown behavior (unit and integration with fake `Connection`), timeouts on all I/O boundaries, coverage gap review.
   - e2e: server restart mid-session leads to reconnect; abrupt disconnect leaves no stuck task; a long-running scenario chaining gather → craft → build

@@ -91,8 +91,11 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 | Drop recovery | After a death the bot tells you where and recovers its items by itself (never entering lava or void without asking); leftover handover drops are collected back; say "skip it" and it leaves them and gives you the coordinates |
 | Handover | Give you items on request (from the inventory or chests) by dropping them at your feet, or into a chest for large amounts |
 | Storage | Remember chests you point at, keep item kinds in designated chests (or any chest), find items across chests, offload and return when the inventory is full |
-| Building | Place blocks from blueprints (floors, walls, shelters, simple houses), material checks |
-| World discovery | Wander to find villages, temples, and other structures; remember where they are |
+| Building | Place blocks from blueprints (floors, walls, shelters, simple houses), material checks *(planned)* |
+| Excavation and mining | Dig pits, quarries with stair walls and a water landing, tunnels, and branch mines, with torches, tool swapping, and a rule that stops a tunnel next to lava or water *(planned)* |
+| Railways | Lay rail lines on the surface or underground, in a resource-saving or a fast variant, and place a minecart *(planned)* |
+| Teleport | Teleport to you on request when the server allows commands *(planned)* |
+| World discovery | Wander to find villages, temples, and other structures; explore caves and canyons with torches for ores, spawners, and structures; remember where they are *(planned)* |
 | Survival reflexes | Auto-eat; flee from skeletons, creepers, and at low health; fight other hostile mobs; ignore endermen; avoid lava, drowning, and falls |
 
 ## Limitations
