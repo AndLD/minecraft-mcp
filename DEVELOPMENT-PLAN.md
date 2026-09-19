@@ -73,7 +73,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 14 Excavation and mining | not started (added) |
 | 15 Railways | not started (added) |
 | 16 World discovery, including caves and canyons | not started (cave flow added) |
-| 17 Hardening and polish | not started (was 14) |
+| 17 Farming: crops and animals | not started (added; needs the construction engine for laying out farms) |
+| 18 Hardening and polish | not started (was 14) |
 
 ## Phases
 
@@ -390,7 +391,33 @@ The bot can walk to you, but sometimes you want it next to you at once (it is fa
   - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
 - **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
 
-### Phase 17: Hardening and polish (1 session)
+### Phase 17: Farming, crops and animals (2 sessions)
+
+Hunting takes animals from the world and never adds any, and food stops when the wild herds run out. Farming closes that loop: grow crops, breed animals, keep a steady supply.
+
+**Design decision: layout is building, tending is not.** A vegetable garden or a pen *is* a buildable structure, so laying one out belongs to the construction engine (a new `PlanProvider`, executed by `PlanExecutor`, with `SiteSafety` and `LightManager`). But planting, harvesting, replanting, and breeding are recurring operations on *whatever farm exists*, including one the player built by hand, so they are ordinary skills with no dependency on the engine. Merging them into "building" would make every harvest a build plan; keeping them apart lets the tending skills work on the player's own farms and on ones the bot built.
+
+- Branches: `feature/crop-farming` (layout provider and crop tending), then `feature/animal-farming` (pens and breeding). Start after the construction engine; the tending skills themselves do not need it and could go earlier if wanted.
+- **Farm layout (engine clients):**
+  - `CropFieldProvider`: parameters `width`, `length`, crop type. Tilled plots with a water channel so every plot is within 4 blocks of water, a fence with a gate, torches for light, optionally a chest and a composter. Needs a hoe and seeds; the plan preview lists what is missing. Tool: `build_farm` with `kind: field`.
+  - `AnimalPenProvider`: fenced pen with a gate, sized for the species and herd (`entity cramming` limits the animals per block), water optional. `build_farm` with `kind: pen`.
+  - `FarmRegistry` (persisted per world, like the container index): registered farms (built by the bot or pointed out by the player: position, size, crop or species). Farms are protected from `collect_block` by default; `list_farms`, `register_farm`.
+- **Crop tending (plain skills):**
+  - `PlantCropsSkill`: hoe dirt and grass into farmland, plant seeds, carrots, potatoes, or beetroot on free farmland (wheat, carrots, potatoes, beetroot first). Never jumps or walks over farmland (trampling turns it to dirt): the standing spots are the paths and the field edge.
+  - `HarvestCropsSkill`: only harvests fully grown crops (the block's age is at maximum), replants at once, and keeps enough seeds for the next round. Optional bone meal on young crops. Yield goes through the storage policy.
+  - `TendFarmSkill`: one pass over a registered farm (harvest, replant, breed) with a time limit, so "keep the farm running" is a repeatable task.
+- **Animal breeding (plain skills):**
+  - `BreedAnimalsSkill`: feed pairs of adults of a species the right food (wheat for cows, sheep, and mooshrooms; carrots, potatoes, or beetroot for pigs; seeds for chickens; carrots for rabbits), waits for the babies, respects the 5-minute breeding cooldown and the 20-minute growing time, and never breeds tamed, named, or ridden animals. It stops at the pen's capacity or the requested herd size.
+  - `HerdManager`: keeps a herd at a target size by breeding up and by culling the surplus with `hunt_animals`, which keeps its breeding floor of two adults. Reuses `PenDetector` and the animal catalog.
+- Tools: `build_farm`, `plant_crops`, `harvest_crops`, `breed_animals`, `tend_farm`, `list_farms`, `register_farm`.
+- Safety and rules: farms are protected areas for other tasks; lighting and water are checked before planting; night work follows the threat policy; a tool that would trample farmland fails with a typed reason.
+- **Tests:**
+  - unit: `CropFieldProvider` (plot and water layout, every plot within 4 blocks of water, gate, materials), crop age reading, `HarvestCropsSkill` (mature only, replant, seed reserve), `PlantCropsSkill` (hoeing, free plots, no trampling), `BreedAnimalsSkill` (right food per species, cooldowns, floor, protected animals, capacity), `HerdManager` (breed up, cull down), `FarmRegistry`
+  - integration: `build_farm` through the tool layer on a stateful fake world produces the expected block grid; plant, grow (fake time), harvest, and replant cycle; breed to a target herd size
+  - e2e: `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size
+- **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair.
+
+### Phase 18: Hardening and polish (1 session)
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
