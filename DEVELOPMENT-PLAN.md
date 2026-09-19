@@ -62,8 +62,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 3 Movement and perception | done, merged into `development` |
 | 4 E2E test harness | done, merged into `development` |
 | 5 Persistent state | done, merged into `development` |
-| 6 Survival reflexes | implemented on `feature/survival-reflexes`, awaiting approval |
-| 7 and later | not started |
+| 6 Survival reflexes | done, merged into `development` |
+| 7 Gathering, crafting, smelting | implemented on `feature/gather-craft-smelt`, awaiting approval |
+| 8 and later | not started |
 
 ## Phases
 
@@ -176,6 +177,7 @@ Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffol
 - Tools: `collect_block`, `pickup_items`, `craft`, `smelt`, `list_recipes`.
 - Safety: refuse to dig protected areas; avoid digging straight down; when the inventory is full, stop with a typed, resumable `inventory_full` state (remembering where to continue); the policy for what to do next (ask, or offload and return) is implemented in the storage phase.
 - Branch: `feature/gather-craft-smelt`.
+- **As built:** also `ProtectedAreas` (boxes saved per world; tools `protect_area`, `unprotect_area`, `list_protected_areas`) as the `AreaGuard` behind "honors protected areas"; `WindowCrafter`, because Mineflayer's own `bot.craft` failed half way on a real 1.21.1 server (the e2e tests found it); block group names (`logs`, `ores`, `leaves`); `DroppedItemScanner` and `Placer` ports. There is no `InventoryWriter` yet: nothing in this phase needed it (the handover phase adds it). The failure result carries a machine-readable `detail` (mined, remaining) for the storage phase to resume from.
 - **Tests:**
   - unit: `CollectBlocks` against fake `BlockScanner`/`Navigator`/`Digger` (found, none nearby, unreachable, no suitable tool, inventory full, protected area, abort mid-way, partial result), recipe resolution and sub-craft planning against fixed recipe data, smelting fuel logic
   - integration: `collect_block` → `craft` chain through the MCP tool layer with a stateful fake world (inventory changes), including cancellation
