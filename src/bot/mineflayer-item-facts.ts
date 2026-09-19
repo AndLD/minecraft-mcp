@@ -18,6 +18,11 @@ export class MineflayerItemFacts implements ItemFacts {
     return this.holder.current()?.registry.blocksByName[name] !== undefined
   }
 
+  allItems(): readonly string[] {
+    const bot = this.holder.current()
+    return bot === undefined ? [] : Object.keys(bot.registry.itemsByName)
+  }
+
   stackSize(name: string): number {
     const bot = this.holder.current()
     const id = bot?.registry.itemsByName[name]?.id

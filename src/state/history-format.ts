@@ -18,6 +18,7 @@ export const HISTORY_IGNORED_TOOLS: ReadonlySet<string> = new Set([
   'list_protected_areas',
   'list_huntable_animals',
   'list_containers',
+  'resolve_item',
   'list_storage_rules',
 ])
 

@@ -6,4 +6,6 @@ export interface ItemFacts {
   /** True for items that place a block. */
   isBlock(name: string): boolean
   stackSize(name: string): number
+  /** Every item name the game knows. Empty while not connected. */
+  allItems(): readonly string[]
 }

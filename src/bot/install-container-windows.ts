@@ -32,5 +32,20 @@ export function installContainerWindows(bot: Bot): void {
       close: () => window.close(),
     }
   }
-  Object.assign(bot, { openContainerWindow })
+  // The bot's own inventory, for throwing items out by clicking (see `WindowDropper`).
+  const inventoryWindow: ContainerWindowLike = {
+    get slots() {
+      return bot.inventory.slots
+    },
+    get selectedItem() {
+      return bot.inventory.selectedItem
+    },
+    inventoryStart: bot.inventory.inventoryStart,
+    inventoryEnd: bot.inventory.inventoryEnd,
+    click: (slot, mouseButton, mode) => bot.clickWindow(slot, mouseButton, mode),
+    settle: () => bot.waitForTicks(SETTLE_TICKS),
+    sync: () => internal._syncWindow(bot.inventory),
+    close: () => Promise.resolve(),
+  }
+  Object.assign(bot, { openContainerWindow, inventoryWindow })
 }

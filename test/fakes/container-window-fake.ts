@@ -33,6 +33,8 @@ export class FakeContainerWindow implements ContainerWindowLike {
     private readonly container: (ItemLike | null)[],
     playerStacks: readonly ItemLike[],
     private readonly commit: (container: (ItemLike | null)[], player: ItemLike[]) => void,
+    /** Called for everything thrown on the ground. */
+    private readonly onThrow: (name: string, count: number) => void = () => undefined,
   ) {
     this.inventoryStart = container.length
     this.inventoryEnd = container.length + PLAYER_SLOTS
@@ -61,7 +63,9 @@ export class FakeContainerWindow implements ContainerWindowLike {
       return Promise.resolve()
     }
     const before = this.truth.map((item) => (item === null ? null : { ...item }))
-    if (mode === 1) this.shiftClick(slot)
+    if (mode === 4) this.throwFrom(slot, mouseButton)
+    else if (slot === -999) this.throwCursor()
+    else if (mode === 1) this.shiftClick(slot)
     else if (mouseButton === 0) this.leftClick(slot)
     else this.rightClick(slot)
     if (this.lateSyncs > 0) {
@@ -90,6 +94,24 @@ export class FakeContainerWindow implements ContainerWindowLike {
     this.closed = true
     this.publish()
     return Promise.resolve()
+  }
+
+  /** Q throws one item, Ctrl+Q the whole stack. */
+  private throwFrom(slot: number, mouseButton: number): void {
+    const stack = this.truth[slot]
+    if (stack === null || stack === undefined) return
+    const thrown = mouseButton === 1 ? stack.count : 1
+    this.truth[slot] =
+      stack.count > thrown ? { name: stack.name, count: stack.count - thrown } : null
+    this.onThrow(stack.name, thrown)
+  }
+
+  /** A click outside the window throws what is on the cursor. */
+  private throwCursor(): void {
+    const held = this.selectedItem
+    if (held === null) return
+    this.selectedItem = null
+    this.onThrow(held.name, held.count)
   }
 
   private leftClick(slot: number): void {

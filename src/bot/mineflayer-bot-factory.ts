@@ -9,7 +9,7 @@ import { installWindowCrafter } from './install-window-crafter.js'
 type EventMethods = 'on' | 'once' | 'removeListener'
 /** Takes entities from `bot.entities`, which are always real ones; TypeScript cannot relate our narrow entity type to Mineflayer's. */
 /** `world.raycast` exists at runtime but is missing from Mineflayer's typings. */
-type LooselyTyped = EventMethods | 'attack' | 'openContainerWindow' | 'world'
+type LooselyTyped = EventMethods | 'attack' | 'openContainerWindow' | 'inventoryWindow' | 'world'
 
 /** The only place that creates a real Mineflayer bot. */
 export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike => {

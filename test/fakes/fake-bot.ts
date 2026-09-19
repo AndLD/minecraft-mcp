@@ -587,6 +587,37 @@ export class FakeBot implements BotLike {
     return slots
   }
 
+  /** What the bot threw on the ground, in order. */
+  readonly tossed: { name: string; count: number }[] = []
+  readonly lookedAt: Position[] = []
+  /** The bot's own inventory as a window (slots 0-35 are the player's; a real one starts at 9). */
+  get inventoryWindow(): ContainerWindowLike {
+    return new FakeContainerWindow(
+      [],
+      this.inventoryItems,
+      (_container, player) => {
+        this.inventoryItems = player
+      },
+      (name, count) => {
+        this.tossed.push({ name, count })
+        const here = this.entity?.position ?? { x: 0, y: 64, z: 0 }
+        this.dropItem(name, count, { x: here.x + 1, y: here.y + 0.3, z: here.z })
+      },
+    )
+  }
+
+  waitedTicks = 0
+
+  waitForTicks(ticks: number): Promise<void> {
+    this.waitedTicks += ticks
+    return Promise.resolve()
+  }
+
+  lookAt(point: Position): Promise<void> {
+    this.lookedAt.push(point)
+    return Promise.resolve()
+  }
+
   openContainerWindow(block: BlockLike): Promise<ContainerWindowLike> {
     const at = (block as FakeBlock).position
     this.openedContainers.push(key(at))

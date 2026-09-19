@@ -174,6 +174,12 @@ export interface BotLike {
   /** Places the item in hand against the face (a unit vector) of a block returned by `blockAt`. */
   placeBlock(reference: BlockLike, face: Position): Promise<void>
   openFurnace(block: BlockLike): Promise<FurnaceLike>
+  /** The bot's own inventory window with raw click, wait, and sync operations. Installed by our factory after spawn. */
+  readonly inventoryWindow: ContainerWindowLike
+  /** Turns to face a point. */
+  lookAt(point: Position, force?: boolean): Promise<void>
+  /** Waits for game ticks (50 ms each). */
+  waitForTicks(ticks: number): Promise<void>
   /** Opens a chest, barrel, or shulker box for `WindowTransfer`. Installed by our factory after spawn. */
   openContainerWindow(block: BlockLike): Promise<ContainerWindowLike>
   /** Every recipe for the item; those needing a table are included when `craftingTable` is true. */
