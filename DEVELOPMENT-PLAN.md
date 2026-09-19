@@ -10,7 +10,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | Minecraft | 1.21.1 vanilla, LAN world from TLauncher, bot in offline auth |
 | Transport | MCP over stdio, `@modelcontextprotocol/sdk` |
 | Config | `.env`: `MC_HOST=localhost` (default), `MC_PORT` (optional: when empty the port is discovered from the LAN world broadcast), plus the variables listed in README. The `connect` tool can override host/port at runtime |
-| Instruction channel | In-game chat → `ChatInbox` → agent long-polls `wait_for_chat` |
+| Instruction channel | In-game chat → `ChatRouter` → `AgentInbox` → agent long-polls `wait_for_chat` |
 | Real-time behavior | Static-code reflexes (eat, flee, lava, drowning, `stop`); the agent only issues high-level goals |
 | Threat policy | Always flee from skeletons and creepers; always flee at low health; fight all other hostile mobs (zombies, spiders, etc.); ignore endermen. Encoded as a data table, see AGENTS.md |
 | Block collection | Own `CollectBlocks` skill built on pathfinder behind the `Digger` port; `mineflayer-collectblock` is not used (can be swapped in later behind the same port) |
@@ -57,8 +57,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | Phase | Status |
 |---|---|
 | 0 Feasibility spike | done, merged into `development` |
-| 1 Project scaffold | implemented on `feature/project-scaffold`, awaiting approval |
-| 2 and later | not started |
+| 1 Project scaffold | done, merged into `development` |
+| 2 Core skeleton and MCP shell | implemented on `feature/core-mcp-shell`, awaiting approval |
+| 3 and later | not started |
 
 ## Phases
 
@@ -94,14 +95,14 @@ Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffol
 
 - `src/core`: port interfaces (`Connection`, `ChatPort`, `VitalsReader`, `Clock`, `Logger`) and shared types (`Position`, `Result`).
 - `src/bot`: `MineflayerConnection` (connect/disconnect/reconnect events, error handling) and chat adapter.
-- `src/chat`: `ChatInbox` with `wait(timeout)`, owner filtering, and a bounded buffer; `ChatCommandInterceptor` with `stop`.
+- `src/chat`: `AgentInbox` (chat and events, `wait(timeout, signal)`, bounded buffer), `ChatRouter` (owner filtering, then fixed commands, then inbox), `StopCommand`.
 - `src/bot`: `LanDiscovery` port and adapter (listens to the LAN broadcast on `224.0.2.60:4445`, returns the port and world name; used by `connect` when `MC_PORT` is not set).
 - `src/mcp`: `ToolRegistry`, `ToolDefinition`, server bootstrap; tools `connect`, `disconnect`, `get_status`, `wait_for_chat`, `say`, `whisper`.
 - Wiring in `src/app.ts` (`createApp(config, deps)`), so it can be built in tests with fakes; `src/index.ts` only reads env, calls `createApp`, and starts the stdio transport.
 - Branch: `feature/core-mcp-shell`.
 - **Tests:**
-  - unit: `ChatInbox` (ordering, bounded buffer, owner filter, timeout, concurrent waiters), `ChatCommandInterceptor`, `ToolRegistry`, each tool's input validation and output mapping, `MineflayerConnection` and chat adapter against a stub Mineflayer bot (event emitter)
-  - integration: real MCP server and client connected through the SDK's in-memory transport, real `ChatInbox`/`ToolRegistry`, fake `Connection`/`ChatPort`: `connect` → incoming chat → `wait_for_chat` → `say`
+  - unit: `AgentInbox` (ordering, bounded buffer, owner filter, timeout, concurrent waiters), `ChatRouter`, `StopCommand`, `ToolRegistry`, each tool's input validation and output mapping, `MineflayerConnection` and chat adapter against a stub Mineflayer bot (event emitter)
+  - integration: real MCP server and client connected through the SDK's in-memory transport, real `AgentInbox`/`ToolRegistry`, fake `Connection`/`ChatPort`: `connect` → incoming chat → `wait_for_chat` → `say`
 - **Exit criteria:** register the server in Claude Code; Claude connects, says hello in game, and answers a chat message through the `wait_for_chat` loop.
 
 ### Phase 3: Movement and perception (1 session)
@@ -320,7 +321,7 @@ Three automated tiers. Unit and integration run offline with no Minecraft and ma
 | Tier | Scope | Real parts | Fake parts | Location |
 |---|---|---|---|---|
 | Unit | One class or function | the unit under test | all its ports, `Clock`, `Random` | `test/unit/` (mirrors `src/`) |
-| Integration | Several real modules wired together | MCP server + client (SDK in-memory transport), `ToolRegistry`, `TaskManager`, `ChatInbox`, reflex engine, skills, `WorldKnowledgeStore` on a temp dir, `createApp()` wiring | the outer ports (`Connection`, `Navigator`, scanners, `Digger`, `Placer`, ...), usually as a stateful fake world | `test/integration/` |
+| Integration | Several real modules wired together | MCP server + client (SDK in-memory transport), `ToolRegistry`, `TaskManager`, `AgentInbox`, reflex engine, skills, `WorldKnowledgeStore` on a temp dir, `createApp()` wiring | the outer ports (`Connection`, `Navigator`, scanners, `Digger`, `Placer`, ...), usually as a stateful fake world | `test/integration/` |
 | E2E | The whole app against a real server | everything: real `createApp()`, real Mineflayer adapters, real Minecraft 1.21.1 server (Paper in Docker) | nothing (the world is prepared and inspected through RCON; a second bot or RCON simulates the player) | `test/e2e/` |
 
 Rules:

@@ -45,7 +45,8 @@ src/
   config/               Env loading + zod schema (MC_HOST, MC_PORT, ...)
   core/                 Ports (interfaces) and domain types. No imports from other layers.
   bot/                  Mineflayer adapter: implements the ports (only place importing mineflayer)
-  chat/                 ChatInbox (queue + wait), ChatCommandInterceptor (e.g. "stop")
+  chat/                 AgentInbox (chat + events buffer with wait), ChatRouter (owner filter, fixed commands, inbox), StopCommand
+  session/              SessionService: decides where to connect (request, config, LAN discovery) and connects
   perception/           Scanners built on ports (blocks, entities, surroundings summaries)
   skills/               Behaviors: movement, gathering, crafting, hunting, storage, building, discovery
   reflexes/             Always-on survival behaviors (eat, flee, lava, drowning)
@@ -82,6 +83,8 @@ Skills receive only the ports they need, never a whole bot.
 | `ChatPort` | say / whisper, incoming chat stream |
 | `StateStore` | load/save versioned JSON documents per world profile (atomic writes) |
 | `WorldIdentifier` | fingerprint of the connected world (seed hash, name, spawn) |
+| `Scheduler` | delayed callbacks (`after(ms, fn)` returns a cancel function); never call `setTimeout` in logic |
+| `LanDiscovery` | listens for the LAN world announcement (port, world name, host player) |
 | `Clock` / `Random` / `Logger` | time, randomness, and logging, injectable for tests |
 
 ### SOLID, concretely
@@ -193,10 +196,9 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 
 ### Chat and events
 
-- `ChatInbox` buffers incoming chat (filtered by `MC_OWNER` if set) and exposes `wait(timeoutMs)`.
-- `ChatCommandInterceptor` handles a tiny fixed vocabulary in code (`stop`) before the message reaches the agent.
-- A task can be `running`, `waiting_for_input` (paused, waiting for a user decision through `resume_task`), `done`, `failed`, or `cancelled`. Pausing must keep enough state (position, remaining quantity) to resume.
-- Reflex and task events (`ate food`, `fled from creeper`, `task finished`) are appended to an event log and returned together with chat by `wait_for_chat`, so the agent sees what happened while it was thinking.
+- `ChatRouter` receives every chat message: it drops messages from anyone but `MC_OWNER` (when set, case-insensitive), runs fixed commands in code (`stop`, as `ChatCommand` implementations) and turns them into an event, and gives everything else to the `AgentInbox`.
+- `AgentInbox` buffers chat and events (bounded, oldest dropped, drops counted) and exposes `wait(timeoutMs, signal)`. Delivery is once-only.
+- Connection changes, and later reflex and task events (`ate food`, `fled from creeper`, `task finished`), go into the same inbox and are returned together with chat by `wait_for_chat`, so the agent sees what happened while it was thinking.
 
 ## MCP tool surface (target)
 

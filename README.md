@@ -68,8 +68,9 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 ## Playing
 
 1. Start Minecraft 1.21.1, open your world, press `Esc` → **Open to LAN** → optionally enable cheats → **Start LAN World**. The port is printed in chat, but the bot can also discover it automatically.
-2. Register the server with your MCP client (Claude Code example):
+2. Register the server with your MCP client. In Claude Code the project already contains a `.mcp.json` that runs it from source (no build step): open a session in this folder and approve the `minecraft` server when asked. Or register the built server yourself:
    ```bash
+   npm run build
    claude mcp add minecraft -- node /absolute/path/to/minecraft-mcp/dist/index.js
    ```
 3. Tell Claude to start playing, e.g. *"Connect to the Minecraft world on port 54321 and follow my in-game instructions."* Claude connects the bot and keeps listening to your chat.
