@@ -1,4 +1,5 @@
 import mineflayer from 'mineflayer'
+import pathfinderPlugin from 'mineflayer-pathfinder'
 import type { ConnectTarget } from '../core/connection.port.js'
 import type { BotFactory, BotLike } from './bot-like.types.js'
 
@@ -13,6 +14,17 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
     version: target.version,
     auth: target.auth,
   })
+  bot.loadPlugin(pathfinderPlugin.pathfinder)
+  bot.once('spawn', () => {
+    // Safe movement profile: never dig or build to reach a goal (that could break player builds).
+    // The pathfinder already avoids lava, fire, and deep drops.
+    const movements = new pathfinderPlugin.Movements(bot)
+    movements.canDig = false
+    movements.allow1by1towers = false
+    movements.scafoldingBlocks = []
+    bot.pathfinder.setMovements(movements)
+  })
+
   // Compile-time guard: every member except the event methods must match exactly.
   const _members: Omit<BotLike, EventMethods> = bot
   // The event methods are generic over Mineflayer's much larger event map, which TypeScript cannot

@@ -24,10 +24,20 @@ describe('MCP server over an in-memory transport', () => {
     const { tools } = await client.listTools()
 
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'cancel_task',
       'connect',
       'disconnect',
+      'find_blocks',
+      'follow_player',
+      'get_inventory',
+      'get_nearby_entities',
+      'get_player_position',
       'get_status',
+      'get_task_status',
+      'goto',
+      'look_around',
       'say',
+      'stop',
       'wait_for_chat',
       'whisper',
     ])

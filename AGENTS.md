@@ -47,7 +47,7 @@ src/
   bot/                  Mineflayer adapter: implements the ports (only place importing mineflayer)
   chat/                 AgentInbox (chat + events buffer with wait), ChatRouter (owner filter, fixed commands, inbox), StopCommand
   session/              SessionService: decides where to connect (request, config, LAN discovery) and connects
-  perception/           Scanners built on ports (blocks, entities, surroundings summaries)
+  perception/           Services built on scanner ports: BlockFinder (name check + suggestions), SurroundingsDescriber, notable-block table
   skills/               Behaviors: movement, gathering, crafting, hunting, storage, building, discovery
   reflexes/             Always-on survival behaviors (eat, flee, lava, drowning)
   tasks/                TaskManager: one active task, cancellation, progress, timeouts
@@ -70,9 +70,10 @@ Skills receive only the ports they need, never a whole bot.
 | Port | Responsibility |
 |---|---|
 | `Connection` | connect / disconnect / status / lifecycle events |
-| `Navigator` | goto position/entity/block, follow, stop, path status |
-| `BlockScanner` | find blocks by predicate, read block at position |
-| `EntityScanner` | nearby entities, players, hostiles |
+| `Navigator` | go to a position or player, follow a player; every call takes an `AbortSignal` (aborting halts the bot) |
+| `BlockScanner` | block names, find blocks by name (nearest first), read a block, summarize blocks around the bot |
+| `EntityScanner` | nearby entities (nearest first), player lookup (online, visible, position) |
+| `InventoryReader` | snapshot of the bot inventory (stacks, free slots, held item) |
 | `Digger` | dig block, collect drops |
 | `Combatant` | attack an entity (with attack cooldown), equip best weapon/armor, retreat |
 | `Placer` | place block against a reference face |
@@ -189,9 +190,11 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 
 ### Tasks
 
-- The `TaskManager` runs **one** active task at a time. Starting a new one requires cancelling or queueing the current one explicitly.
+- The `TaskManager` (also the default `StopHandler`) runs **one** active task at a time. Starting a new one requires cancelling or queueing the current one explicitly.
 - Every task gets an `AbortSignal`; skills must check it between steps and inside loops.
-- Task-running tools wait up to a bounded time (default ~45 s), then return `{ status: "running", taskId, progress }`. The agent polls with `get_task_status` and can `cancel_task`.
+- Task-running tools take `wait_seconds` (0 to 55; `goto` defaults to 30, `follow_player` to 2) and `replace` (cancel the running task first; without it a running task blocks new ones). When the wait runs out they return `{ status: "running", taskId, progress }`; the agent polls with `get_task_status` and can `cancel_task` or `stop`. Failures carry a machine-friendly `reason` (`unreachable`, `stuck`, `timeout`, `target_not_found`, `block_not_found`, ...). Tools launch tasks through the shared `TaskLauncher`.
+- Movement is supervised by `NavigationRunner`: it stops the bot on abort, gives up on timeout (30 s plus 1.5 s per block), on being stuck (no 0.75-block progress for 8 s), or when a followed player is out of view for 10 s. The safe movement profile never digs or builds and avoids lava.
+- Mineflayer gotcha: halt the pathfinder with `setGoal(null)`, never with its `stop()`. `stop()` only sets a flag that is honored at the next path node, and when the bot is idle the flag lingers and makes the next `goto` fail at once with "Path was stopped" (found in a live test; regression tests cover it).
 - Reflexes can pause/preempt a task and resume it after; they emit events into the event log.
 
 ### Chat and events
