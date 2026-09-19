@@ -105,4 +105,5 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 ## Project docs
 
 - [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md): phased roadmap with acceptance criteria
+- [BACKLOG.md](BACKLOG.md): ideas and deferred work that are not in the plan yet (for example voice instructions)
 - [AGENTS.md](AGENTS.md): architecture, SOLID rules, testing (Jest), Git Flow, conventions, and the runtime protocol for the agent
