@@ -16,10 +16,12 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js",
+    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit integration",
     "test:unit": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit",
     "test:integration": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects integration",
-    "test:coverage": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --coverage"
+    "test:coverage": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit integration --coverage",
+    "test:e2e": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects e2e --runInBand",
+    "test:e2e:all": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects e2e --runInBand"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -29,6 +31,8 @@
     "eslint-config-prettier": "^10.1.8",
     "jest": "^30.5.2",
     "prettier": "^3.9.8",
+    "rcon-client": "^4.2.5",
+    "testcontainers": "^11.14.0",
     "ts-jest": "^29.4.12",
     "tsx": "^4.23.13",
     "typescript": "~6.0.3",

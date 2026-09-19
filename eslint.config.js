@@ -73,6 +73,13 @@ export default defineConfig(
     },
   },
   {
+    // Plain JS helpers (Jest global setup) are linted without type information.
+    files: ['**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { globals: { process: 'readonly', globalThis: 'readonly' } },
+    rules: { 'no-restricted-globals': 'off' },
+  },
+  {
     // Tests may use the real clock and randomness to assert the system sources.
     files: ['test/**/*.ts'],
     rules: {
