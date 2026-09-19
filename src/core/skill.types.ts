@@ -11,6 +11,8 @@ export interface SkillFailure {
   /** A stable, machine-friendly reason, for example `unreachable` or `block_not_found`. */
   readonly reason: string
   readonly message: string
+  /** Machine-readable facts for whoever continues the work, for example how much is left to collect. */
+  readonly detail?: Readonly<Record<string, unknown>>
 }
 
 export type SkillResult<T> = Result<T, SkillFailure>

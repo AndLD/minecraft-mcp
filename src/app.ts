@@ -11,12 +11,17 @@ import { MineflayerBlockScanner } from './bot/mineflayer-block-scanner.js'
 import { MineflayerChat } from './bot/mineflayer-chat.js'
 import { MineflayerConnection } from './bot/mineflayer-connection.js'
 import { createMineflayerBot } from './bot/mineflayer-bot-factory.js'
+import { MineflayerDigger } from './bot/mineflayer-digger.js'
+import { MineflayerDroppedItems } from './bot/mineflayer-dropped-items.js'
 import { MineflayerEater } from './bot/mineflayer-eater.js'
 import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
 import { MineflayerFoodCatalog } from './bot/mineflayer-food-catalog.js'
+import { MineflayerFurnaceAccess } from './bot/mineflayer-furnace.js'
 import { MineflayerInventory } from './bot/mineflayer-inventory.js'
 import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
+import { MineflayerPlacer } from './bot/mineflayer-placer.js'
+import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
 import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
 import { MineflayerWorldIdentifier } from './bot/mineflayer-world-identifier.js'
@@ -66,6 +71,16 @@ import {
 } from './mcp/tools/memory-tools.js'
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
+import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
+import { CraftTool } from './mcp/tools/craft-tool.js'
+import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
+import { PickupItemsTool } from './mcp/tools/pickup-items-tool.js'
+import {
+  ListProtectedAreasTool,
+  ProtectAreaTool,
+  UnprotectAreaTool,
+} from './mcp/tools/protected-area-tools.js'
+import { SmeltTool } from './mcp/tools/smelt-tool.js'
 import {
   GetSessionBriefingTool,
   ListWorldsTool,
@@ -86,11 +101,20 @@ import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
 import { InstructionLog } from './state/instruction-log.js'
 import { NotesStore } from './state/notes-store.js'
+import { ProtectedAreas } from './state/protected-areas.js'
 import { SessionBriefingBuilder } from './state/session-briefing.js'
 import { StandingInstructions } from './state/standing-instructions.js'
 import { TaskJournal } from './state/task-journal.js'
 import { WorldRegistry } from './state/world-registry.js'
 import { WorldStateManager } from './state/world-state-manager.js'
+import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
+import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
+import { RecipePlanner } from './skills/crafting/recipe-planner.js'
+import { Workstations } from './skills/crafting/workstations.js'
+import { CollectBlocksSkill } from './skills/gathering/collect-blocks-skill.js'
+import { DropCollector } from './skills/gathering/drop-collector.js'
+import { PickupItemsSkill } from './skills/gathering/pickup-items-skill.js'
+import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
 import { TaskManager } from './tasks/task-manager.js'
@@ -168,6 +192,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const notes = new NotesStore(clock)
   const history = new InstructionLog(clock)
   const standing = new StandingInstructions()
+  const protectedAreas = new ProtectedAreas()
   const journal = new TaskJournal(clock, tasks)
   const worldState = new WorldStateManager({
     registry: new WorldRegistry({
@@ -176,7 +201,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     }),
     storeForProfile: (profile) =>
       new FileStateStore({ directory: path.join(config.dataDir, profile), scheduler, logger }),
-    components: [notes, history, standing, journal],
+    components: [notes, history, standing, journal, protectedAreas],
     logger,
   })
   // Survival reflexes: run by themselves, with no round trip to the agent.
@@ -286,6 +311,46 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     worldState,
   })
   const blockFinder = new BlockFinder(blocks)
+
+  // Gathering, crafting, and smelting.
+  const drops = new MineflayerDroppedItems(connection)
+  const recipes = new MineflayerRecipes(connection)
+  const planner = new RecipePlanner(recipes)
+  const workstations = new Workstations({
+    blocks,
+    navigator,
+    placer: new MineflayerPlacer(connection),
+    inventory,
+    vitals,
+    spots: new PlacementSpotFinder(blocks),
+  })
+  const dropCollector = new DropCollector({ drops, navigator, scheduler })
+  const collectBlocks = new CollectBlocksSkill({
+    blocks,
+    finder: blockFinder,
+    digger: new MineflayerDigger(connection),
+    navigator,
+    inventory,
+    vitals,
+    drops: dropCollector,
+    guard: protectedAreas,
+  })
+  const craftItem = new CraftItemSkill({
+    book: recipes,
+    planner,
+    crafter: recipes,
+    inventory,
+    workstations,
+    scheduler,
+  })
+  const smeltItems = new SmeltItemsSkill({
+    inventory,
+    furnaces: new MineflayerFurnaceAccess(connection),
+    workstations,
+    crafter: craftItem,
+    clock,
+    scheduler,
+  })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -312,6 +377,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GetInventoryTool(inventory))
     .register(new GoToTool(new GoToSkill(navigator, blockFinder), launcher))
     .register(new FollowPlayerTool(new FollowPlayerSkill(navigator), launcher, config.owner))
+    .register(new CollectBlockTool(collectBlocks, launcher))
+    .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
+    .register(new CraftTool(craftItem, launcher))
+    .register(new SmeltTool(smeltItems, launcher))
+    .register(new ListRecipesTool(recipes, planner, inventory))
+    .register(new ProtectAreaTool(protectedAreas))
+    .register(new UnprotectAreaTool(protectedAreas))
+    .register(new ListProtectedAreasTool(protectedAreas))
     .register(new GetTaskStatusTool(tasks, clock))
     .register(new CancelTaskTool(tasks, clock))
     .register(new StopTool(tasks, clock))

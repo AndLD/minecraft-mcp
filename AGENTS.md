@@ -49,10 +49,10 @@ src/
   chat/                 AgentInbox (chat + events buffer with wait), ChatRouter (owner filter, fixed commands, inbox), StopCommand
   session/              SessionService: decides where to connect (request, config, LAN discovery) and connects
   perception/           Services built on scanner ports: BlockFinder (name check + suggestions), SurroundingsDescriber, notable-block table
-  skills/               Behaviors: movement, gathering, crafting, hunting, storage, building, discovery
+  skills/               Behaviors: movement/, gathering/ (CollectBlocks, PickupItems, DropCollector), crafting/ (RecipePlanner, CraftItem, Workstations), smelting/ (SmeltItems, fuel and smelting tables); later hunting, storage, building, discovery
   reflexes/             ReflexEngine (priority arbitration, task pausing/resuming) and the reflexes: AvoidLava, Drowning, ThreatResponse (threat policy table), AutoEat
   tasks/                TaskManager: one active task, cancellation, progress, timeouts
-  state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, SessionBriefingBuilder
+  state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, ProtectedAreas, SessionBriefingBuilder
   knowledge/            WorldKnowledgeStore (domain layer over StateStore): persisted landmarks, discovered structures, containers, storage rules
   mcp/                  MCP server, ToolRegistry, and one file per tool
 test/
@@ -75,12 +75,15 @@ Skills receive only the ports they need, never a whole bot.
 | `BlockScanner` | block names, find blocks by name (nearest first), read a block, summarize blocks around the bot |
 | `EntityScanner` | nearby entities (nearest first), player lookup (online, visible, position) |
 | `InventoryReader` | snapshot of the bot inventory (stacks, free slots, held item) |
-| `Digger` | dig block, collect drops |
+| `Digger` | assess a block (diggable? which tools harvest it? do we carry one?) and dig it with the best tool; aborting stops the dig |
+| `DroppedItemScanner` | items lying on the ground near the bot (name, count, position) |
+| `AreaGuard` | which places are protected (implemented by `ProtectedAreas`) |
 | `Eater` / `FoodCatalog` | eat an item (takes it in hand, then consumes); food points and saturation of items |
 | `Locomotion` | direct body controls (hold jump to swim up) |
 | `Combatant` | equip the best weapon and armor; chase and hit an entity in time slices, respecting the 1.21 attack cooldown |
-| `Placer` | place block against a reference face |
-| `Crafter` | recipes, craft, smelt |
+| `Placer` | put a block from the inventory into a free cell, against the block below it |
+| `RecipeBook` / `Crafter` | recipes per item (ingredients, table needed, index) and crafting one by index and repeat count |
+| `FurnaceAccess` | open a furnace: put input and fuel, take output, input, and fuel back |
 | `InventoryReader` / `InventoryWriter` | contents, equip, toss/drop |
 | `ContainerAccess` | open chest/barrel/shulker, read contents, move items in and out |
 | `VitalsReader` | health, food, saturation, oxygen, in lava/water/head underwater, position, dimension, time |
@@ -202,6 +205,17 @@ Fleeing means sprinting away until the threat is out of range and out of sight, 
 - Combat uses `setGoal(null)`-style stopping like movement (see the pathfinder gotcha above). Attack timing per weapon lives in `src/bot/gear.ts`.
 - **Deferred:** a fall-damage guard (water-bucket landing) and a night shelter. The pathfinder's default maximum drop already avoids large falls.
 
+### Gathering, crafting, smelting
+
+- `CollectBlocksSkill` (`collect_block`) breaks blocks nearest first and picks up the drops. The count is **blocks broken**, not items gained (stone drops cobblestone); the result lists what the inventory gained. Group names (`logs`, `ores`, `leaves`) live in `src/skills/gathering/block-aliases.ts`. A block is only dug when open air touches it (no tunnelling), it is not directly below the bot (no pits), no lava touches it, and it is not inside a protected area. It walks to within 3 blocks, retries once from 1.5 when the dig says out of reach, and gives up after 6 blocks in a row that cannot be reached. Expected stops are typed failures with the numbers in the message and in `detail` (`mined`, `requested`, `remaining`): `block_not_found`, `no_suitable_tool` (names the tools), `inventory_full` (call again for the remainder), `protected_area`, `unreachable`, `not_reachable_without_tunnelling`, `aborted`. A resumed task (after a reflex) only collects what is still missing.
+- `Digger.assess` decides tool use from the block data (`harvestTools`, `material`); `chooseTool` (`src/bot/tool-choice.ts`) is pure. A tool is only required when the block has `harvestTools`.
+- `DropCollector` walks onto dropped items (each item tried once, at most 12 trips) so the game picks them up; `pickup_items` uses it too.
+- `RecipePlanner` (pure, over `RecipeBook`) turns "make X" into ordered craft steps with automatic sub-crafts. Minecraft data has one recipe per wood type, so it only tries variants whose ingredients can be had (fixpoint over what is carried), best first, and backtracks on quantities; it merges neighbouring identical crafts and, when the materials fall short, reports what is missing for the oak variant. `craft` always makes `count` **more** (ignores stock of the goal item). `CraftItemSkill` places or walks to a crafting table when a step needs one, and crafts a table first when there is none anywhere. Each step is verified against the inventory and retried (3 tries) when the game ignored it.
+- `SmeltItemsSkill` (`smelt`): smeltable items are our own table (`smelting-table.ts`; Minecraft data has no smelting recipes). Fuel is chosen by `chooseFuel` (charcoal, coal, sticks, planks, logs; never coal blocks, blaze rods, or lava buckets unless named; never the items being smelted). It crafts a furnace when there is none, works in batches of one stack, takes leftovers back on any exit, and times out after 10 s per item plus 30 s.
+- **Mineflayer world lookups need `Vec3` positions.** `bot.blockAt({ x, y, z })` crashes with "pos.floored is not a function". Every adapter converts with `toVec3` (`src/bot/vec3.ts`); `FakeBot.blockAt` throws the same error for plain positions so a missed conversion fails a unit test.
+- **Mineflayer's `bot.craft` is unreliable on 1.21** (found by the e2e tests, not fixable by retries): it predicts clicks on the client, and since 1.17 the server silently ignores a click whose window state is stale, so crafts fail half way (ingredients left in the grid, a stack left on the cursor, "missing ingredient"). `WindowCrafter` (`src/bot/window-crafter.ts`) crafts by clicking instead: after every click it waits a few ticks, after every grid change it syncs the window with the server, it checks that the server offered the expected result, and takes it with a shift-click. It is installed as `bot.craft` by `installWindowCrafter` **after spawn** (Mineflayer injects its own craft plugin as the bot joins and would overwrite it earlier).
+- Protected areas (`protect_area`, `unprotect_area`, `list_protected_areas`) are boxes saved per world by `ProtectedAreas`; `collect_block` consults them through `AreaGuard`.
+
 ### Tasks
 
 - The `TaskManager` (also the default `StopHandler`) runs **one** active task at a time. Starting a new one requires cancelling or queueing the current one explicitly.
@@ -238,6 +252,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Movement | `goto`, `follow_player`, `stop` |
 | Gathering | `collect_block`, `pickup_items` |
 | Crafting | `craft`, `smelt`, `list_recipes` |
+| Protection | `protect_area`, `unprotect_area`, `list_protected_areas` |
 | Hunting | `hunt_animals`, `list_huntable_animals`, `attack_entity`, `set_food_policy` |
 | Handover | `give_items`, `drop_items`, `resolve_item` |
 | Drop recovery | `set_drop_recovery_policy`, `skip_drop_recovery`, `recover_drops`, `list_death_records` |
@@ -266,6 +281,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 - **Integration (`test/integration/`):** several real modules wired together, faking only the outer ports (usually a stateful fake world). Examples: an MCP client talking to the real MCP server over the SDK's in-memory transport; reflex preempting a task; `WorldKnowledgeStore` on a temp directory; `createApp()` wiring.
 - **E2E (`test/e2e/`):** real `createApp()` and real Mineflayer against a headless Minecraft 1.21.1 server (Paper via `itzg/minecraft-server`, `ONLINE_MODE=FALSE`) started by Jest global setup with `testcontainers`. Worlds are prepared and inspected through RCON (`E2EWorld` helper); one container per run, each test isolated by area and reset before it runs. Keep it a small smoke-level set per phase, with generous timeouts and controlled mobs and time. Requires Docker; not counted in coverage; excluded from `npm test`. On failure, dump server and bot logs.
 - **E2E conventions and gotchas** (learned while building the harness):
+  - Items given by RCON (`give`) reach the bot's inventory a moment later: wait until `get_inventory` shows them before calling a tool that depends on them (`untilBotCarries` in the gather-craft-smelt e2e).
   - Files are `test/e2e/<feature>/*.e2e.test.ts`. Helpers live in `test/e2e/support/`: `E2EWorld` (RCON: fill, setblock, give, summon, tp, positions, item counts), `joinAsPlayer` (a second real Mineflayer bot playing the human), `startApp` (the real app plus an in-memory MCP client), `startSession` (one test's clean arena, owner bot, and app bot), `waitUntil`, and `serverLog`.
   - The server is one container per run, configured by `docker/e2e-server.env` and `docker/config/bukkit.yml` (also usable by hand: `docker compose -f docker/docker-compose.e2e.yml up`). The server log is kept in `.e2e/server.log` for inspecting failures.
   - **Changes made through RCON (blocks, mobs, teleports) reach the bot a moment later.** Never act on them at once: retry a tool call until the bot's own view matches (`untilBotSees` pattern), or the test is flaky.
@@ -301,6 +317,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 10. Handover: when the user asks for items, call `give_items` (it fetches from inventory, then chests). If the phrase is ambiguous (for example "wood"), ask which item; if the tool reports a `shortfall`, tell the user what is missing and offer to gather, craft, or hunt it. Do not give away reserved items (current tools, armor, food) unless explicitly asked, and prefer chest mode for large amounts.
 11. Drop recovery: when a `bot_died` event arrives, tell the user where it happened. Recovery runs automatically by default; if the user says to leave it, call `skip_drop_recovery` and give them the coordinates. If recovery pauses with a hazard `needs_decision`, explain the risk and ask; never send the bot into lava or void on your own.
 12. Survival reflexes act on their own (eating, fighting, running away, getting out of lava, surfacing for air); do not duplicate them. They report through `reflex` events in `wait_for_chat`: tell the player briefly what happened. A reflex may pause your task and resume it afterwards. When an event says a task "was not resumed" (the bot ran away, so going back would be dangerous), ask the player whether to try again. While a reflex is acting, starting a task fails with a message naming it: wait a few seconds and retry. "Hungry but nothing safe to eat" means the player should be told, and food gathered or hunted if they agree.
+13. Gathering and crafting: ask for what the player wants in blocks (`collect_block` counts blocks broken, so ores and stone give different items; check `gained` in the result). Use `list_recipes` when unsure what an item needs. When a tool fails, act on the reason: `no_suitable_tool` names what to craft first (a pickaxe of that tier), `missing_materials` lists exactly what to gather, `inventory_full` means free space (or ask, until the storage phase handles it) and call again for the remainder in the message, `protected_area` means do not force it. Before working near a player build, call `protect_area` for it (ask the player for the corners or use their position) and never `unprotect_area` unless they say so. `craft` and `smelt` use, place, or craft a crafting table and furnace by themselves; they stay where they were placed.
 
 ## Definition of done for a change
 
