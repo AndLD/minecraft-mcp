@@ -64,8 +64,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 5 Persistent state | done, merged into `development` |
 | 6 Survival reflexes | done, merged into `development` |
 | 7 Gathering, crafting, smelting | done, merged into `development` |
-| 8 Hunting and food | implemented on `feature/hunting`, awaiting approval |
-| 9 and later | not started |
+| 8 Hunting and food | done, merged into `development` |
+| 9 Storage and containers | implemented on `feature/storage-containers`, awaiting approval |
+| 10 and later | not started |
 
 ## Phases
 
@@ -211,6 +212,7 @@ The tools before this phase cannot hunt: perception can list entities and the re
 ### Phase 9: Storage and containers (1.5 sessions)
 
 - Branch: `feature/storage-containers`.
+- **As built:** everything in this phase except `OrganizeStorage` and "craft and place a new chest" (both in `BACKLOG.md`), plus `remove_container`, `ItemFacts` and `LookTarget` ports, and `WindowTransfer` (moving items by clicking, because Mineflayer's `deposit`/`withdraw` are unreliable on 1.21, like `bot.craft`). Container memory is `ContainerIndex` (persisted through `StateStore`); there is no separate `WorldKnowledgeStore` yet, which the discovery feature can introduce. `waiting_for_input` is a `TaskManager` status with `context.ask` and `TaskManager.answer`. Building integration comes with the building phase.
 - Ports: `ContainerAccess` (open chest/barrel/double chest/shulker box, read contents, move items in and out). Mineflayer adapter behind it.
 - Container memory in `WorldKnowledgeStore` (persisted per world profile through `StateStore`): position, optional label (`home`, `wood`, `tools`, ...), last-seen contents, last-opened time, optional `protected` flag.
 - **Pointing at chests.** A container is registered by any of: explicit coordinates, "the chest I am looking at" (the bot reads the owner's look direction and finds the targeted block), or "the nearest chest to me". Tool: `register_container` (with optional label).

@@ -23,6 +23,8 @@ interface Range {
 }
 
 const MAX_STACKS = 64
+/** How often to look before believing that a shift-click moved nothing. */
+const LOOKS = 4
 
 /**
  * Moves items in and out of a container by clicking, the way a player does, and lets the server decide what fits.
@@ -89,15 +91,26 @@ export class WindowTransfer {
 
       if (remaining >= stack) {
         await this.window.click(source, 0, 1) // shift-click: the server moves the whole stack
-        await this.window.settle()
-        await this.window.sync()
-        if ((this.window.slots[source]?.count ?? 0) > 0) break // the other side is full
+        if (await this.stillThere(source, stack)) break // the other side is full
       } else {
         await this.movePart(source, remaining, to)
         break
       }
     }
     return before - this.countIn(item, from)
+  }
+
+  /**
+   * Syncs until the stack has gone down. The server's answer can be a moment late, and a sync can be answered by an
+   * older update, so an unchanged slot is only believed after a few more looks.
+   */
+  private async stillThere(slot: number, before: number): Promise<boolean> {
+    for (let look = 0; look < LOOKS; look += 1) {
+      await this.window.settle()
+      await this.window.sync()
+      if ((this.window.slots[slot]?.count ?? 0) < before) return false
+    }
+    return true
   }
 
   /** Moves `amount` items out of the stack in `source` (which holds more) into a slot of the other range. */

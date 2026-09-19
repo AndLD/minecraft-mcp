@@ -157,6 +157,17 @@ describe('WindowTransfer', () => {
     expect(carried(state, 'dirt')).toBe(10)
   })
 
+  it('does not mistake a late answer from the server for a full container', async () => {
+    const { transfer, state, window } = setup(empty(27), [{ name: 'cobblestone', count: 100 }])
+    window.lateSyncs = 2 // the first two looks still show the old slot
+
+    const moved = await transfer.deposit('cobblestone', undefined)
+
+    expect(moved).toBe(100)
+    expect(count(state, 'cobblestone')).toBe(100)
+    expect(carried(state, 'cobblestone')).toBe(0)
+  })
+
   it('closes the window', async () => {
     const { transfer, window } = setup(empty(27), [])
 

@@ -54,6 +54,37 @@ export class E2EWorld {
   }
 
   /** True when the block at the position is the given block (`execute if block`). */
+  /** Puts a stack in a chest slot, for example `fillSlot(pos, 0, 'iron_ingot', 20)`. */
+  async fillSlot(position: Position, slot: number, item: string, count: number): Promise<void> {
+    await this.command(
+      `item replace block ${at(position)} container.${String(slot)} with minecraft:${item} ${String(count)}`,
+    )
+  }
+
+  /**
+   * How many of an item a chest (or barrel) holds. Reads one slot at a time: the server cuts a long block-data reply
+   * short, so `data get block ... Items` cannot be trusted for a full chest.
+   */
+  async countInChest(position: Position, item: string, slots = 27): Promise<number> {
+    let total = 0
+    for (let slot = 0; slot < slots; slot += 1) {
+      const response = await this.command(
+        `data get block ${at(position)} Items[{Slot:${String(slot)}b}]`,
+        true,
+      )
+      if (!response.includes(`"minecraft:${item}"`)) continue
+      total += Number(/count: (\d+)/.exec(response)?.[1] ?? 0)
+    }
+    return total
+  }
+
+  /** Turns a player to look in a direction (degrees; yaw 0 faces +z, 90 faces -x; pitch 90 looks down). */
+  async face(player: string, position: Position, yaw: number, pitch: number): Promise<void> {
+    await this.command(
+      `tp ${player} ${String(position.x)} ${String(position.y)} ${String(position.z)} ${String(yaw)} ${String(pitch)}`,
+    )
+  }
+
   async isBlock(position: Position, block: string): Promise<boolean> {
     const response = await this.command(`execute if block ${at(position)} ${block}`, true)
     return response.includes('Test passed')

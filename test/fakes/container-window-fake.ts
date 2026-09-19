@@ -14,7 +14,13 @@ export const stackSizeOf = (name: string): number =>
  * back to, the owner of the window (the fake bot's inventory).
  */
 export class FakeContainerWindow implements ContainerWindowLike {
-  slots: (ItemLike | null)[]
+  /** What the server holds. */
+  private truth: (ItemLike | null)[]
+  /** What the client still believes while the server's answer is late. */
+  private view: (ItemLike | null)[] | undefined
+  /** The next click's effect only reaches the client after this many more syncs. */
+  lateSyncs = 0
+  private lateUntil = 0
   selectedItem: ItemLike | null = null
   readonly inventoryStart: number
   readonly inventoryEnd: number
@@ -41,7 +47,11 @@ export class FakeContainerWindow implements ContainerWindowLike {
         slot += 1
       }
     }
-    this.slots = [...container, ...player]
+    this.truth = [...container, ...player]
+  }
+
+  get slots(): (ItemLike | null)[] {
+    return this.view ?? this.truth
   }
 
   click(slot: number, mouseButton: number, mode: number): Promise<void> {
@@ -50,9 +60,15 @@ export class FakeContainerWindow implements ContainerWindowLike {
       this.ignoreClicks -= 1
       return Promise.resolve()
     }
+    const before = this.truth.map((item) => (item === null ? null : { ...item }))
     if (mode === 1) this.shiftClick(slot)
     else if (mouseButton === 0) this.leftClick(slot)
     else this.rightClick(slot)
+    if (this.lateSyncs > 0) {
+      this.view = before // the client has not heard yet
+      this.lateUntil = this.lateSyncs
+      this.lateSyncs = 0
+    }
     this.publish()
     return Promise.resolve()
   }
@@ -63,6 +79,10 @@ export class FakeContainerWindow implements ContainerWindowLike {
 
   sync(): Promise<void> {
     this.log.push('sync')
+    if (this.view !== undefined) {
+      if (this.lateUntil > 0) this.lateUntil -= 1
+      else this.view = undefined
+    }
     return Promise.resolve()
   }
 
@@ -73,21 +93,21 @@ export class FakeContainerWindow implements ContainerWindowLike {
   }
 
   private leftClick(slot: number): void {
-    const inSlot = this.slots[slot] ?? null
+    const inSlot = this.truth[slot] ?? null
     const held = this.selectedItem
     if (held === null) {
       this.selectedItem = inSlot
-      this.slots[slot] = null
+      this.truth[slot] = null
     } else if (inSlot === null) {
-      this.slots[slot] = held
+      this.truth[slot] = held
       this.selectedItem = null
     } else if (inSlot.name === held.name) {
       const room = stackSizeOf(held.name) - inSlot.count
       const put = Math.min(room, held.count)
-      this.slots[slot] = { name: held.name, count: inSlot.count + put }
+      this.truth[slot] = { name: held.name, count: inSlot.count + put }
       this.selectedItem = held.count > put ? { name: held.name, count: held.count - put } : null
     } else {
-      this.slots[slot] = held
+      this.truth[slot] = held
       this.selectedItem = inSlot
     }
   }
@@ -95,15 +115,15 @@ export class FakeContainerWindow implements ContainerWindowLike {
   private rightClick(slot: number): void {
     const held = this.selectedItem
     if (held === null) return
-    const inSlot = this.slots[slot] ?? null
+    const inSlot = this.truth[slot] ?? null
     if (inSlot !== null && (inSlot.name !== held.name || inSlot.count >= stackSizeOf(held.name)))
       return
-    this.slots[slot] = { name: held.name, count: (inSlot?.count ?? 0) + 1 }
+    this.truth[slot] = { name: held.name, count: (inSlot?.count ?? 0) + 1 }
     this.selectedItem = held.count > 1 ? { name: held.name, count: held.count - 1 } : null
   }
 
   private shiftClick(slot: number): void {
-    const stack = this.slots[slot]
+    const stack = this.truth[slot]
     if (stack === null || stack === undefined) return
     const [start, end] =
       slot < this.inventoryStart
@@ -111,26 +131,26 @@ export class FakeContainerWindow implements ContainerWindowLike {
         : [0, this.inventoryStart]
     let left = stack.count
     for (let target = start; target < end && left > 0; target += 1) {
-      const there = this.slots[target]
+      const there = this.truth[target]
       if (there?.name !== stack.name || there.count >= stackSizeOf(stack.name)) continue
       const put = Math.min(left, stackSizeOf(stack.name) - there.count)
-      this.slots[target] = { name: stack.name, count: there.count + put }
+      this.truth[target] = { name: stack.name, count: there.count + put }
       left -= put
     }
     for (let target = start; target < end && left > 0; target += 1) {
-      if (this.slots[target] !== null) continue
+      if (this.truth[target] !== null) continue
       const put = Math.min(left, stackSizeOf(stack.name))
-      this.slots[target] = { name: stack.name, count: put }
+      this.truth[target] = { name: stack.name, count: put }
       left -= put
     }
-    this.slots[slot] = left > 0 ? { name: stack.name, count: left } : null
+    this.truth[slot] = left > 0 ? { name: stack.name, count: left } : null
   }
 
   /** Writes the state back to the owner, so it is visible outside the window at every moment. */
   private publish(): void {
-    const container = this.slots.slice(0, this.inventoryStart)
+    const container = this.truth.slice(0, this.inventoryStart)
     const totals = new Map<string, number>()
-    for (const item of this.slots.slice(this.inventoryStart)) {
+    for (const item of this.truth.slice(this.inventoryStart)) {
       if (item !== null) totals.set(item.name, (totals.get(item.name) ?? 0) + item.count)
     }
     this.commit(
