@@ -1,6 +1,7 @@
 import { Rcon } from 'rcon-client'
 import type { Position } from '../../../src/core/position.types.js'
 import type { ServerInfo } from './server-config.js'
+import { pause, waitUntil } from './wait.js'
 
 /** Superflat world: bedrock at -64, dirt at -63 and -62, grass at -61; players stand at y = -60. */
 export const GROUND_Y = -60
@@ -60,7 +61,7 @@ export class E2EWorld {
 
   /**
    * Prepares a clean, flat, bright arena: loads the chunks, clears everything above the floor,
-   * lays a grass floor, and removes all non-player entities.
+   * and lays a grass floor. Entities are cleared separately (`clearEntities`), once a player is online.
    */
   async prepareArena(center: Position, radius = 15): Promise<void> {
     const low = { x: Math.floor(center.x) - radius, z: Math.floor(center.z) - radius }
@@ -78,7 +79,37 @@ export class E2EWorld {
       { x: high.x, y: GROUND_Y + 12, z: high.z },
       'air',
     )
-    await this.command('kill @e[type=!player]', true)
+  }
+
+  /**
+   * Removes every non-player entity (again and again, since dying mobs drop items) and waits until they are really gone. A player must be online while this runs:
+   * the server does not tick entities that have no player nearby, so a killed mob would keep its death animation
+   * (and a bot joining later would see it as a live threat).
+   */
+  async clearEntities(): Promise<void> {
+    const killed = { anything: false } // set inside the polling closure below
+    try {
+      // Dying mobs drop items after the kill, so keep killing until nothing is left.
+      await waitUntil(
+        async () => {
+          if (!(await this.entityExists('@e[type=!player]'))) return true
+          await this.command('kill @e[type=!player]', true)
+          killed.anything = true
+          return undefined
+        },
+        { description: 'the killed entities to be gone' },
+      )
+      // Selectors already skip a mob that is dying, but it stays visible for its one-second death animation.
+      if (killed.anything) await pause(1500)
+    } catch (error) {
+      const left = await this.command('data get entity @e[type=!player,limit=1]', true)
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}. An entity is still there: ${left.slice(0, 600)}`,
+        {
+          cause: error,
+        },
+      )
+    }
   }
 
   async teleport(player: string, position: Position): Promise<void> {
@@ -112,6 +143,37 @@ export class E2EWorld {
     await this.command(
       `summon ${entity} ${String(position.x)} ${String(position.y)} ${String(position.z)}`,
     )
+  }
+
+  /** Summons an entity with NBT data, for example `{NoAI:1b}` (a mob that stands still). */
+  async summonWith(entity: string, position: Position, nbt: string): Promise<void> {
+    await this.command(
+      `summon ${entity} ${String(position.x)} ${String(position.y)} ${String(position.z)} ${nbt}`,
+    )
+  }
+
+  /** True when at least one entity matches the selector, for example `@e[type=zombie]`. */
+  async entityExists(selector: string): Promise<boolean> {
+    return (await this.command(`execute if entity ${selector}`, true)).includes('Test passed')
+  }
+
+  async damage(player: string, amount: number): Promise<void> {
+    await this.command(`damage ${player} ${String(amount)} minecraft:generic`)
+  }
+
+  async giveEffect(
+    player: string,
+    effect: string,
+    seconds: number,
+    amplifier: number,
+  ): Promise<void> {
+    await this.command(
+      `effect give ${player} minecraft:${effect} ${String(seconds)} ${String(amplifier)} true`,
+    )
+  }
+
+  async clearEffects(player: string): Promise<void> {
+    await this.command(`effect clear ${player}`, true)
   }
 
   async setTime(time: string): Promise<void> {

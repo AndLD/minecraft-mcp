@@ -17,7 +17,16 @@ export interface EntityLike {
   readonly name?: string | undefined
   readonly username?: string | undefined
   readonly position: Position
+  /** False once the entity has been removed from the world. */
+  readonly isValid?: boolean | undefined
+  /**
+   * True once the entity died. A dead mob lingers for a second (death animation) and must not count as a threat
+   * or a target. Set by our factory from Mineflayer's `entityDead` event, which never marks the entity itself.
+   */
+  readonly isDead?: boolean | undefined
 }
+
+export type EquipSlot = 'hand' | 'head' | 'torso' | 'legs' | 'feet'
 
 export interface PlayerLike {
   readonly username: string
@@ -28,6 +37,12 @@ export interface PlayerLike {
 export interface ItemLike {
   readonly name: string
   readonly count: number
+}
+
+export interface BlockLike {
+  readonly name: string
+  /** `block` for full solid blocks, `empty` for air, liquids, and plants. */
+  readonly boundingBox?: string | undefined
 }
 
 /**
@@ -49,6 +64,8 @@ export interface BotLike {
   readonly version: string
   readonly health: number
   readonly food: number
+  readonly foodSaturation: number
+  readonly oxygenLevel: number
   readonly entity: { readonly position: Position } | undefined
   readonly game: { readonly dimension: string }
   readonly time: { readonly timeOfDay: number }
@@ -57,20 +74,38 @@ export interface BotLike {
   readonly worldSeed?: string | undefined
   readonly entities: Readonly<Record<string, EntityLike>>
   readonly players: Readonly<Record<string, PlayerLike>>
-  readonly registry: { readonly blocksByName: Readonly<Record<string, { readonly id: number }>> }
-  readonly inventory: { items(): readonly ItemLike[]; emptySlotCount(): number }
+  readonly registry: {
+    readonly blocksByName: Readonly<Record<string, { readonly id: number }>>
+    readonly itemsByName: Readonly<Record<string, { readonly id: number }>>
+    readonly foodsByName: Readonly<
+      Record<string, { readonly foodPoints: number; readonly saturation: number }>
+    >
+  }
+  readonly inventory: {
+    items(): readonly ItemLike[]
+    emptySlotCount(): number
+    /** All window slots; 5 to 8 are the armor slots (head, torso, legs, feet). */
+    readonly slots: readonly (ItemLike | null)[]
+  }
   readonly heldItem: ItemLike | null
   readonly pathfinder: PathfinderLike
   chat(message: string): void
   whisper(username: string, message: string): void
   quit(reason?: string): void
-  blockAt(position: Position): { readonly name: string } | null
+  blockAt(position: Position): BlockLike | null
   findBlocks(options: {
     matching: number | number[]
     maxDistance: number
     count: number
   }): readonly Position[]
   clearControlStates(): void
+  setControlState(control: 'jump' | 'sprint', active: boolean): void
+  /** Puts the item type (an id from `registry.itemsByName`) into the slot. */
+  equip(itemType: number, destination: EquipSlot): Promise<void>
+  /** Eats or drinks the item in hand. */
+  consume(): Promise<void>
+  /** Hits an entity taken from `entities`. */
+  attack(entity: EntityLike): void
   on<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown
   once<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown
   removeListener<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): unknown

@@ -2,7 +2,12 @@ import { describe, expect, it } from '@jest/globals'
 import { BlockFinder } from '../../../src/perception/block-finder.js'
 import { isNotableBlock } from '../../../src/perception/notable-blocks.js'
 import { SurroundingsDescriber } from '../../../src/perception/surroundings.js'
-import { FakeBlockScanner, FakeEntityScanner, FakeVitals } from '../../fakes/fake-ports.js'
+import {
+  FakeBlockScanner,
+  FakeEntityScanner,
+  FakeVitals,
+  buildVitals,
+} from '../../fakes/fake-ports.js'
 
 describe('isNotableBlock', () => {
   it.each([
@@ -108,13 +113,7 @@ describe('SurroundingsDescriber', () => {
     const blocks = new FakeBlockScanner()
     const entities = new FakeEntityScanner()
     const vitals = new FakeVitals()
-    vitals.vitals = {
-      health: 20,
-      food: 20,
-      position: { x: 10.26, y: 64, z: -3.5 },
-      dimension: 'overworld',
-      timeOfDay: 6000,
-    }
+    vitals.vitals = buildVitals({ position: { x: 10.26, y: 64, z: -3.5 } })
     return {
       blocks,
       entities,

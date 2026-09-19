@@ -5,6 +5,8 @@ import type { BotFactory, BotLike } from './bot-like.types.js'
 import { formatHashedSeed } from './hashed-seed.js'
 
 type EventMethods = 'on' | 'once' | 'removeListener'
+/** Takes entities from `bot.entities`, which are always real ones; TypeScript cannot relate our narrow entity type to Mineflayer's. */
+type LooselyTyped = EventMethods | 'attack'
 
 /** The only place that creates a real Mineflayer bot. */
 export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike => {
@@ -24,6 +26,10 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
       if (worldSeed !== undefined) Object.assign(bot, { worldSeed })
     },
   )
+  // Mineflayer announces a death but leaves the entity as it was until it is removed a moment later.
+  bot.on('entityDead', (entity) => {
+    Object.assign(entity, { isDead: true })
+  })
   bot.once('spawn', () => {
     // Safe movement profile: never dig or build to reach a goal (that could break player builds).
     // The pathfinder already avoids lava, fire, and deep drops.
@@ -35,7 +41,7 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
   })
 
   // Compile-time guard: every member except the event methods must match exactly.
-  const _members: Omit<BotLike, EventMethods> = bot
+  const _members: Omit<BotLike, LooselyTyped> = bot
   // The event methods are generic over Mineflayer's much larger event map, which TypeScript cannot
   // relate to our narrow one. At runtime they behave identically for the events we subscribe to.
   return bot as unknown as BotLike

@@ -36,6 +36,7 @@ export async function startSession(
 ): Promise<E2ESession> {
   await world.prepareArena(ARENA_CENTER)
   const player = await joinAsPlayer(info, uniqueName('Owner'))
+  await world.clearEntities() // with the owner online, so leftovers from the last test really disappear
   const bot = await startApp(info, { username: uniqueName('Bot'), owner: player.username })
 
   if (options.connectBot !== false) {

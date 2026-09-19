@@ -18,6 +18,7 @@ const envSchema = z.object({
   DATA_DIR: z.string().default('./data'),
   WORLD_PROFILE: z.string().optional(),
   LOW_HEALTH_THRESHOLD: z.coerce.number().int().min(1).max(20).default(8),
+  REFLEXES_ENABLED: envBoolean.default(true),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
 })
 
@@ -57,6 +58,7 @@ export function loadConfig(
     dataDir: e.DATA_DIR,
     worldProfile: e.WORLD_PROFILE,
     lowHealthThreshold: e.LOW_HEALTH_THRESHOLD,
+    reflexesEnabled: e.REFLEXES_ENABLED,
     logLevel: e.LOG_LEVEL,
   })
 }

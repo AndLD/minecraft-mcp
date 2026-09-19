@@ -12,6 +12,7 @@ export class MineflayerEntityScanner implements EntityScanner {
 
     const found: EntityInfo[] = []
     for (const entity of Object.values(bot.entities)) {
+      if (entity.isDead === true || entity.isValid === false) continue
       const distance = distanceBetween(origin, entity.position)
       if (distance === 0 || distance > maxDistance) continue // distance 0 is the bot itself
       found.push({

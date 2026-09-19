@@ -147,3 +147,34 @@ describe('MineflayerPathDriver', () => {
     }).not.toThrow()
   })
 })
+
+describe('MineflayerPathDriver.approachEntity', () => {
+  it('chases the entity with a dynamic goal, and stops when cancelled', async () => {
+    const bot = new FakeBot()
+    bot.entities['7'] = { id: 7, type: 'hostile', name: 'zombie', position: { x: 4, y: 64, z: 0 } }
+    const handle = new MineflayerPathDriver(holderOf(bot), goals).approachEntity(7, 1.8)
+
+    expect(bot.pathfinder.followGoals).toEqual([
+      { goal: { kind: 'follow', id: 7, range: 1.8 }, dynamic: true },
+    ])
+    handle.cancel()
+
+    expect(bot.pathfinder.stopCalls).toBe(1)
+    expect(await handle.outcome).toEqual({ kind: 'failed', message: 'Cancelled.' })
+  })
+
+  it('fails when the entity is not in view, or without a bot', async () => {
+    const bot = new FakeBot()
+
+    expect(
+      await new MineflayerPathDriver(holderOf(bot), goals).approachEntity(99, 2).outcome,
+    ).toEqual({
+      kind: 'failed',
+      message: 'Entity 99 is not in view.',
+    })
+    expect(
+      (await new MineflayerPathDriver(holderOf(undefined), goals).approachEntity(1, 2).outcome)
+        .kind,
+    ).toBe('failed')
+  })
+})

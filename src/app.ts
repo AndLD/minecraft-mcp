@@ -5,12 +5,17 @@ import { AgentInbox } from './chat/agent-inbox.js'
 import { ChatRouter } from './chat/chat-router.js'
 import { StopCommand } from './chat/stop-command.js'
 import type { BotFactory } from './bot/bot-like.types.js'
+import { MineflayerCombatDriver } from './bot/combat-driver.js'
+import { MeleeCombatant } from './bot/melee-combatant.js'
 import { MineflayerBlockScanner } from './bot/mineflayer-block-scanner.js'
 import { MineflayerChat } from './bot/mineflayer-chat.js'
 import { MineflayerConnection } from './bot/mineflayer-connection.js'
 import { createMineflayerBot } from './bot/mineflayer-bot-factory.js'
+import { MineflayerEater } from './bot/mineflayer-eater.js'
 import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
+import { MineflayerFoodCatalog } from './bot/mineflayer-food-catalog.js'
 import { MineflayerInventory } from './bot/mineflayer-inventory.js'
+import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
 import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
@@ -24,6 +29,7 @@ import type { Connection } from './core/connection.port.js'
 import type { DatagramSocketFactory } from './core/datagram-socket.port.js'
 import type { Logger } from './core/logger.js'
 import type { Random } from './core/random.port.js'
+import type { ResumeDescriptor } from './tasks/task.types.js'
 import type { ServerStatusProbe } from './core/server-status.port.js'
 import type { Scheduler } from './core/scheduler.port.js'
 import type { StopHandler } from './core/stop-handler.port.js'
@@ -69,6 +75,12 @@ import { WaitForChatTool } from './mcp/tools/wait-for-chat-tool.js'
 import { WhisperTool } from './mcp/tools/whisper-tool.js'
 import { BlockFinder } from './perception/block-finder.js'
 import { SurroundingsDescriber } from './perception/surroundings.js'
+import { AutoEat } from './reflexes/auto-eat.js'
+import { AvoidLava } from './reflexes/avoid-lava.js'
+import { Drowning } from './reflexes/drowning.js'
+import { ReflexEngine } from './reflexes/reflex-engine.js'
+import { SafeSpotFinder } from './reflexes/safe-spot.js'
+import { ThreatResponse } from './reflexes/threat-response.js'
 import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
@@ -111,6 +123,7 @@ export interface App {
   readonly session: SessionService
   readonly tasks: TaskManager
   readonly worldState: WorldStateManager
+  readonly reflexes: ReflexEngine
   readonly registry: ToolRegistry
   readonly mcpServer: McpServer
   /** Serves MCP over the given transport (stdio in production, in-memory in tests). */
@@ -139,9 +152,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const blocks = new MineflayerBlockScanner(connection)
   const entities = new MineflayerEntityScanner(connection)
   const inventory = new MineflayerInventory(connection)
+  const paths = new MineflayerPathDriver(connection, pathGoals)
   const navigator = new MineflayerNavigator({
     holder: connection,
-    driver: new MineflayerPathDriver(connection, pathGoals),
+    driver: paths,
     entities,
     clock,
     scheduler,
@@ -163,6 +177,50 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     storeForProfile: (profile) =>
       new FileStateStore({ directory: path.join(config.dataDir, profile), scheduler, logger }),
     components: [notes, history, standing, journal],
+    logger,
+  })
+  // Survival reflexes: run by themselves, with no round trip to the agent.
+  const combatant = new MeleeCombatant({
+    driver: new MineflayerCombatDriver(connection, paths),
+    scheduler,
+    clock,
+  })
+  const locomotion = new MineflayerLocomotion(connection)
+  const safeSpots = new SafeSpotFinder(blocks)
+  const invokeResume = async (resume: ResumeDescriptor): Promise<boolean> =>
+    (
+      await invoke(
+        resume.tool,
+        { ...resume.arguments, wait_seconds: 0 },
+        { signal: new AbortController().signal },
+      )
+    ).ok
+  const reflexes = new ReflexEngine({
+    reflexes: [
+      new AvoidLava({ blocks, navigator, locomotion, safeSpots }),
+      new Drowning({ navigator, locomotion, safeSpots }),
+      new ThreatResponse({
+        combatant,
+        navigator,
+        entities,
+        lowHealthThreshold: config.lowHealthThreshold,
+        owner: config.owner,
+      }),
+      new AutoEat({
+        inventory,
+        catalog: new MineflayerFoodCatalog(connection),
+        eater: new MineflayerEater(connection),
+      }),
+    ],
+    vitals,
+    entities,
+    tasks,
+    resume: invokeResume,
+    emit: (message) => {
+      inbox.pushEvent({ type: 'reflex', message })
+    },
+    scheduler,
+    clock,
     logger,
   })
   const briefing = new SessionBriefingBuilder({
@@ -198,11 +256,13 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
   connection.onEvent((event) => {
     if (event.type === 'disconnected' || event.type === 'kicked') {
+      void reflexes.stop()
       // Cancel first, so the journal records the tasks as interrupted, then release the world's state.
       void tasks.cancel(undefined, 'disconnected').then(() => worldState.close())
     }
     switch (event.type) {
       case 'connected':
+        if (config.reflexesEnabled) reflexes.start()
         inbox.pushEvent({ type: 'connected', message: `Bot ${event.username} joined the world.` })
         break
       case 'disconnected':
@@ -226,7 +286,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     worldState,
   })
   const blockFinder = new BlockFinder(blocks)
-  const launcher = new TaskLauncher(tasks, clock)
+  const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
     onCall: (call) => {
@@ -236,7 +296,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
     .register(new ConnectTool(session, briefing))
     .register(new DisconnectTool(connection))
-    .register(new GetStatusTool(connection, vitals, inbox))
+    .register(
+      new GetStatusTool(connection, vitals, inbox, {
+        enabled: config.reflexesEnabled,
+        activeReflex: () => reflexes.activeReflex(),
+      }),
+    )
     .register(new WaitForChatTool(connection, inbox))
     .register(new SayTool(chat))
     .register(new WhisperTool(chat))
@@ -273,10 +338,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     session,
     tasks,
     worldState,
+    reflexes,
     registry,
     mcpServer,
     serve: (transport) => mcpServer.connect(transport),
     shutdown: async () => {
+      await reflexes.stop()
       await tasks.cancel(undefined, 'shutdown')
       await connection.disconnect()
       await worldState.close()

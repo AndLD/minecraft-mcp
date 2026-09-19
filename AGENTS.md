@@ -50,7 +50,7 @@ src/
   session/              SessionService: decides where to connect (request, config, LAN discovery) and connects
   perception/           Services built on scanner ports: BlockFinder (name check + suggestions), SurroundingsDescriber, notable-block table
   skills/               Behaviors: movement, gathering, crafting, hunting, storage, building, discovery
-  reflexes/             Always-on survival behaviors (eat, flee, lava, drowning)
+  reflexes/             ReflexEngine (priority arbitration, task pausing/resuming) and the reflexes: AvoidLava, Drowning, ThreatResponse (threat policy table), AutoEat
   tasks/                TaskManager: one active task, cancellation, progress, timeouts
   state/                FileStateStore, WorldRegistry (fingerprint matching), WorldStateManager, NotesStore, InstructionLog, StandingInstructions, TaskJournal, SessionBriefingBuilder
   knowledge/            WorldKnowledgeStore (domain layer over StateStore): persisted landmarks, discovered structures, containers, storage rules
@@ -76,12 +76,14 @@ Skills receive only the ports they need, never a whole bot.
 | `EntityScanner` | nearby entities (nearest first), player lookup (online, visible, position) |
 | `InventoryReader` | snapshot of the bot inventory (stacks, free slots, held item) |
 | `Digger` | dig block, collect drops |
-| `Combatant` | attack an entity (with attack cooldown), equip best weapon/armor, retreat |
+| `Eater` / `FoodCatalog` | eat an item (takes it in hand, then consumes); food points and saturation of items |
+| `Locomotion` | direct body controls (hold jump to swim up) |
+| `Combatant` | equip the best weapon and armor; chase and hit an entity in time slices, respecting the 1.21 attack cooldown |
 | `Placer` | place block against a reference face |
 | `Crafter` | recipes, craft, smelt |
 | `InventoryReader` / `InventoryWriter` | contents, equip, toss/drop |
 | `ContainerAccess` | open chest/barrel/shulker, read contents, move items in and out |
-| `VitalsReader` | health, food, oxygen, time, dimension |
+| `VitalsReader` | health, food, saturation, oxygen, in lava/water/head underwater, position, dimension, time |
 | `ChatPort` | say / whisper, incoming chat stream |
 | `StateStore` | load/save versioned JSON documents per world profile (atomic writes) |
 | `WorldIdentifier` | fingerprint of the connected world (seed hash, name, spawn) |
@@ -189,6 +191,17 @@ interface BlueprintProvider {
 
 Fleeing means sprinting away until the threat is out of range and out of sight, preferring the direction of the owner or a known landmark. Fighting stops and flips to fleeing as soon as health drops to the threshold.
 
+### Survival reflexes
+
+- `ReflexEngine` ticks every 250 ms while the bot is connected (started on `connected`, stopped on disconnect or shutdown) and needs no MCP client. Each tick it reads the vitals and nearby entities once, and lets the most important reflex that `wants` to act run. A running reflex is aborted when it stops wanting to act, when the bot leaves the world, or when a strictly more important one wants in.
+- Priorities: `avoid_lava` 100, `drowning` 90, `threat_response` 80, `auto_eat` 20. A reflex with `preemptsTask` (everything except eating) first **suspends** the running task (`TaskManager.suspend()`, cancel reason `preempted`, the resume descriptor is remembered). When no reflex wants to act any more the engine **resumes** it through its resume descriptor, unless a reflex in that episode said `resumeTask: false` (fleeing: running back towards the danger would be wrong). Then the agent gets an event telling it to ask the player. The owner's `stop` or a new task discards the suspended one.
+- While a reflex is acting, `TaskLauncher` refuses to start tasks (they would fight the reflex for the pathfinder); the error says which reflex is acting.
+- Every reflex tells the agent what it did (`type: "reflex"` events in `wait_for_chat`, also recorded in the history log).
+- **Reflex loops must never spin.** If a step can return without waiting (nothing to do, no path), await `context.sleep(ms)` (it resolves early on abort, including when the signal is already aborted).
+- The threat policy is a data table in `src/reflexes/threat-policy.ts` (`MOB_RULES`); `assess()` is a pure function. Fighting is done in 1-second slices through `Combatant`, re-assessing between slices, so a fight turns into fleeing as soon as health drops to the threshold.
+- Combat uses `setGoal(null)`-style stopping like movement (see the pathfinder gotcha above). Attack timing per weapon lives in `src/bot/gear.ts`.
+- **Deferred:** a fall-damage guard (water-bucket landing) and a night shelter. The pathfinder's default maximum drop already avoids large falls.
+
 ### Tasks
 
 - The `TaskManager` (also the default `StopHandler`) runs **one** active task at a time. Starting a new one requires cancelling or queueing the current one explicitly.
@@ -257,7 +270,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
   - The server is one container per run, configured by `docker/e2e-server.env` and `docker/config/bukkit.yml` (also usable by hand: `docker compose -f docker/docker-compose.e2e.yml up`). The server log is kept in `.e2e/server.log` for inspecting failures.
   - **Changes made through RCON (blocks, mobs, teleports) reach the bot a moment later.** Never act on them at once: retry a tool call until the bot's own view matches (`untilBotSees` pattern), or the test is flaky.
   - Use unique bot names per test, and keep the login throttle disabled (Paper rejects quick repeated logins from one IP with "Connection throttled").
-  - Keep `SPAWN_ANIMALS=true` in the server config (with `false` the server removes summoned animals); stop natural spawning with the `doMobSpawning` game rule and clear the arena instead.
+  - Keep `SPAWN_ANIMALS=true` and `SPAWN_MONSTERS=true` in the server config (with `false` the server removes summoned animals and hostile mobs); stop natural spawning with the `doMobSpawning` game rule and clear the arena instead. The server runs on peaceful, so a test that needs hostile mobs sets the difficulty itself through RCON (and puts it back).
   - The Jest global setup/teardown are plain `.mjs` files because Jest loads them through Node's own loader, which cannot resolve `.js` imports to `.ts`. Jest also ignores `testTimeout` inside a project, so the timeout is set in `test/e2e/support/jest-setup.ts`.
 - **E2E run policy:** e2e tests are grouped per feature. While developing a phase, run **only that feature's own e2e folder**, not the accumulated earlier ones. The complete e2e suite (`test:e2e:all`) is run once after all primary phases (final gate) and before any release merge into `main`. Unit and integration tests are cheap and always run in full.
 - **Manual in-game check:** a human step at the end of each phase using the checklist in DEVELOPMENT-PLAN.md, with the real game client and your LAN world. It complements the automated tiers.
@@ -287,7 +300,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 9. Storage: when the user points at a chest or describes what belongs where, register it (`register_container`, `set_storage_rule`) and confirm in chat. When a task pauses with a `needs_decision` event (for example inventory full), ask the user in chat and pass the answer to `resume_task`. If the user's instruction already allows it ("bring resources to the home chest when there is no space"), set `on_inventory_full` on the call or `set_storage_policy` as a standing instruction and do not ask again. Never empty containers marked protected.
 10. Handover: when the user asks for items, call `give_items` (it fetches from inventory, then chests). If the phrase is ambiguous (for example "wood"), ask which item; if the tool reports a `shortfall`, tell the user what is missing and offer to gather, craft, or hunt it. Do not give away reserved items (current tools, armor, food) unless explicitly asked, and prefer chest mode for large amounts.
 11. Drop recovery: when a `bot_died` event arrives, tell the user where it happened. Recovery runs automatically by default; if the user says to leave it, call `skip_drop_recovery` and give them the coordinates. If recovery pauses with a hazard `needs_decision`, explain the risk and ask; never send the bot into lava or void on your own.
-12. Survival reflexes act on their own. Read the event log rather than duplicating their logic.
+12. Survival reflexes act on their own (eating, fighting, running away, getting out of lava, surfacing for air); do not duplicate them. They report through `reflex` events in `wait_for_chat`: tell the player briefly what happened. A reflex may pause your task and resume it afterwards. When an event says a task "was not resumed" (the bot ran away, so going back would be dangerous), ask the player whether to try again. While a reflex is acting, starting a task fails with a message naming it: wait a few seconds and retry. "Hungry but nothing safe to eat" means the player should be told, and food gathered or hunted if they agree.
 
 ## Definition of done for a change
 

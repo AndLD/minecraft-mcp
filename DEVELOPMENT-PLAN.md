@@ -61,8 +61,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 2 Core skeleton and MCP shell | done, merged into `development` |
 | 3 Movement and perception | done, merged into `development` |
 | 4 E2E test harness | done, merged into `development` |
-| 5 Persistent state | implemented on `feature/persistent-state`, awaiting approval |
-| 6 and later | not started |
+| 5 Persistent state | done, merged into `development` |
+| 6 Survival reflexes | implemented on `feature/survival-reflexes`, awaiting approval |
+| 7 and later | not started |
 
 ## Phases
 
@@ -157,7 +158,7 @@ Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffol
 ### Phase 6: Survival reflexes (1 session)
 
 - Reflex engine: priority arbitration, preemption/resume of the current task, event log.
-- Reflexes: `AutoEat`, `ThreatResponse`, `AvoidLava`, `Drowning` (surface for air), `FallDamageGuard`, `NightShelter` (optional, later).
+- Reflexes: `AutoEat`, `ThreatResponse`, `AvoidLava`, `Drowning` (surface for air). `FallDamageGuard` and `NightShelter` are deferred: the pathfinder's default maximum drop already avoids large falls, and both need placing blocks or buckets, which fits better after the building work.
 - Port: `Combatant` (attack an entity respecting the 1.21 attack cooldown, equip best weapon and armor, retreat). `ThreatResponse` and, later, hunting both use it.
 - `ThreatResponse` follows the threat policy table in AGENTS.md: flee from skeletons and creepers, flee whenever health is at or below a threshold (default 8 of 20, env-configurable), fight every other hostile mob (equip best weapon and armor first), ignore endermen (never attack them). Fleeing means sprinting away until the threat is out of range and out of sight, preferring the direction of the owner or a known landmark.
 - Event log integrated into `wait_for_chat` output.

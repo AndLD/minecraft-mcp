@@ -17,13 +17,25 @@ export interface LaunchOptions {
  * Shared by every tool that starts a long task: starts it, waits a bounded time,
  * and answers with either the outcome or "still running, poll get_task_status".
  */
+/** Tells whether a survival reflex is acting; tasks must not fight it for control of the bot. */
+export interface ReflexGate {
+  activeReflex(): string | undefined
+}
+
 export class TaskLauncher {
   constructor(
     private readonly tasks: TaskManager,
     private readonly clock: Clock,
+    private readonly gate?: ReflexGate,
   ) {}
 
   async launch(spec: TaskSpec, options: LaunchOptions): Promise<ToolResult> {
+    const reflex = this.gate?.activeReflex()
+    if (reflex !== undefined) {
+      return toolFail(
+        `A survival reflex (${reflex}) is acting right now, so the bot cannot start a task. Try again in a few seconds; get_status shows when it is done.`,
+      )
+    }
     if (options.replace) await this.tasks.cancel(undefined, 'replaced')
     const started = this.tasks.start(spec)
     if (!started.ok) return toolFail(started.error)

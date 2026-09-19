@@ -4,7 +4,13 @@ import { err, ok, type Result } from '../core/result.js'
 import type { Scheduler } from '../core/scheduler.port.js'
 import type { SkillFailure } from '../core/skill.types.js'
 import type { StopHandler } from '../core/stop-handler.port.js'
-import type { CancelReason, TaskEvent, TaskSnapshot, TaskSpec } from './task.types.js'
+import type {
+  CancelReason,
+  ResumeDescriptor,
+  TaskEvent,
+  TaskSnapshot,
+  TaskSpec,
+} from './task.types.js'
 
 export interface TaskManagerOptions {
   readonly clock: Clock
@@ -40,6 +46,7 @@ export class TaskManager implements StopHandler {
   private readonly tasks = new Map<string, TaskEntry>()
   private counter = 0
   private activeId: string | undefined
+  private suspendedTask: TaskSnapshot | undefined
   private readonly eventListeners = new Set<(event: TaskEvent) => void>()
 
   constructor(options: TaskManagerOptions) {
@@ -81,6 +88,7 @@ export class TaskManager implements StopHandler {
       )
     }
 
+    this.suspendedTask = undefined // a new task replaces whatever was waiting to resume
     this.counter += 1
     const id = `task-${String(this.counter)}`
     const controller = new AbortController()
@@ -167,6 +175,7 @@ export class TaskManager implements StopHandler {
 
   /** Cancels the task (default: the running one) and waits until it has stopped. */
   async cancel(id?: string, reason: CancelReason = 'requested'): Promise<TaskSnapshot | undefined> {
+    if (reason !== 'preempted') this.suspendedTask = undefined
     const targetId = id ?? this.activeId
     const entry = targetId === undefined ? undefined : this.tasks.get(targetId)
     if (entry === undefined || entry.finished) return entry?.snapshot
@@ -185,7 +194,37 @@ export class TaskManager implements StopHandler {
 
   /** Cancels whatever is running (the owner said "stop"). Does not wait. */
   stopAll(): void {
+    this.suspendedTask = undefined
     if (this.activeId !== undefined) void this.cancel(this.activeId)
+  }
+
+  /**
+   * Stops the running task so a survival reflex can take over, remembering it so it can be resumed.
+   * Returns the task, or undefined when nothing was running.
+   */
+  async suspend(): Promise<TaskSnapshot | undefined> {
+    const running = this.current()
+    if (running === undefined) return undefined
+    const stopped = await this.cancel(running.id, 'preempted')
+    this.suspendedTask = stopped
+    return stopped
+  }
+
+  /** The task waiting to be resumed after a reflex, without taking it. */
+  suspended(): TaskSnapshot | undefined {
+    return this.suspendedTask
+  }
+
+  /** Takes the suspended task's resume descriptor (once). Undefined when nothing waits or it cannot be resumed. */
+  takeSuspended(): ResumeDescriptor | undefined {
+    const resume = this.suspendedTask?.resume
+    this.suspendedTask = undefined
+    return resume
+  }
+
+  /** Forgets the suspended task (the player stopped everything, so nothing must resume). */
+  discardSuspended(): void {
+    this.suspendedTask = undefined
   }
 
   /** Read through a method: the flag changes while `cancel` is awaiting, which control-flow analysis cannot see. */

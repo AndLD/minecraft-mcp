@@ -3,8 +3,11 @@ import type { Result } from '../core/result.js'
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 
-/** Why a task was cancelled. Only `requested` (the owner or agent asked) is a deliberate stop. */
-export type CancelReason = 'requested' | 'replaced' | 'disconnected' | 'shutdown'
+/**
+ * Why a task was cancelled. `requested` (the owner or agent asked) and `replaced` are deliberate stops;
+ * `preempted` means a survival reflex took over and the task may be resumed afterwards.
+ */
+export type CancelReason = 'requested' | 'replaced' | 'preempted' | 'disconnected' | 'shutdown'
 
 /** How to start the same task again: the tool and the arguments that launched it. */
 export interface ResumeDescriptor {

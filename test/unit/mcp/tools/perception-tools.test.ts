@@ -14,17 +14,12 @@ import {
   FakeEntityScanner,
   FakeInventory,
   FakeVitals,
+  buildVitals,
 } from '../../../fakes/fake-ports.js'
 
 const vitals = () => {
   const v = new FakeVitals()
-  v.vitals = {
-    health: 20,
-    food: 20,
-    position: { x: 0, y: 64, z: 0 },
-    dimension: 'overworld',
-    timeOfDay: 0,
-  }
+  v.vitals = buildVitals({ timeOfDay: 0 })
   return v
 }
 
