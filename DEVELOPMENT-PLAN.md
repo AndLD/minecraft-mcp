@@ -65,8 +65,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 6 Survival reflexes | done, merged into `development` |
 | 7 Gathering, crafting, smelting | done, merged into `development` |
 | 8 Hunting and food | done, merged into `development` |
-| 9 Storage and containers | implemented on `feature/storage-containers`, awaiting approval |
-| 10 and later | not started |
+| 9 Storage and containers | done, merged into `development` |
+| 10 Item handover | implemented on `feature/item-handover`, awaiting approval |
+| 11 and later | not started |
 
 ## Phases
 
@@ -239,6 +240,7 @@ The tools before this phase cannot hunt: perception can list entities and the re
 Today there is no way to hand items over: the inventory port can drop items, but no tool exposes it, and nothing walks to a player, chooses what to give, or fetches it from storage. This phase adds that flow.
 
 - Branch: `feature/item-handover`.
+- **As built:** as planned. The request words are resolved by the server (`ItemResolver`), and the agent passes them as the player said them; `InventoryWriter` and `Gaze` are new ports. Not built: a retry that collects the items again when nobody picked them up (the result reports `unclaimed`; the drop-recovery feature decides what to do about them), and telling the dimension of an unseen player apart from a far-away one.
 - Reuses: `Navigator` (go to the player), `InventoryReader/Writer` (toss), and the storage feature (`FindItems`, `WithdrawItems`) as the source of items.
 - `ItemResolver`: turns what you say ("iron", "some wood", "a stack of cobble", "food") into concrete item ids and counts, using minecraft-data names, plurals, and item groups. When the request is ambiguous ("wood" could be logs or planks) it returns candidates so that I ask you in chat. Counts like "a stack" or "all" are supported.
 - `GiveItems` skill: input is the player (defaults to the owner), the items, and options (`fetch_from_storage`, default on; `keep_reserve`, default on; `mode`).

@@ -606,6 +606,13 @@ export class FakeBot implements BotLike {
     )
   }
 
+  waitedTicks = 0
+
+  waitForTicks(ticks: number): Promise<void> {
+    this.waitedTicks += ticks
+    return Promise.resolve()
+  }
+
   lookAt(point: Position): Promise<void> {
     this.lookedAt.push(point)
     return Promise.resolve()

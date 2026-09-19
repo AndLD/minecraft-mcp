@@ -41,6 +41,7 @@ describe('MineflayerGaze', () => {
     await new MineflayerGaze(holderOf(bot)).lookAt({ x: 3, y: 65, z: -2 })
 
     expect(bot.lookedAt).toEqual([expect.objectContaining({ x: 3, y: 65, z: -2 })])
+    expect(bot.waitedTicks).toBeGreaterThan(0) // the server needs a moment to learn where the bot looks
   })
 
   it('does nothing without a bot', async () => {

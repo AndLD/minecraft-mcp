@@ -8,7 +8,6 @@ import type { Navigator } from '../../core/navigator.port.js'
 import { distanceBetween } from '../../core/position.js'
 import type { Position } from '../../core/position.types.js'
 import type { ItemCount } from '../../core/recipes.port.js'
-import { EYE_HEIGHT } from '../../core/reach.js'
 import { err, ok } from '../../core/result.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
@@ -16,6 +15,7 @@ import { sleep } from '../../core/sleep.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { ContainerIndex } from '../../state/container-index.js'
 import type { ItemDepositor } from '../storage/deposit-items-skill.js'
+import type { ItemScanner } from '../storage/scan-containers-skill.js'
 import type { WithdrawInput, WithdrawOutput } from '../storage/withdraw-items-skill.js'
 import type { ItemRequest } from './handover.types.js'
 import type { DropSpot } from './drop-spot.js'
@@ -23,10 +23,15 @@ import type { ItemThrower } from './item-thrower.js'
 import { RequestPlanner } from './request-planner.js'
 import type { ItemFacts } from '../../core/item-facts.port.js'
 
-/** Close enough that the thrown items land at the player's feet. */
-const APPROACH_RANGE = 2.5
+/** Close enough that the thrown items land at the player's feet, within their reach to pick up. */
+const APPROACH_RANGE = 1.5
 /** How far from the drop the bot steps back so it does not pick its own items up again. */
 const RETREAT_DISTANCE = 4
+/**
+ * The throw is aimed steeply down at the ground just in front of the bot, toward the player. A level throw flies two or
+ * three blocks and lands past the player, out of their reach.
+ */
+const AIM_AHEAD = 0.75
 const VERIFY_MS = 8_000
 const VERIFY_POLL_MS = 500
 
@@ -63,6 +68,8 @@ export interface GiveItemsDeps {
   readonly index: ContainerIndex
   readonly withdrawer: ItemWithdrawer
   readonly depositor: ItemDepositor
+  /** Looks into containers the memory knows nothing about, when what was asked for is not in the inventory or the index. */
+  readonly scanner: ItemScanner
   readonly navigator: Navigator
   readonly entities: EntityScanner
   readonly blocks: BlockScanner
@@ -102,24 +109,11 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
     if (!planned.ok) return err({ ...planned.failure, detail: { ...planned.failure } })
     const { wanted, nothingOf } = planned.plan
 
-    // 1. Fetch what the inventory lacks.
+    // 1. Fetch what the inventory lacks: from what the index remembers, and, when that falls short, after looking into
+    // the containers (some may never have been opened).
     if (input.fetchFromStorage) {
-      const carried = countItems(snapshot)
-      const fetch = wanted
-        .map((item) => ({
-          item: item.name,
-          count: item.all ? undefined : Math.max(0, item.count - (carried.get(item.name) ?? 0)),
-        }))
-        .filter((request) => request.count === undefined || request.count > 0)
-      if (fetch.length > 0) {
-        context.progress('Fetching items from the containers')
-        const fetched = await deps.withdrawer.run(
-          { requests: fetch, container: undefined },
-          context,
-        )
-        if (!fetched.ok && fetched.error.reason === 'aborted') return fetched
-        // Any other failure just means there was less to fetch: the shortfall below says so.
-      }
+      const fetched = await this.fetch(wanted, context)
+      if (!fetched.ok) return fetched
     }
 
     // 2. What can be given, and what is missing.
@@ -144,6 +138,38 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
     return input.mode === 'chest'
       ? this.toChest(input, give, shortfall, context)
       : this.toPlayer(input, give, shortfall, context)
+  }
+
+  /** Withdraws what the inventory lacks. Errors other than being cancelled just mean there was less to fetch. */
+  private async fetch(
+    wanted: readonly { readonly name: string; readonly count: number; readonly all: boolean }[],
+    context: SkillContext,
+  ): Promise<SkillResult<undefined>> {
+    const { deps } = this
+    const missing = () => {
+      const carried = countItems(deps.inventory.snapshot())
+      return wanted
+        .map((item) => ({
+          item: item.name,
+          count: item.all ? undefined : Math.max(0, item.count - (carried.get(item.name) ?? 0)),
+        }))
+        .filter((request) => request.count === undefined || request.count > 0)
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const requests = attempt === 0 ? missing() : missing().filter((r) => r.count !== undefined)
+      if (requests.length === 0) return ok(undefined)
+      if (attempt === 1) {
+        context.progress('Not enough in the known containers: looking into the others')
+        const scanned = await deps.scanner.run({ radius: 24, refreshKnown: true }, context)
+        if (!scanned.ok && scanned.error.reason === 'aborted') return scanned
+      } else {
+        context.progress('Fetching items from the containers')
+      }
+      const result = await deps.withdrawer.run({ requests, container: undefined }, context)
+      if (!result.ok && result.error.reason === 'aborted') return result
+    }
+    return ok(undefined)
   }
 
   private async toChest(
@@ -230,7 +256,7 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
         message: `The bot will not drop the items here: ${problem}. Ask ${input.player} to come to solid ground, then try again.`,
       })
 
-    await deps.gaze.lookAt({ x: player.x, y: player.y + EYE_HEIGHT - 0.5, z: player.z })
+    await deps.gaze.lookAt(this.aimPoint(here, player))
     context.progress(`Giving ${describeItems(give)}`)
     const thrown = await deps.thrower.throwAll(give, context.signal)
     if (context.signal.aborted && thrown.length === 0)
@@ -250,6 +276,18 @@ export class GiveItemsSkill implements Skill<GiveInput, GiveOutput> {
       deliveredTo: input.player,
       unclaimed,
     })
+  }
+
+  /** A point on the ground a little way from the bot, on the line to the player. */
+  private aimPoint(from: Position, toward: Position): Position {
+    const dx = toward.x - from.x
+    const dz = toward.z - from.z
+    const length = Math.hypot(dx, dz) || 1
+    return {
+      x: from.x + (dx / length) * AIM_AHEAD,
+      y: from.y,
+      z: from.z + (dz / length) * AIM_AHEAD,
+    }
   }
 
   /** Steps away from the drop, so the bot does not pick its own items up again. */

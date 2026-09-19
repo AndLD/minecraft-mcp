@@ -178,6 +178,8 @@ export interface BotLike {
   readonly inventoryWindow: ContainerWindowLike
   /** Turns to face a point. */
   lookAt(point: Position, force?: boolean): Promise<void>
+  /** Waits for game ticks (50 ms each). */
+  waitForTicks(ticks: number): Promise<void>
   /** Opens a chest, barrel, or shulker box for `WindowTransfer`. Installed by our factory after spawn. */
   openContainerWindow(block: BlockLike): Promise<ContainerWindowLike>
   /** Every recipe for the item; those needing a table are included when `craftingTable` is true. */

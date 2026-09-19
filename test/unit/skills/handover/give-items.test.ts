@@ -4,6 +4,7 @@ import type { Position } from '../../../../src/core/position.types.js'
 import { ContainerSelector } from '../../../../src/skills/storage/container-selector.js'
 import { ContainerVisitor } from '../../../../src/skills/storage/container-visitor.js'
 import { DepositItemsSkill } from '../../../../src/skills/storage/deposit-items-skill.js'
+import { ScanContainersSkill } from '../../../../src/skills/storage/scan-containers-skill.js'
 import { WithdrawItemsSkill } from '../../../../src/skills/storage/withdraw-items-skill.js'
 import { DropItemsSkill, type DropInput } from '../../../../src/skills/handover/drop-items-skill.js'
 import { DropSpot } from '../../../../src/skills/handover/drop-spot.js'
@@ -69,6 +70,7 @@ async function setup() {
     index,
     withdrawer,
     depositor,
+    scanner: new ScanContainersSkill({ vitals: world.vitals, index, visitor }),
     navigator: world.navigator,
     entities,
     blocks: world.scanner,
@@ -124,9 +126,10 @@ describe('GiveItemsSkill: from the inventory to a player', () => {
         unclaimed: [],
       },
     })
-    expect(s.world.navigator.playerTrips).toEqual([{ player: 'Andrey_Knight', within: 2.5 }])
+    expect(s.world.navigator.playerTrips).toEqual([{ player: 'Andrey_Knight', within: 1.5 }])
     expect(s.gaze.looked).toHaveLength(1)
-    expect(s.gaze.looked[0]).toMatchObject({ x: PLAYER.x, z: PLAYER.z })
+    // Aimed steeply at the ground just ahead, on the line to the player (the bot stopped 1.5 blocks short of them).
+    expect(s.gaze.looked[0]).toEqual({ x: 9.25, y: 64, z: 0 })
     expect(s.writer.tosses).toEqual([{ item: 'iron_ingot', count: 12 }])
     expect(s.world.have('iron_ingot')).toBe(8)
     const retreat = s.world.navigator.trips.at(-1)
@@ -339,6 +342,43 @@ describe('GiveItemsSkill: fetching from chests', () => {
     expect(s.world.opened).toEqual(['30,64,5', '40,64,5']) // only the earlier scan
   })
 
+  it('looks into containers it has never opened when the known ones do not have enough', async () => {
+    const s = await setup()
+    s.world.addContainer(at(30, 5))
+    s.world.addContainer(at(40, 5))
+    s.index.register(at(30, 5), 'chest', { label: 'known-but-unopened' })
+    s.world.stock(at(30, 5), 'iron_ingot', 4)
+    s.world.stock(at(40, 5), 'iron_ingot', 10) // nobody registered this one
+
+    const result = await s.skill.run(give([count('iron_ingot', 12)]), skillContext().context)
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { given: [{ name: 'iron_ingot', count: 12 }], shortfall: [] },
+    })
+    expect(s.index.at(at(40, 5))).toMatchObject({ auto: true })
+  })
+
+  it('does not scan when the known containers had enough', async () => {
+    const s = await stocked()
+    const opened = s.world.opened.length
+
+    await s.skill.run(give([count('iron_ingot', 5)]), skillContext().context)
+
+    expect(s.world.opened.length).toBe(opened + 1) // only the chest it took from
+  })
+
+  it('stops when cancelled while looking around', async () => {
+    const s = await setup()
+    s.world.addContainer(at(30, 5))
+    s.index.register(at(30, 5), 'chest')
+    s.world.navigator.failures = [{ reason: 'aborted', message: 'Cancelled.' }]
+
+    const result = await s.skill.run(give([count('iron_ingot', 12)]), skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+  })
+
   it('gives everything there is when asked for all, carried and stored', async () => {
     const s = await stocked()
     s.world.carry('iron_ingot', 5)
@@ -428,11 +468,11 @@ describe('GiveItemsSkill: reaching the player', () => {
         position: target,
       }
     }
-    s.world.scanner.solid.set('7,63,0', false)
+    s.world.scanner.solid.set('8,63,0', false)
 
     const ledge = await s.skill.run(give([count('dirt', 5)]), skillContext().context)
-    s.world.scanner.solid.set('7,63,0', true)
-    s.world.scanner.blockNames.set('7,63,0', 'lava')
+    s.world.scanner.solid.set('8,63,0', true)
+    s.world.scanner.blockNames.set('8,63,0', 'lava')
     const lava = await s.skill.run(give([count('dirt', 5)]), skillContext().context)
 
     expect(ledge).toMatchObject({ ok: false, error: { reason: 'unsafe_drop_spot' } })

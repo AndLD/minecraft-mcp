@@ -457,6 +457,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     index: containerIndex,
     withdrawer: withdrawItems,
     depositor: depositItems,
+    scanner: scanContainers,
     navigator,
     entities,
     blocks,
