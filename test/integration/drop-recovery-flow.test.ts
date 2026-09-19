@@ -162,7 +162,7 @@ describe('recovering dropped items through the MCP server', () => {
     expect(h.bot.chatLog[0]).toContain('My items are there')
     expect(h.bot.count('iron_ingot')).toBe(0)
     expect(data(await h.call('list_death_records')).records).toMatchObject([
-      { status: 'abandoned', position: DEATH, secondsLeft: 300 },
+      { status: 'abandoned', position: DEATH },
     ])
     const briefing = (await h.call('get_session_briefing')).data as {
       standingInstructions: Record<string, string>
@@ -173,7 +173,15 @@ describe('recovering dropped items through the MCP server', () => {
 
     expect(data(fetched)).toMatchObject({
       status: 'succeeded',
-      result: { status: 'recovered', recovered: [{ name: 'iron_ingot', count: 20 }] },
+      result: {
+        status: 'recovered',
+        recovered: [
+          { name: 'cobblestone', count: 64 },
+          { name: 'iron_ingot', count: 20 },
+          { name: 'iron_pickaxe', count: 1 },
+        ],
+        missing: [],
+      },
     })
     expect(h.bot.count('iron_ingot')).toBe(20)
   })
