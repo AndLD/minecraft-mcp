@@ -73,11 +73,11 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); merged into `development` |
 | 15 Site preparation: leveling and dug rooms | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
 | 16 Railways | not started (added) |
-| 17 World discovery, including caves and canyons | not started (cave flow added) |
-| 18 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
-| 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
-| 20 Sleeping and respawn point | not started (added; small, can go right after teleport) |
-| 21 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
+| 17 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
+| 18 Sleeping and respawn point | not started (added; small, can go right after teleport) |
+| 19 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
+| 20 World discovery, including caves and canyons | not started (cave flow added) |
+| 21 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
 | 22 Hardening and polish | not started (was 14, then 19, then 20, then 21) |
 
 ## Phases
@@ -428,58 +428,7 @@ Preparing a plot for building: "get me a clean field for building, 20x10, on the
   - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
 - **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
 
-### Phase 17: World discovery, including caves and canyons (2 sessions)
-
-- `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
-- `StructureSignature` implementations detected from loaded chunks and entities:
-  - village: bell, villager entities, hay bales, path blocks, house doors
-  - desert temple: chiseled/cut sandstone patterns with tnt
-  - jungle temple: mossy cobblestone clusters
-  - others as needed (outpost, mineshaft rails/planks, ruined portal, dungeon spawner, shipwreck, stronghold...)
-- `ExplorationStrategy` implementations: `SpiralExplorer`, `FrontierExplorer` (prefers unvisited chunks), optional biome-guided (villages in plains/desert/savanna/taiga; temples in desert/jungle).
-- `ExploreForStructure` skill: wander, scan periodically, stop on hit, report coordinates, record to knowledge store; bounded by distance and time; returns to a landmark on request; safe travel (reflexes stay active, avoid deep water and lava, night handling).
-- Optional accelerator: if the bot is opped, use `/locate structure ...` to seed targets; falls back to physical exploration.
-- Tools (all state goes through `StateStore`): `explore_for_structure`, `list_known_structures`, `set_landmark`, `list_landmarks`.
-- Branch: `feature/world-discovery`.
-- **Cave and canyon exploration** (`feature/cave-exploration`, built after the excavation phase because it needs its lighting and hazard rules):
-  - `CaveMap` reads the loaded chunks and finds the underground open space: connected air below the surface (caves, tunnels, abandoned mineshafts), and ravines (deep, narrow, open-to-sky canyons), each with entrances and unexplored frontier cells.
-  - `CaveExplorer` (an `ExplorationStrategy`): nearest-frontier first, with limits (depth range, distance from the entrance, time), breadcrumbs so it can always walk back to the entrance, and a `return_to_start` stop condition (few torches left, low health, hunger, time up).
-  - **Lighting on the way**: torches are placed in dark spots by the shared `LightManager` (block light below `min_light`, with a minimum spacing), on the right-hand wall going in so the way out is lit. Torches are crafted from coal or charcoal and sticks, or fetched from storage; without any left the flow stops (`no_torches`) instead of going on in the dark.
-  - **What it looks for** (`find`): resources given by name or group (`diamond_ore`, `ores`, ...), or, when none are named, the valuable ones: diamond, gold, redstone, lapis, emerald, ancient debris (in the Nether); mob spawners (recorded with the spawned mob); and rare structures: mineshaft (rails, fences, chest minecarts), dungeon (mossy cobblestone room), stronghold, geode. Finds are recorded in the knowledge store with coordinates and reported in chat as they happen. With `mine: true` the ores it passes are mined (vein by vein, under the excavation hazard rule); by default it only reports them.
-  - **Safety**: reflexes stay active (skeletons and creepers are fled from; the warden and the deep dark are avoided: an ancient city is reported and never entered); lava and water are never approached (the hazard rule below); no unsafe drops: the pathfinder's drop limit stays at 3 and the deferred **fall-damage guard** (water-bucket landing) is built in this feature because caves have drops; no diving.
-  - Tool: `explore_caves` (`find`, `mine`, `max_distance`, `max_minutes`, `min_light`), results through `list_known_structures`.
-  - **Tests**: unit: `CaveMap` on synthetic grids (connected components, ravine detection, entrances, frontier), `CaveExplorer` (no revisits, budgets, breadcrumb return, torch spacing with a fake light source, each stop condition), find rules (specified versus default valuables, spawner, structure signatures); integration: explore → find → persist → new app instance still lists it; e2e: a cave carved via RCON with a diamond ore and a spawner at its far end and a lava pocket beside the path: the bot finds both, lights the way, never touches the lava, and walks back out; the torches are where the light rule says.
-  - **Exit criteria:** "explore this cave for diamonds" makes the bot go in, light its way, report where it found diamonds, spawners, or other structures, and come back out alive.
-- **Tests:**
-  - unit: each `StructureSignature` against synthetic block/entity grids (positive, negative, near-miss), exploration strategies (deterministic with a fake `Random`, no revisits, respect bounds), `ExploreForStructure` (found, time/distance limit, abort)
-  - integration: `WorldKnowledgeStore` against a real temp directory (persist, reload, corrupt file handling); explore → discover → persist → new app instance still lists the structure
-  - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
-- **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
-
-### Phase 18: Leading a player (½ session)
-
-"Come to me and lead me to the village." A standalone feature, not part of discovery: the target can be a structure the bot found, a landmark (`home`), a registered container or farm, or plain coordinates, so it is useful with or without exploration. It builds on `Navigator`, the player lookup, `Gaze`, and chat.
-
-- Branch: `feature/lead-player`. A `LeadPlayerSkill` (`lead_player`) in the movement skills; no engine and no new port beyond a way to face a player (the `Gaze` port already does).
-- **Tool `lead_player`:** `target` (a landmark name, a known structure, or `x`, `y`, `z`), `lead_distance` (blocks, default 8, 5 to 16), `arrive_within` (default 8), and `for_player` (default the owner). The reply says what it is leading to and where.
-- **The rule: the bot never gets farther from the player than `lead_distance`, and only advances when the player is close.** One loop, about twice a second:
-  1. **Join.** If the bot is farther than `lead_distance` from the player, it first comes to the player (so "come to me and lead me" is a single request).
-  2. **Lead.** While the player is within `resume_distance` (60% of `lead_distance`, 5 blocks by default), the bot walks the route to the target in short legs (a few blocks each, so it can stop at any moment), on the safe movement profile: it never digs or builds and avoids lava, and it prefers walkable ground, so a player can follow without special moves.
-  3. **Wait.** When the distance reaches `lead_distance`, the bot stops and **turns to face the player**, and every 10 seconds or so says in chat that they should follow ("Follow me to the village"). It starts again only when the player has come back within `resume_distance`, so it does not jitter at the threshold.
-  4. **The player goes elsewhere.** When the bot is waiting and the player walks away from it, the bot **goes towards the player** until the distance is under the limit again, and keeps calling them to follow. It never leaves them behind, and it does not wander ahead alone.
-  5. **Arrive.** Within `arrive_within` blocks of the target it stops, says where they are ("We are at the village, x, y, z"), and the task ends with success.
-- **Edge cases and safety.**
-  - Player out of view or far away for about a minute: the bot stops and asks where they went (`player_lost`); after a long time of not following (about 10 minutes) the task ends (`player_not_following`).
-  - Bot and target in different dimensions, or the player in another dimension: refused at the start with the reason.
-  - The survival reflexes act as always and pause the task; after fleeing the task is not resumed on its own and the agent asks the player. The fixed `stop` command and `cancel_task` end it. A target that cannot be reached ends the task as `unreachable`.
-  - Chat lines are throttled (one call per 10 seconds, one arrival line), so the bot never spams.
-- **Tests:**
-  - unit: the state machine over a fake clock, fake player positions, and a fake `Navigator` (join, lead, wait at the limit, resume at 60%, going elsewhere brings the bot back under the limit, call frequency, arrival, player lost, not following, dimension mismatch, abort, unreachable), and distance and threshold maths at the edges of the ranges
-  - integration: `lead_player` through the tool layer on a stateful fake world with a scripted player who follows, lags, and walks off: the bot ends at the target, waits and calls when lagged, and follows a wandering player
-  - e2e: on flat ground the owner bot follows the bot to a target 40 blocks away (both end near it, and the chat calls stayed within the limit); when the owner walks perpendicular the bot stays within `lead_distance` of the owner and does not reach the target; a `stop` ends the task
-- **Exit criteria:** "come to me and lead me to the village" brings the bot to the player and then to the village, waiting and calling whenever the player falls behind, following the player if they wander, and saying when they have arrived.
-
-### Phase 19: Farming, crops, animals, and trees (3.25 sessions)
+### Phase 17: Farming, crops, animals, and trees (3.25 sessions)
 
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
@@ -520,7 +469,7 @@ Hunting takes animals from the world and never adds any, and food stops when the
   - e2e: a small farm with a cow pen, a chicken pen, and a wheat field: `discover_farm` proposes all three; after registering them as one group, `inspect_farm` reports the ripe and growing counts and the animal counts without changing a block, and `tend_farm` on the group harvests and replants the field, collects the eggs, and returns one summary with three parts; a gap cut into a fence shows up as a problem in `inspect_farm`; eggs summoned as items in a fenced pen with chickens: `collect_eggs` picks them all up, stores exactly 10% (rounded up) in a chest and throws the rest (the chest count is exact; with 64 eggs at least one chick appears, the chance of none being under 0.03%); `store_fraction: 1` stores everything; a full pen throws nothing; `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size; saplings planted around a point with the right spacing and grown with bone meal
 - **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair; "go check our farm near home" answers with one report over every pen and field of the group without changing anything, and "run the farm" tends all of them with one summary; "collect the eggs" stores a tenth in a chest and throws the rest into the pen for chicks (unless told otherwise or the pen is full); "plant a forest of 10 trees around the house" places 10 saplings with room to grow, and felling them later replants.
 
-### Phase 20: Sleeping and respawn point (1 session)
+### Phase 18: Sleeping and respawn point (1 session)
 
 Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes up at home instead of at the far-away world spawn, which also makes drop recovery quicker and safer), and sleeping skips the night.
 
@@ -545,7 +494,7 @@ Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes
   - e2e: at night the bot sleeps in a bed and the night is skipped when the server's sleeping percentage lets it; by day the respawn point is set and, after the bot is killed, it wakes up at the bed (position check); a destroyed bed makes it respawn at the spawn and report it; a zombie near the bed makes sleeping fail with the reason; in the Nether-guard case the tool refuses without touching the bed (unit and integration only: the e2e server has no Nether)
 - **Exit criteria:** "set your spawn at this bed" makes the bot respawn there after a death; at night "go to sleep" puts the bot to bed, and it tells you exactly what else is needed for the night to pass; it never uses a bed in the Nether or the End.
 
-### Phase 21: Signs (½ session)
+### Phase 19: Signs (½ session)
 
 Place a sign with text where the player says, and take one down again. Signs are how a player labels a chest, marks a farm, or names a room, and the bot only ever labels things in its own memory (`label_container`, `set_landmark`) with nothing visible in the world.
 
@@ -566,6 +515,57 @@ Place a sign with text where the player says, and take one down again. Signs are
   - integration: `place_sign`, `edit_sign`, `remove_sign`, and `read_signs` through the tool layer on a stateful fake world with a fake look target; text read back; an interrupted craft
   - e2e: a sign placed on a wall and a sign on the ground (blocks and text checked through RCON `data get block`), `edit_sign` changes the text, `remove_sign` removes the sign and the item ends in the inventory, a waxed sign (made over RCON) refuses editing but can be removed on request, a protected area refuses, and `read_signs` returns what the owner bot wrote
 - **Exit criteria:** "put a sign 'Iron' on this chest" (looking at the chest) hangs a wall sign with that text; "change it to 'Ores'" edits it; "take that sign down" removes exactly that sign and picks it up; "what do the signs here say?" lists their text.
+
+### Phase 20: World discovery, including caves and canyons (2 sessions)
+
+- `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
+- `StructureSignature` implementations detected from loaded chunks and entities:
+  - village: bell, villager entities, hay bales, path blocks, house doors
+  - desert temple: chiseled/cut sandstone patterns with tnt
+  - jungle temple: mossy cobblestone clusters
+  - others as needed (outpost, mineshaft rails/planks, ruined portal, dungeon spawner, shipwreck, stronghold...)
+- `ExplorationStrategy` implementations: `SpiralExplorer`, `FrontierExplorer` (prefers unvisited chunks), optional biome-guided (villages in plains/desert/savanna/taiga; temples in desert/jungle).
+- `ExploreForStructure` skill: wander, scan periodically, stop on hit, report coordinates, record to knowledge store; bounded by distance and time; returns to a landmark on request; safe travel (reflexes stay active, avoid deep water and lava, night handling).
+- Optional accelerator: if the bot is opped, use `/locate structure ...` to seed targets; falls back to physical exploration.
+- Tools (all state goes through `StateStore`): `explore_for_structure`, `list_known_structures`, `set_landmark`, `list_landmarks`.
+- Branch: `feature/world-discovery`.
+- **Cave and canyon exploration** (`feature/cave-exploration`, built after the excavation phase because it needs its lighting and hazard rules):
+  - `CaveMap` reads the loaded chunks and finds the underground open space: connected air below the surface (caves, tunnels, abandoned mineshafts), and ravines (deep, narrow, open-to-sky canyons), each with entrances and unexplored frontier cells.
+  - `CaveExplorer` (an `ExplorationStrategy`): nearest-frontier first, with limits (depth range, distance from the entrance, time), breadcrumbs so it can always walk back to the entrance, and a `return_to_start` stop condition (few torches left, low health, hunger, time up).
+  - **Lighting on the way**: torches are placed in dark spots by the shared `LightManager` (block light below `min_light`, with a minimum spacing), on the right-hand wall going in so the way out is lit. Torches are crafted from coal or charcoal and sticks, or fetched from storage; without any left the flow stops (`no_torches`) instead of going on in the dark.
+  - **What it looks for** (`find`): resources given by name or group (`diamond_ore`, `ores`, ...), or, when none are named, the valuable ones: diamond, gold, redstone, lapis, emerald, ancient debris (in the Nether); mob spawners (recorded with the spawned mob); and rare structures: mineshaft (rails, fences, chest minecarts), dungeon (mossy cobblestone room), stronghold, geode. Finds are recorded in the knowledge store with coordinates and reported in chat as they happen. With `mine: true` the ores it passes are mined (vein by vein, under the excavation hazard rule); by default it only reports them.
+  - **Safety**: reflexes stay active (skeletons and creepers are fled from; the warden and the deep dark are avoided: an ancient city is reported and never entered); lava and water are never approached (the hazard rule below); no unsafe drops: the pathfinder's drop limit stays at 3 and the deferred **fall-damage guard** (water-bucket landing) is built in this feature because caves have drops; no diving.
+  - Tool: `explore_caves` (`find`, `mine`, `max_distance`, `max_minutes`, `min_light`), results through `list_known_structures`.
+  - **Tests**: unit: `CaveMap` on synthetic grids (connected components, ravine detection, entrances, frontier), `CaveExplorer` (no revisits, budgets, breadcrumb return, torch spacing with a fake light source, each stop condition), find rules (specified versus default valuables, spawner, structure signatures); integration: explore → find → persist → new app instance still lists it; e2e: a cave carved via RCON with a diamond ore and a spawner at its far end and a lava pocket beside the path: the bot finds both, lights the way, never touches the lava, and walks back out; the torches are where the light rule says.
+  - **Exit criteria:** "explore this cave for diamonds" makes the bot go in, light its way, report where it found diamonds, spawners, or other structures, and come back out alive.
+- **Tests:**
+  - unit: each `StructureSignature` against synthetic block/entity grids (positive, negative, near-miss), exploration strategies (deterministic with a fake `Random`, no revisits, respect bounds), `ExploreForStructure` (found, time/distance limit, abort)
+  - integration: `WorldKnowledgeStore` against a real temp directory (persist, reload, corrupt file handling); explore → discover → persist → new app instance still lists the structure
+  - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
+- **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
+
+### Phase 21: Leading a player (½ session)
+
+"Come to me and lead me to the village." A standalone feature, not part of discovery: the target can be a structure the bot found, a landmark (`home`), a registered container or farm, or plain coordinates, so it is useful with or without exploration. It builds on `Navigator`, the player lookup, `Gaze`, and chat.
+
+- Branch: `feature/lead-player`. A `LeadPlayerSkill` (`lead_player`) in the movement skills; no engine and no new port beyond a way to face a player (the `Gaze` port already does).
+- **Tool `lead_player`:** `target` (a landmark name, a known structure, or `x`, `y`, `z`), `lead_distance` (blocks, default 8, 5 to 16), `arrive_within` (default 8), and `for_player` (default the owner). The reply says what it is leading to and where.
+- **The rule: the bot never gets farther from the player than `lead_distance`, and only advances when the player is close.** One loop, about twice a second:
+  1. **Join.** If the bot is farther than `lead_distance` from the player, it first comes to the player (so "come to me and lead me" is a single request).
+  2. **Lead.** While the player is within `resume_distance` (60% of `lead_distance`, 5 blocks by default), the bot walks the route to the target in short legs (a few blocks each, so it can stop at any moment), on the safe movement profile: it never digs or builds and avoids lava, and it prefers walkable ground, so a player can follow without special moves.
+  3. **Wait.** When the distance reaches `lead_distance`, the bot stops and **turns to face the player**, and every 10 seconds or so says in chat that they should follow ("Follow me to the village"). It starts again only when the player has come back within `resume_distance`, so it does not jitter at the threshold.
+  4. **The player goes elsewhere.** When the bot is waiting and the player walks away from it, the bot **goes towards the player** until the distance is under the limit again, and keeps calling them to follow. It never leaves them behind, and it does not wander ahead alone.
+  5. **Arrive.** Within `arrive_within` blocks of the target it stops, says where they are ("We are at the village, x, y, z"), and the task ends with success.
+- **Edge cases and safety.**
+  - Player out of view or far away for about a minute: the bot stops and asks where they went (`player_lost`); after a long time of not following (about 10 minutes) the task ends (`player_not_following`).
+  - Bot and target in different dimensions, or the player in another dimension: refused at the start with the reason.
+  - The survival reflexes act as always and pause the task; after fleeing the task is not resumed on its own and the agent asks the player. The fixed `stop` command and `cancel_task` end it. A target that cannot be reached ends the task as `unreachable`.
+  - Chat lines are throttled (one call per 10 seconds, one arrival line), so the bot never spams.
+- **Tests:**
+  - unit: the state machine over a fake clock, fake player positions, and a fake `Navigator` (join, lead, wait at the limit, resume at 60%, going elsewhere brings the bot back under the limit, call frequency, arrival, player lost, not following, dimension mismatch, abort, unreachable), and distance and threshold maths at the edges of the ranges
+  - integration: `lead_player` through the tool layer on a stateful fake world with a scripted player who follows, lags, and walks off: the bot ends at the target, waits and calls when lagged, and follows a wandering player
+  - e2e: on flat ground the owner bot follows the bot to a target 40 blocks away (both end near it, and the chat calls stayed within the limit); when the owner walks perpendicular the bot stays within `lead_distance` of the owner and does not reach the target; a `stop` ends the task
+- **Exit criteria:** "come to me and lead me to the village" brings the bot to the player and then to the village, waiting and calling whenever the player falls behind, following the player if they wander, and saying when they have arrived.
 
 ### Phase 22: Hardening and polish (1 session)
 
