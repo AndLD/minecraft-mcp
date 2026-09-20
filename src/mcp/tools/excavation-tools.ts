@@ -38,12 +38,14 @@ const toInput = (input: {
   params: Record<string, unknown>
   origin?: { x: number; y: number; z: number } | undefined
   fetch_from_storage?: boolean
+  spoil_policy?: ExcavateInput['spoilPolicy']
   on_inventory_full?: ExcavateInput['onInventoryFull']
 }): ExcavateInput => ({
   shape: input.shape,
   params: input.params,
   origin: input.origin,
   fetchFromStorage: input.fetch_from_storage ?? false,
+  spoilPolicy: input.spoil_policy,
   onInventoryFull: input.on_inventory_full,
 })
 
@@ -54,6 +56,12 @@ const excavateSchema = z.object({
     .default(true)
     .describe(
       'Fetch missing ladders and torches from the containers the bot may use (never protected ones).',
+    ),
+  spoil_policy: z
+    .enum(['storage', 'discard_junk'])
+    .default('storage')
+    .describe(
+      'What happens to the spoil when the inventory is full. "storage" (default): the standing storage policy decides (on_inventory_full below). "discard_junk": the bot throws away cobblestone, dirt, gravel, deepslate and the like beyond a stock of 64 each, where it stands, and carries on; ores, tools, food, torches, and ladders are never thrown. Use it only when the player says the spoil does not matter.',
     ),
   on_inventory_full: z
     .enum(INVENTORY_FULL_KINDS)
@@ -96,6 +104,7 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
             params: input.params,
             ...(input.origin === undefined ? {} : { origin: input.origin }),
             fetch_from_storage: input.fetch_from_storage,
+            spoil_policy: input.spoil_policy,
           },
         },
         run: (ctx) => this.skill.run(toInput(input), ctx),

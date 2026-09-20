@@ -15,10 +15,85 @@ interface DigDown {
   readonly length: number
   /** Layers to dig, the first at y0 and each next one below. */
   readonly depth: number
-  /** Ladders up the west wall, so the bot can climb out. */
-  readonly ladder: boolean
+  /** How the bot gets out: ladders up the west wall, a staircase cut around the outside, or nothing. */
+  readonly exit: 'ladder' | 'stairs' | 'none'
+  /** A 2×2×2 pit in the far corner of the bottom with water in it, to jump into from the top. */
+  readonly waterLanding?: boolean
   /** Check for cave breakthroughs too (a shaft), not only fluids. */
   readonly cavities: boolean
+}
+
+/** The cells one block outside a width × length footprint, clockwise from its north-west corner. */
+export function ringAround(
+  x0: number,
+  z0: number,
+  width: number,
+  length: number,
+): { x: number; z: number }[] {
+  const west = x0 - 1
+  const east = x0 + width
+  const north = z0 - 1
+  const south = z0 + length
+  const cells: { x: number; z: number }[] = []
+  for (let x = west; x <= east; x += 1) cells.push({ x, z: north })
+  for (let z = north + 1; z <= south; z += 1) cells.push({ x: east, z })
+  for (let x = east - 1; x >= west; x -= 1) cells.push({ x, z: south })
+  for (let z = south - 1; z >= north + 1; z -= 1) cells.push({ x: west, z })
+  return cells
+}
+
+/**
+ * One step of the staircase that winds down around the outside of the footprint: a walkable slot three blocks high one
+ * block lower than the step before, in the next cell of the ring. It opens into the pit beside it, so at every level
+ * the way up starts at the level the bot works on. Each cell needs the one before it to be open.
+ */
+function stairStep(
+  y0: number,
+  layer: number,
+  ring: readonly { x: number; z: number }[],
+): WorkStep[] {
+  const at = ring[layer % ring.length]
+  const previous = ring[(layer - 1 + ring.length) % ring.length]
+  if (at === undefined || previous === undefined) return []
+  const foot = y0 - layer
+  const steps: WorkStep[] = []
+  for (let j = 0; j < 3; j += 1) {
+    const needs: Position | undefined =
+      j > 0
+        ? { x: at.x, y: foot + j - 1, z: at.z }
+        : layer > 0
+          ? { x: previous.x, y: foot + 1, z: previous.z }
+          : undefined
+    steps.push({
+      kind: 'break',
+      at: { x: at.x, y: foot + j, z: at.z },
+      branch: 'stairs',
+      ...(needs === undefined ? {} : { needs }),
+    })
+  }
+  return steps
+}
+
+/** A 2×2 pit two blocks deep below the floor of the far (south-east) corner, with two water sources set diagonally. */
+function waterLanding(spec: DigDown): WorkStep[] {
+  const x = spec.x0 + spec.width - 2
+  const z = spec.z0 + spec.length - 2
+  const floor = spec.y0 - spec.depth + 1
+  const steps: WorkStep[] = []
+  for (const y of [floor - 1, floor - 2])
+    for (const dx of [0, 1])
+      for (const dz of [0, 1])
+        steps.push({ kind: 'break', at: { x: x + dx, y, z: z + dz }, branch: 'landing' })
+  // Two sources on the diagonal make the other two (water renews itself between them) and the water falls into the
+  // lower layer: all eight cells fill, and the surface is one block below the quarry floor.
+  for (const d of [0, 1])
+    steps.push({
+      kind: 'place',
+      at: { x: x + d, y: floor - 1, z: z + d },
+      block: 'water_bucket',
+      branch: 'landing',
+    })
+  return steps
 }
 
 /**
@@ -29,6 +104,7 @@ interface DigDown {
 export function digDown(spec: DigDown): WorkPlan {
   const steps: WorkStep[] = []
   const ladderZ = spec.z0 + Math.floor(spec.length / 2)
+  const ring = spec.exit === 'stairs' ? ringAround(spec.x0, spec.z0, spec.width, spec.length) : []
   const probe = spec.cavities ? probeAllBut({ x: 0, y: 1, z: 0 }) : undefined
   for (let layer = 0; layer < spec.depth; layer += 1) {
     const y = spec.y0 - layer
@@ -44,7 +120,8 @@ export function digDown(spec: DigDown): WorkPlan {
         })
       }
     }
-    if (spec.ladder)
+    if (spec.exit === 'stairs') steps.push(...stairStep(spec.y0, layer, ring))
+    if (spec.exit === 'ladder')
       steps.push({
         kind: 'place',
         at: { x: spec.x0, y, z: ladderZ },
@@ -54,6 +131,7 @@ export function digDown(spec: DigDown): WorkPlan {
         branch: `column-0-${String(Math.floor(spec.length / 2))}`,
       })
   }
+  if (spec.waterLanding === true) steps.push(...waterLanding(spec))
   return {
     name: spec.name,
     steps,
@@ -65,10 +143,10 @@ export function digDown(spec: DigDown): WorkPlan {
 }
 
 const exitParam = z
-  .enum(['ladder', 'none'])
+  .enum(['ladder', 'stairs', 'none'])
   .default('ladder')
   .describe(
-    '"ladder" (default): a ladder goes up the west wall as the layers are dug, so the bot can climb out (needs one ladder per layer). "none": no way out is built.',
+    '"ladder" (default): a ladder goes up the west wall as the layers are dug (one ladder per layer). "stairs": a walkable staircase is cut around the outside of the footprint, one step down for every layer, opening into the pit at every level (no materials needed, three blocks more dug per layer). "none": no way out is built.',
   )
 
 /** Default: the ground block two blocks east of the bot, so the first layer is the one the bot stands on. */
@@ -111,7 +189,7 @@ export class PitProvider implements ExcavationProvider<z.output<typeof pitParams
       width: p.width,
       length: p.length,
       depth: p.depth,
-      ladder: p.exit === 'ladder' && p.depth > 1,
+      exit: p.exit === 'ladder' && p.depth < 2 ? 'none' : p.exit,
       cavities: false,
     })
   }
@@ -151,7 +229,7 @@ export class ShaftProvider implements ExcavationProvider<z.output<typeof shaftPa
       width: p.width,
       length: p.length,
       depth: p.depth,
-      ladder: p.exit === 'ladder' && p.depth > 1,
+      exit: p.exit === 'ladder' && p.depth < 2 ? 'none' : p.exit,
       cavities: true,
     })
   }
@@ -176,6 +254,12 @@ const quarryParams = z
         'Dig down to this many layers above the lowest layer of the world (-64 in the overworld, so 9 means y = -55; 0 in the Nether and the End). This is the default target, with 9, when neither this nor to_y is given.',
       ),
     exit: exitParam,
+    water_landing: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Off by default. When true: a 2×2×2 pit is dug in the far (south-east) corner below the quarry floor and filled with water from two water buckets, so you can jump in from the top and land unhurt (the exit ladder or stairs is on the other side). Needs 2 water_bucket and a footprint of at least 2×2.',
+      ),
   })
   .refine((p) => p.to_y === undefined || p.above_bedrock === undefined, {
     message: 'Give either to_y or above_bedrock, not both.',
@@ -211,6 +295,12 @@ export class QuarryProvider implements ExcavationProvider<z.output<typeof quarry
       }
     if (depth > MAX_DEPTH)
       return { error: `That is ${String(depth)} layers deep; the limit is ${String(MAX_DEPTH)}.` }
+    if (p.water_landing && (p.width < 2 || p.length < 2))
+      return { error: 'A water landing needs a footprint of at least 2 by 2.' }
+    if (p.water_landing && bottom - 2 < context.minY + 1)
+      return {
+        error: 'There is no room for a water landing (two layers) above the bedrock at that depth.',
+      }
     const { x, y, z: z0 } = context.origin
     return digDown({
       name: `quarry ${String(p.width)}x${String(p.length)} to y=${String(bottom)}`,
@@ -220,7 +310,8 @@ export class QuarryProvider implements ExcavationProvider<z.output<typeof quarry
       width: p.width,
       length: p.length,
       depth,
-      ladder: p.exit === 'ladder' && depth > 1,
+      exit: p.exit === 'ladder' && depth < 2 ? 'none' : p.exit,
+      waterLanding: p.water_landing,
       cavities: false,
     })
   }

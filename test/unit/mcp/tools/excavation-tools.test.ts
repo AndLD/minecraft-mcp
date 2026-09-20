@@ -63,6 +63,7 @@ describe('excavate', () => {
       params: { direction: 'north', length: 50, height: 5 },
       origin: { x: 10, y: -55, z: 3 },
       fetchFromStorage: true,
+      spoilPolicy: 'storage',
       onInventoryFull: 'offload_and_return',
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Excavate tunnel' } })
@@ -73,6 +74,7 @@ describe('excavate', () => {
         params: { direction: 'north', length: 50, height: 5 },
         origin: { x: 10, y: -55, z: 3 },
         fetch_from_storage: true,
+        spoil_policy: 'storage',
       },
     })
   })

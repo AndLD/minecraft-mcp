@@ -177,7 +177,9 @@ import { CustomBlueprintProvider } from './skills/building/providers/custom-prov
 import { ShelterProvider, SmallHouseProvider } from './skills/building/providers/house-providers.js'
 import { HazardRule } from './skills/construction/hazard-rule.js'
 import { PlanExecutor } from './skills/construction/plan-executor.js'
+import { CraftingSupplies } from './skills/construction/crafting-supplies.js'
 import { Scaffolder } from './skills/construction/scaffolder.js'
+import { SpoilDiscarder } from './skills/construction/spoil-discarder.js'
 import { SiteSafety } from './skills/construction/site-safety.js'
 import { StandingSpotChooser } from './skills/construction/standing-spot.js'
 import { ExcavateSkill } from './skills/excavation/excavate-skill.js'
@@ -488,7 +490,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     vitals,
     spots: new PlacementSpotFinder(blocks),
   })
-  const dropCollector = new DropCollector({ drops, navigator, scheduler })
+  // What the bot threw away on purpose is never picked up again (junk from a dig, `drop_items`).
+  const dropIgnore = new DropIgnoreList(clock)
+  const dropCollector = new DropCollector({
+    drops,
+    navigator,
+    scheduler,
+    skip: (item) => dropIgnore.isIgnored(item),
+  })
   // Storage: containers, rules, and what to do when the inventory is full.
   const itemFacts = new MineflayerItemFacts(connection)
   const visitor = new ContainerVisitor({
@@ -520,7 +529,6 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     facts: itemFacts,
   })
   // Drop recovery: after a death, and for items nobody picked up.
-  const dropIgnore = new DropIgnoreList(clock)
   const recoverDrops = new RecoverDropsSkill({
     records: dropRecords,
     inventory,
@@ -628,6 +636,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     guard: protectedAreas,
     full: inventoryFull,
   })
+  const craftItem = new CraftItemSkill({
+    book: recipes,
+    planner,
+    crafter: recipes,
+    inventory,
+    workstations,
+    scheduler,
+  })
   // Construction: one engine (plans of block operations) and building as its first client.
   const constructionPlacer = new MineflayerPlacer(connection)
   const constructionDigger = new MineflayerDigger(connection)
@@ -645,6 +661,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     full: inventoryFull,
     hazard: new HazardRule(blocks),
+    discarder: new SpoilDiscarder({ inventory, thrower, vitals, ignore: dropIgnore }),
+    supplies: new CraftingSupplies(craftItem),
     scaffolder: new Scaffolder({
       blocks,
       placer: constructionPlacer,
@@ -693,14 +711,6 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     executor: planExecutor,
     vitals,
     fetcher: materialFetcher,
-  })
-  const craftItem = new CraftItemSkill({
-    book: recipes,
-    planner,
-    crafter: recipes,
-    inventory,
-    workstations,
-    scheduler,
   })
   const smeltItems = new SmeltItemsSkill({
     inventory,

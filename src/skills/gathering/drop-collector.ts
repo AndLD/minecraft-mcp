@@ -25,6 +25,8 @@ export interface DropCollectorDeps {
   readonly drops: DroppedItemScanner
   readonly navigator: Navigator
   readonly scheduler: Scheduler
+  /** Items to leave lying (junk the bot threw away on purpose): never walked to. */
+  readonly skip?: (item: DroppedItem) => boolean
 }
 
 /** Walks onto dropped items so the game picks them up. Each item is tried once, so an unreachable one cannot loop forever. */
@@ -63,7 +65,9 @@ export class DropCollector {
     const tried = new Set<number>()
     for (let trip = 0; trip < MAX_TRIPS; trip += 1) {
       if (signal.aborted) return
-      const next = candidates().find((item) => !tried.has(item.entityId))
+      const next = candidates().find(
+        (item) => !tried.has(item.entityId) && this.deps.skip?.(item) !== true,
+      )
       if (next === undefined) return
       tried.add(next.entityId)
       const walked = await this.deps.navigator.goToPosition(next.position, PICKUP_RANGE, { signal })

@@ -17,7 +17,9 @@ import type { DropCollector } from '../gathering/drop-collector.js'
 import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
 import { isOpenAir, isPlanned, isReplaceable } from './block-match.js'
 import type { Hazard, HazardReason, HazardRule } from './hazard-rule.js'
+import type { SupplyCrafter } from './crafting-supplies.js'
 import type { Scaffolder, Tower } from './scaffolder.js'
+import type { SpoilDiscarder } from './spoil-discarder.js'
 import type { SiteSafety } from './site-safety.js'
 import { cellKey, type StandingSpotChooser } from './standing-spot.js'
 import type { WorkPlan, WorkStep } from './work-plan.types.js'
@@ -29,6 +31,10 @@ const MAX_FAILURES_IN_A_ROW = 5
 const CONFIRM_POLL_MS = 100
 const CONFIRM_POLLS = 15
 const TORCH = 'torch'
+/** How many torches to make at once when they run out. */
+const TORCH_BATCH = 8
+/** Tools that can be crafted, cheapest first (gold and netherite are not made for a dig). */
+const CRAFTABLE_TIERS = ['wooden', 'stone', 'iron', 'diamond']
 /** The plan is checked against the world this many times (the second look is the verification pass). */
 const ROUNDS = 2
 /** Blocks that stay in a dug opening (a ladder, a torch): the cell still counts as dug. */
@@ -44,6 +50,8 @@ export interface PlanOptions {
   readonly clearObstacles: boolean
   /** What to do when the inventory fills up while breaking; the standing policy when undefined. */
   readonly onInventoryFull?: InventoryFullKind | undefined
+  /** What to do with the spoil when the inventory is full: the standing storage policy (default), or throw the junk away. */
+  readonly spoil?: 'storage' | 'discard_junk' | undefined
   /** Pillar up with this block to reach what is too high for the ground; without it such steps fail. */
   readonly scaffold?: { readonly block: string; readonly maxHeight: number } | undefined
 }
@@ -112,6 +120,10 @@ export interface PlanExecutorDeps {
   readonly scaffolder?: Scaffolder
   /** The rule that ends a dig at lava, water, cavities, and the like (used by plans that ask for it). */
   readonly hazard?: HazardRule
+  /** Throws junk away when the inventory is full and the request said to (`spoil: discard_junk`). */
+  readonly discarder?: SpoilDiscarder
+  /** Crafts torches and a spare pickaxe when they run out. */
+  readonly supplies?: SupplyCrafter
 }
 
 const failure = (
@@ -631,7 +643,7 @@ export class PlanExecutor {
         step.kind === 'place'
           ? await this.place(step.at, step.block, options, progress, context, step.against)
           : step.kind === 'break'
-            ? await this.breakCell(step.at, undefined, progress, context)
+            ? await this.breakCell(step.at, undefined, progress, context, options)
             : ({ kind: 'done' } as Outcome)
       if (outcome.kind === 'stop') return outcome.result
       if (outcome.kind === 'retry') {
@@ -716,6 +728,10 @@ export class PlanExecutor {
       if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) === 0) {
         // Lighting is a courtesy in a building; in a mine it is a rule.
         if (step.required !== true) return { kind: 'done' }
+        // Coal or charcoal and sticks make more, if the bot has them.
+        await deps.supplies?.craft(TORCH, TORCH_BATCH, context)
+        if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) > 0)
+          return this.perform(plan, step, pending, options, fullSession, progress, context)
         return stop(
           failure('no_torches', 'There are no torches left to light the way.', progress, {
             missing: [{ name: TORCH, count: 1 }],
@@ -730,7 +746,7 @@ export class PlanExecutor {
       case 'place':
         return this.place(step.at, step.block, options, progress, context, step.against)
       case 'break':
-        return this.breakCell(step.at, fullSession, progress, context)
+        return this.breakCell(step.at, fullSession, progress, context, options)
       case 'light': {
         const placed = await this.place(step.at, TORCH, options, progress, context)
         if (placed.kind === 'done') progress.lights += 1
@@ -787,7 +803,7 @@ export class PlanExecutor {
     if (found !== undefined && !isReplaceable(found)) {
       if (!options.clearObstacles)
         return { kind: 'retry', why: `${found} is in the way at ${this.where(at)}` }
-      const cleared = await this.breakCell(at, undefined, progress, context)
+      const cleared = await this.breakCell(at, undefined, progress, context, options)
       if (cleared.kind !== 'done') return cleared
     }
     const support = this.support(at, against)
@@ -821,8 +837,15 @@ export class PlanExecutor {
     fullSession: ReturnType<InventoryFullHandler['begin']> | undefined,
     progress: Progress,
     context: SkillContext,
+    options?: PlanOptions,
   ): Promise<Outcome> {
     const { deps } = this
+    if (
+      deps.inventory.snapshot()?.emptySlots === 0 &&
+      options?.spoil === 'discard_junk' &&
+      deps.discarder !== undefined
+    )
+      await deps.discarder.discard(context)
     const snapshot = deps.inventory.snapshot()
     if (snapshot?.emptySlots === 0) {
       if (fullSession === undefined)
@@ -841,7 +864,10 @@ export class PlanExecutor {
     if (isOpenAir(assessment.blockName)) return { kind: 'done' }
     if (!assessment.diggable)
       return { kind: 'retry', why: `${assessment.blockName} cannot be broken` }
-    if (!assessment.canHarvest)
+    if (!assessment.canHarvest) {
+      // A pickaxe broke or was never there: make one from what the bot carries, if it can.
+      if (await this.craftSpareTool(assessment.requiredTools, context))
+        return { kind: 'retry', why: 'crafted a tool' }
       return stop(
         failure(
           'no_suitable_tool',
@@ -849,6 +875,7 @@ export class PlanExecutor {
           progress,
         ),
       )
+    }
     const dug = await deps.digger.dig(at, context.signal)
     if (!dug.ok) {
       if (dug.error.reason === 'aborted')
@@ -859,6 +886,20 @@ export class PlanExecutor {
     this.dug.add(cellKey(at))
     await deps.drops.collectNear(at, context.signal)
     return { kind: 'done' }
+  }
+
+  /** Crafts the cheapest tool that can break the block, from what the bot carries. True when one was made. */
+  private async craftSpareTool(
+    required: readonly string[],
+    context: SkillContext,
+  ): Promise<boolean> {
+    const supplies = this.deps.supplies
+    if (supplies === undefined) return false
+    const candidates = CRAFTABLE_TIERS.flatMap((tier) =>
+      required.filter((name) => name.startsWith(`${tier}_`)),
+    )
+    for (const name of candidates) if (await supplies.craft(name, 1, context)) return true
+    return false
   }
 
   /** Cells to avoid standing in: the volume being built, or, for a shelter built around the bot, everything outside it. */
