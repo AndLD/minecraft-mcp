@@ -63,11 +63,11 @@ export class MineflayerPlacer implements Placer {
         if (reference === undefined)
           return fail('failed', 'The block to place against has no position.')
         await bot.lookAt(
-          {
+          toVec3({
             x: reference.x + 0.5 + face.x * 0.5,
             y: reference.y + 0.5 + face.y * 0.5,
             z: reference.z + 0.5 + face.z * 0.5,
-          },
+          }),
           true,
         )
         bot.activateItem()

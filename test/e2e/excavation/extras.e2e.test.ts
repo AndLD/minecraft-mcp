@@ -65,6 +65,25 @@ describe('stairs and a water landing on a real Minecraft server', () => {
 
   const is = (position: Position, block: string): Promise<boolean> => world.isBlock(position, block)
 
+  /** A picture of the blocks around the stairs, one line per height: air, bedrock, or something solid. */
+  async function slice(): Promise<string[]> {
+    const lines: string[] = []
+    for (let dy = -3; dy <= 1; dy += 1) {
+      let row = ''
+      for (let z = -8; z <= -4; z += 1) {
+        for (let x = 7; x <= 12; x += 1)
+          row += (await is(cell(x, dy, z), 'air'))
+            ? '.'
+            : (await is(cell(x, dy, z), 'bedrock'))
+              ? 'B'
+              : '#'
+        row += ' '
+      }
+      lines.push(`y=${String(GROUND_Y + dy)} ${row}`)
+    }
+    return lines
+  }
+
   /** Waits until the bot's own view shows a solid floor at the spot again (RCON changes arrive late). */
   const untilBotSeesFloor = (origin: Position): Promise<true> =>
     waitUntil(
@@ -82,7 +101,7 @@ describe('stairs and a water landing on a real Minecraft server', () => {
     )
 
   it('cuts a staircase around a pit, and the bot walks up it by itself', async () => {
-    const origin = cell(3, -1, -6)
+    const origin = cell(9, -1, -6)
     await untilBotSeesFloor(origin)
 
     const run = await excavate({
@@ -92,23 +111,44 @@ describe('stairs and a water landing on a real Minecraft server', () => {
     })
 
     if (run.failed) throw new Error(`The dig did not succeed: ${run.text}`)
-    // Ring cell n at depth n: north-west corner (2, -7), then east along the north edge.
-    expect(await is(cell(2, -1, -7), 'air')).toBe(true) // step 0: dug into the grass layer
-    expect(await is(cell(3, -2, -7), 'air')).toBe(true) // step 1
-    expect(await is(cell(4, -3, -7), 'air')).toBe(true) // step 2
-    expect(await is(cell(4, -4, -7), 'bedrock')).toBe(true) // its floor is the bedrock
-    expect(await is(cell(3, -3, -7), 'dirt')).toBe(true) // the step before is a block higher: solid below it
-    expect(await is(cell(4, -3, -5), 'air')).toBe(true) // the pit itself, bottom layer
+    // Ring cell n at depth n: north-west corner (8, -7), then east along the north edge.
+    expect(await is(cell(8, -1, -7), 'air')).toBe(true) // step 0: dug into the grass layer
+    expect(await is(cell(9, -2, -7), 'air')).toBe(true) // step 1
+    expect(await is(cell(10, -3, -7), 'air')).toBe(true) // step 2
+    expect(await is(cell(10, -4, -7), 'bedrock')).toBe(true) // its floor is the bedrock
+    if (!(await is(cell(9, -3, -7), 'dirt'))) {
+      const seen: string[] = []
+      for (const name of [
+        'air',
+        'grass_block',
+        'stone',
+        'coarse_dirt',
+        'cobblestone',
+        'ladder',
+        'torch',
+        'gravel',
+      ])
+        if (await is(cell(9, -3, -7), name)) seen.push(name)
+      throw new Error(
+        `Below step 1 there should be dirt, but it is: ${seen.join(', ') || 'something else'}\n${(await slice()).join('\n')}`,
+      )
+    }
+    expect(await is(cell(10, -3, -5), 'air')).toBe(true) // the pit itself, bottom layer
 
     // The bot is in the pit: it walks out by the stairs.
-    const surface = { x: 0.5, y: GROUND_Y, z: -5.5 }
+    const surface = { x: 6.5, y: GROUND_Y, z: -5.5 }
     const out = await session.bot.call('goto', {
       x: surface.x,
       y: surface.y,
       z: surface.z,
       wait_seconds: 30,
     })
-    if (out.isError) throw new Error(`The bot could not walk out: ${out.text}`)
+    if (out.isError) {
+      const here = await world.playerPosition(bot())
+      throw new Error(
+        `The bot could not walk out: ${out.text}; it stands at ${JSON.stringify(here)}\n${(await slice()).join('\n')}`,
+      )
+    }
     await waitUntil(
       async () => {
         const here = await world.playerPosition(bot())
@@ -143,21 +183,21 @@ describe('stairs and a water landing on a real Minecraft server', () => {
 
     if (run.failed) throw new Error(`The dig did not succeed: ${run.text}`)
     expect(run.task.result?.placed).toBe(2)
-    // The pond is in the far (south-east) corner: x 5..6, z -7..-6, two layers below the quarry floor's cells.
+    // The pond is in the far (south-east) corner of x 3..6, z -8..-5: x 5..6, z -6..-5, two layers below the floor.
     for (const [x, z] of [
-      [5, -7],
-      [6, -6],
+      [5, -6],
+      [6, -5],
     ] as const)
       expect(await is(cell(x, -2, z), 'water')).toBe(true) // the two sources
     // Water renews itself between the sources, and falls into the lower layer.
     await waitUntil(
       async () =>
-        (await is(cell(6, -2, -7), 'water')) && (await is(cell(5, -3, -7), 'water'))
+        (await is(cell(6, -2, -6), 'water')) && (await is(cell(5, -3, -6), 'water'))
           ? true
           : undefined,
       { description: 'the pond to fill' },
     )
     expect(await is(cell(3, -1, -8), 'air')).toBe(true) // the rest of the quarry is dry and open
-    expect(await is(cell(4, -2, -8), 'dirt')).toBe(true) // outside the pond
+    expect(await is(cell(4, -2, -6), 'dirt')).toBe(true) // outside the pond
   })
 })
