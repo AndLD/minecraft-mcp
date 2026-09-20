@@ -75,7 +75,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 16 World discovery, including caves and canyons | not started (cave flow added) |
 | 17 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
 | 18 Sleeping and respawn point | not started (added; small, can go right after teleport) |
-| 19 Hardening and polish | not started (was 14) |
+| 19 Site leveling | not started (added; builds on excavation and the construction engine, can go any time after them) |
+| 20 Hardening and polish | not started (was 14, then 19) |
 
 ## Phases
 
@@ -470,11 +471,36 @@ Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes
   - e2e: at night the bot sleeps in a bed and the night is skipped when the server's sleeping percentage lets it; by day the respawn point is set and, after the bot is killed, it wakes up at the bed (position check); a destroyed bed makes it respawn at the spawn and report it; a zombie near the bed makes sleeping fail with the reason; in the Nether-guard case the tool refuses without touching the bed (unit and integration only: the e2e server has no Nether)
 - **Exit criteria:** "set your spawn at this bed" makes the bot respawn there after a death; at night "go to sleep" puts the bot to bed, and it tells you exactly what else is needed for the night to pass; it never uses a bed in the Nether or the End.
 
-### Phase 19: Hardening and polish (1 session)
+### Phase 19: Site leveling (1 session)
+
+Preparing a plot for building: "get me a clean field for building, 20x10, on the level I am standing on." Building, farming (a crop field, a pen), and railways all need flat, clear ground, and doing it by hand block by block is slow. This is the excavation machinery (break and place steps, the hazard rule, spoil handling) pointed at a *surface* instead of a hole: cut what is above the level, fill what is below it, clear what grows there.
+
+- Branch: `feature/site-leveling`. Clients of the construction engine (`WorkPlan`, `PlanExecutor`, `SiteSafety`, `HazardRule`) and of the excavation supplies (`SupplyCrafter`, `SpoilDiscarder`, spoil policy); no new engine code is expected.
+- **Tools:** `flatten_area` and `preview_flatten` (same parameters, the preview changes nothing). A shape provider in the excavation registry style, so it shows up in the same preview and result formats.
+- **Parameters** (all numbers, like excavation: the agent extracts them from the request and the preview echoes what it understood):
+  - the area: `width` and `length` (blocks, along x and z), an optional `origin` (the lowest corner) and `direction`; without them the rectangle starts at the bot's own cell and extends east and south, and the preview shows the bounds so the agent can move them;
+  - `level`: **`here` by default, the level of the block the bot stands on** (the new surface is that block's height; "on the Y level I currently stand"), or an explicit `y`, or `auto`, which suggests the level that needs the least work (the surveyed median) and only in the preview (the agent asks before using it);
+  - `clear_height` (how far above the level is cleared, default 6, so a house fits; up to 24), `fill_block` (default: the cheapest block that the cut already produced, otherwise dirt), `surface_block` (optional, for the top layer, for example `stone` or `dirt`; grass cannot be placed by hand, so the natural top of an uncut area is left as it is), `margin` (extra cleared blocks around the rectangle, default 0), `clear_trees` (default true: logs and leaves above the level go, saplings and apples are picked up), `max_fill_depth` (default 6, how deep a hole may be filled), and `spoil_policy` and `on_inventory_full` as in excavation.
+- **What it does** (one plan, run by the executor, so it inherits resume, protection, and safety):
+  - **Survey first.** The preview reads the surface height of every column: lowest, highest, median, how many columns need cutting and how many need filling, and the block counts: cut, fill, and the fill that the cut can supply.
+  - **Cut and fill balance.** Cutting is done first, top layer down, and what it yields (dirt, stone, sand, gravel) is reused as fill, so the plot needs few or no materials from outside. Only the shortfall is fetched (`fetch_from_storage`) or reported as `missing_materials` with exact numbers, and a surplus follows the spoil policy.
+  - **Clearing.** Everything natural above the level in the rectangle and the margin: grass, flowers, snow layers, dead bushes, vines, leaves, trunks (with `clear_trees`), and loose blocks. Order: top down, so nothing falls on the bot; sand and gravel overhead are broken from the side by the existing falling-blocks rule.
+  - **Filling.** Support first, from the lowest cell up, each cell placed against a solid neighbour. Holes deeper than `max_fill_depth` are not filled (`too_deep`, with the place), so an open cave under the plot is never buried by accident. Shallow water is filled with blocks; flowing water that comes back is reported.
+  - **Safety, all from what already exists.** Lava in or next to the rectangle refuses (`unsafe_site`); the hazard rule ends a chain at an unexpected cavity, spawner, or player-made block; protected areas are refused whole (`protected_area`); **blocks a player placed** (planks, fences, chests, doors, anything not natural terrain) inside the rectangle are never removed by default: they are reported as `blocked_cells` and the preview lists them, and only an explicit `clear_structures: true` from the player's request removes them. Nothing outside the rectangle and the margin is ever changed.
+  - **Result** carries the bounds, the level, cut, fill, and cleared counts, what was gained or used, what was left (with reasons), and a hint: the `origin` and `level` are what `build` or `build_farm` should be given next. An optional `label` saves the plot as a landmark (`set_landmark`) so "build on the plot" resolves later.
+- **Limits:** 1 to 64 blocks per side (4096 columns at most). A larger job is several calls.
+- **Other features use it:** the crop field and the pen from farming and railway grading call the same plan builder for their ground; nothing here depends on them.
+- **Tests:**
+  - unit: the surface survey and the cut and fill counts over a fake height map (flat, hill, hole, slope, tree), `level` resolution (`here`, `y`, `auto` only suggests), the cut and fill balance and the shortfall, `max_fill_depth`, margin, `clear_trees` on and off, ordering (top down for cuts, bottom up for fills), refusals (lava, protected area, player-made blocks unless `clear_structures`), size limits, and preview equal to what the run does
+  - integration: `flatten_area` through the tool layer on a stateful fake world: uneven ground ends flat at the level, cut soil is reused as fill, an interrupted run continues where it stopped, nothing outside the rectangle changes
+  - e2e: uneven ground prepared over RCON (a hill, a hole, a tree, flowers, a shallow pond): `flatten_area` 20x10 at the bot's level leaves every top block at the level and air above it up to the clear height, and a strip outside the rectangle is untouched (checked through RCON); a player-placed wall inside is not removed; lava beside the area refuses; `preview_flatten` changes no block
+- **Exit criteria:** "get me a clean field for building, 20x10, on the level I am standing on" leaves a flat, cleared 20x10 plot at that level, without touching anything outside it or anything a player built, and the reply says the bounds and level to build on.
+
+### Phase 20: Hardening and polish (1 session)
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
-- Review of the shared safety rules (hazard envelope, light, drops) across excavation, railways, and cave exploration.
+- Review of the shared safety rules (hazard envelope, light, drops) across excavation, site leveling, railways, and cave exploration.
 - Branch: `feature/hardening`.
 - Tests: reconnect and shutdown behavior (unit and integration with fake `Connection`), timeouts on all I/O boundaries, coverage gap review.
   - e2e: server restart mid-session leads to reconnect; abrupt disconnect leaves no stuck task; a long-running scenario chaining gather → craft → build
