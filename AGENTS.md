@@ -321,7 +321,8 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | State | `list_worlds`, `set_world_profile`, `resume_interrupted_task`, `discard_interrupted_task`, `get_recent_history`, `remember`, `recall`, `forget`, `set_standing_instruction`, `remove_standing_instruction` |
 | Chat | `wait_for_chat`, `say`, `whisper` |
 | Perception | `look_around`, `find_blocks`, `get_inventory`, `get_nearby_entities`, `get_player_position` |
-| Movement | `goto`, `follow_player`, `stop` |
+| Movement | `goto`, `follow_player`, `stop`, `lead_player` (not built yet) |
+| Doors | ordinary doors, gates, and trapdoors are opened by walking tools themselves (not built yet); `press_switch`, `open_door`, `find_switches` for iron doors and buttons, levers, and plates (not built yet) |
 | Gathering | `collect_block`, `pickup_items` |
 | Crafting | `craft`, `smelt`, `list_recipes` |
 | Protection | `protect_area`, `unprotect_area`, `list_protected_areas` |
@@ -330,7 +331,9 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Drop recovery | `set_drop_recovery_policy`, `skip_drop_recovery`, `recover_drops`, `list_death_records` |
 | Storage | `register_container`, `label_container`, `list_containers`, `scan_containers`, `set_storage_rule`, `list_storage_rules`, `remove_storage_rule`, `deposit_items`, `withdraw_items`, `find_items`, `set_storage_policy` |
 | Building | `build`, `list_blueprints`, `place_block`, `preview_build` (blueprints: floor, walls, box, solid, block, house, shelter, custom) |
-| Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down), `preview_excavation`, `list_excavations` |
+| Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down, room: not built yet), `preview_excavation`, `list_excavations` |
+| Signs | `place_sign`, `edit_sign`, `remove_sign`, `read_signs` (not built yet) |
+| Site leveling | `flatten_area`, `preview_flatten` (cut, fill, and clear a rectangle to a level; not built yet) |
 | Railways | `plan_railway`, `build_railway`, `place_minecart` |
 | Sleeping | `sleep`, `set_respawn_point`, `place_bed`, `list_beds`, `set_sleep_policy` (never in the Nether or the End: a bed explodes there) |
 | Farming | `build_farm` (field, pen), `plant_crops`, `harvest_crops`, `breed_animals`, `collect_eggs`, `set_egg_policy`, `tend_farm`, `inspect_farm`, `discover_farm`, `plant_trees`, `harvest_trees`, `list_farms`, `register_farm` |
