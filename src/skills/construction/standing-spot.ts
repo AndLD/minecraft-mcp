@@ -72,6 +72,21 @@ export class StandingSpotChooser {
     return across === 0 && along >= 1 && along <= 3 && Math.abs(spot.y - cell.y) <= 1
   }
 
+  /** Whether a bot with its feet in `feet` reaches the target cell (and the target is not its own body). */
+  inReach(feet: Position, target: Position): boolean {
+    const cell = this.cell(feet)
+    const goal = this.cell(target)
+    if (cellKey(cell) === cellKey(goal) || cellKey({ ...cell, y: cell.y + 1 }) === cellKey(goal))
+      return false
+    return (
+      Math.hypot(
+        cell.x + 0.5 - (goal.x + 0.5),
+        cell.y + EYE_HEIGHT - (goal.y + 0.5),
+        cell.z + 0.5 - (goal.z + 0.5),
+      ) <= WORK_REACH
+    )
+  }
+
   private cell(position: Position): Position {
     return { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }
   }

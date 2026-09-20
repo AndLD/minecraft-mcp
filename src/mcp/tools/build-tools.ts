@@ -33,6 +33,20 @@ const buildShape = {
       "The blueprint's parameters (width, depth, height, block, ...), as list_blueprints describes them.",
     ),
   origin: originSchema,
+  scaffold_block: z
+    .string()
+    .min(1)
+    .default('cobblestone')
+    .describe(
+      'The block the bot pillars up with when part of the building is too high to reach from the ground (default cobblestone). It takes the tower down afterwards and gets the blocks back.',
+    ),
+  max_scaffold_height: z
+    .number()
+    .int()
+    .min(0)
+    .max(16)
+    .default(12)
+    .describe('How high the bot may pillar up (0 keeps it on the ground; default 12).'),
   clear_obstacles: z
     .boolean()
     .default(false)
@@ -46,6 +60,8 @@ const toInput = (input: {
   params: Record<string, unknown>
   origin?: { x: number; y: number; z: number } | undefined
   clear_obstacles: boolean
+  scaffold_block: string
+  max_scaffold_height: number
   fetch_from_storage?: boolean
   on_inventory_full?: BuildInput['onInventoryFull']
 }): BuildInput => ({
@@ -54,6 +70,8 @@ const toInput = (input: {
   origin: input.origin,
   clearObstacles: input.clear_obstacles,
   fetchFromStorage: input.fetch_from_storage ?? false,
+  scaffoldBlock: input.scaffold_block,
+  maxScaffoldHeight: input.max_scaffold_height,
   onInventoryFull: input.on_inventory_full,
 })
 
@@ -106,6 +124,8 @@ export class BuildTool implements ToolDefinition<typeof buildSchema> {
             ...(input.origin === undefined ? {} : { origin: input.origin }),
             clear_obstacles: input.clear_obstacles,
             fetch_from_storage: input.fetch_from_storage,
+            scaffold_block: input.scaffold_block,
+            max_scaffold_height: input.max_scaffold_height,
           },
         },
         run: (ctx) => this.skill.run(request, ctx),
@@ -188,6 +208,8 @@ export class PlaceBlockTool implements ToolDefinition<typeof placeSchema> {
       origin: { x: input.x, y: input.y, z: input.z },
       clearObstacles: input.clear_obstacles,
       fetchFromStorage: false,
+      scaffoldBlock: 'cobblestone',
+      maxScaffoldHeight: 0,
     }
     return this.launcher.launch(
       {

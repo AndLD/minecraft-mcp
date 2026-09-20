@@ -16,6 +16,7 @@ import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
 import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
 import { isOpenAir, isPlanned, isReplaceable } from './block-match.js'
+import type { Scaffolder, Tower } from './scaffolder.js'
 import type { SiteSafety } from './site-safety.js'
 import { cellKey, type StandingSpotChooser } from './standing-spot.js'
 import type { WorkPlan, WorkStep } from './work-plan.types.js'
@@ -29,6 +30,9 @@ const CONFIRM_POLLS = 15
 const TORCH = 'torch'
 /** The plan is checked against the world this many times (the second look is the verification pass). */
 const ROUNDS = 2
+/** From the ground the bot reaches about this far above the cell it stands in (eye height plus reach, at arm's length). */
+const GROUND_REACH = 4.8
+const GROUND_REACH_ROWS = 5
 const SAMPLE = 10
 
 export interface PlanOptions {
@@ -36,6 +40,8 @@ export interface PlanOptions {
   readonly clearObstacles: boolean
   /** What to do when the inventory fills up while breaking; the standing policy when undefined. */
   readonly onInventoryFull?: InventoryFullKind | undefined
+  /** Pillar up with this block to reach what is too high for the ground; without it such steps fail. */
+  readonly scaffold?: { readonly block: string; readonly maxHeight: number } | undefined
 }
 
 export interface PlanPreview {
@@ -55,6 +61,12 @@ export interface PlanPreview {
   /** The protected area the plan touches, if any. */
   readonly protectedArea: string | undefined
   readonly hazards: readonly string[]
+  /**
+   * Steps that are too high to reach from the ground, and the tower height (in scaffold blocks, already counted in
+   * `needs`) an estimate says they take. Undefined when nothing is too high or scaffolding is off.
+   */
+  readonly scaffold:
+    { readonly steps: number; readonly height: number; readonly block: string } | undefined
 }
 
 export interface PlanOutcome {
@@ -80,6 +92,8 @@ export interface PlanExecutorDeps {
   readonly scheduler: Scheduler
   /** Decides what happens when the inventory is full; without it the plan stops. */
   readonly full?: InventoryFullHandler
+  /** Lets the bot pillar up; without it steps beyond the reach from the ground fail. */
+  readonly scaffolder?: Scaffolder
 }
 
 const failure = (
@@ -143,6 +157,9 @@ export class PlanExecutor {
         else blocked.push(step.at)
       }
     }
+    const scaffold = this.estimateScaffold(plan, options)
+    if (scaffold !== undefined)
+      needs.set(scaffold.block, (needs.get(scaffold.block) ?? 0) + scaffold.height)
     const have = countItems(deps.inventory.snapshot())
     const missing: ItemCount[] = []
     for (const [name, count] of needs) {
@@ -161,6 +178,7 @@ export class PlanExecutor {
       blockedCount: blocked.length,
       protectedArea,
       hazards: deps.safety.hazards(plan),
+      scaffold,
     }
   }
 
@@ -208,9 +226,17 @@ export class PlanExecutor {
       const pending = plan.steps.filter((step) => !this.satisfied(step) && !failed.has(keyOf(step)))
       if (pending.length === 0) break
       if (round === 0) context.progress(`Working on ${plan.name}: ${String(pending.length)} steps`)
+      /** Steps that are too high for the ground: they wait for a tower. */
+      const high: WorkStep[] = []
       while (pending.length > 0) {
         if (context.signal.aborted) return failure('aborted', 'Cancelled.', progress)
         const step = this.next(pending)
+        if (step === undefined && this.scaffolding(options)) {
+          // What is left needs something above the ground to be built first.
+          high.push(...pending)
+          pending.length = 0
+          break
+        }
         if (step === undefined)
           return failure(
             'unsupported_steps',
@@ -224,13 +250,17 @@ export class PlanExecutor {
         const outcome = await this.perform(
           plan,
           step,
-          pending,
+          [...pending, ...high],
           options,
           fullSession,
           progress,
           context,
         )
         if (outcome.kind === 'stop') return outcome.result
+        if (outcome.kind === 'high') {
+          high.push(step)
+          continue
+        }
         if (outcome.kind === 'retry') {
           const tried = (attempts.get(keyOf(step)) ?? 0) + 1
           attempts.set(keyOf(step), tried)
@@ -248,6 +278,18 @@ export class PlanExecutor {
             )
         } else inARow = 0
         context.progress(`Placed ${String(progress.placed)}, broke ${String(progress.broken)}`)
+      }
+      if (high.length > 0) {
+        const stopped = await this.towerPass(
+          plan,
+          high,
+          options,
+          progress,
+          failed,
+          attempts,
+          context,
+        )
+        if (stopped !== undefined) return stopped
       }
     }
 
@@ -281,9 +323,171 @@ export class PlanExecutor {
     })
   }
 
+  /**
+   * How high a tower the steps above the reach from the ground need, from the plan alone: the lowest cell is taken as
+   * the ground, and the reach is about 4.8 blocks above it. The run works it out exactly.
+   */
+  private estimateScaffold(plan: WorkPlan, options: PlanOptions): PlanPreview['scaffold'] {
+    if (
+      options.scaffold === undefined ||
+      this.deps.scaffolder === undefined ||
+      options.scaffold.maxHeight < 1
+    )
+      return undefined
+    const ground = Math.min(...plan.steps.map((step) => step.at.y))
+    const high = plan.steps.filter((step) => step.at.y - ground > GROUND_REACH_ROWS)
+    if (high.length === 0) return undefined
+    const top = Math.max(...high.map((step) => step.at.y - ground))
+    const height = Math.min(options.scaffold.maxHeight, Math.ceil(top - GROUND_REACH))
+    return { steps: high.length, height, block: options.scaffold.block }
+  }
+
   /** The first pending step that can be done now: breaks and lights always, placements once something supports them. */
   private next(pending: readonly WorkStep[]): WorkStep | undefined {
     return pending.find((step) => step.kind !== 'place' || this.support(step.at) !== undefined)
+  }
+
+  private scaffolding(options: PlanOptions): boolean {
+    return (
+      this.deps.scaffolder !== undefined &&
+      options.scaffold !== undefined &&
+      options.scaffold.maxHeight >= 1
+    )
+  }
+
+  /**
+   * Builds the steps that are too high for the ground from a scaffold tower: pillar up beside the lowest of them, do
+   * everything within reach from up there (raising the tower a block at a time while something higher is left), and
+   * always take the tower down again, even when cancelled or failing.
+   */
+  private async towerPass(
+    plan: WorkPlan,
+    high: readonly WorkStep[],
+    options: PlanOptions,
+    progress: Progress,
+    failed: Map<string, string>,
+    attempts: Map<StepKey, number>,
+    context: SkillContext,
+  ): Promise<SkillResult<PlanOutcome> | undefined> {
+    const { deps } = this
+    const scaffolder = deps.scaffolder
+    const config = options.scaffold
+    if (scaffolder === undefined || config === undefined) return undefined
+    const open = (): WorkStep[] =>
+      high.filter((step) => !this.satisfied(step) && !failed.has(keyOf(step)))
+    let remaining = open()
+    while (remaining.length > 0) {
+      if (context.signal.aborted) return failure('aborted', 'Cancelled.', progress)
+      remaining.sort((a, b) => a.at.y - b.at.y)
+      const target = remaining[0]
+      const here = deps.vitals.read()?.position
+      if (target === undefined || here === undefined)
+        return err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })
+      const reserved = new Set(
+        plan.steps
+          .filter((s) => s.kind === 'place' && !this.satisfied(s))
+          .map((s) => cellKey(s.at)),
+      )
+      const tower = scaffolder.plan({
+        target: target.at,
+        from: here,
+        reserved,
+        maxHeight: config.maxHeight,
+        avoid: this.avoidOf(plan),
+      })
+      if (tower === undefined) {
+        for (const step of remaining)
+          failed.set(keyOf(step), `no safe place for a scaffold tower near ${this.where(step.at)}`)
+        return undefined
+      }
+      const carried = countItems(deps.inventory.snapshot()).get(config.block) ?? 0
+      if (carried < tower.height)
+        return failure(
+          'missing_materials',
+          `The scaffold needs ${String(tower.height)} ${config.block} and the bot has ${String(carried)}.`,
+          progress,
+          { missing: [{ name: config.block, count: tower.height - carried }] },
+        )
+
+      const raised = await scaffolder.raise(tower, config.block, context.signal)
+      const built = raised.ok ? raised.value : raised.error.tower
+      try {
+        if (!raised.ok) {
+          if (raised.error.reason === 'aborted') return failure('aborted', 'Cancelled.', progress)
+          failed.set(keyOf(target), `the scaffold tower failed: ${raised.error.message}`)
+        } else {
+          const stopped = await this.workFromTower(
+            built,
+            remaining,
+            options,
+            progress,
+            failed,
+            attempts,
+            context,
+          )
+          if (stopped !== undefined) return stopped
+        }
+      } finally {
+        const left = await scaffolder.lower(built)
+        if (left.length > 0)
+          context.progress(`${String(left.length)} scaffold block(s) could not be taken down`)
+      }
+      remaining = open()
+    }
+    return undefined
+  }
+
+  /** With the bot on top of the tower: does what is within reach, raising the tower while higher steps remain. */
+  private async workFromTower(
+    tower: Tower,
+    remaining: readonly WorkStep[],
+    options: PlanOptions,
+    progress: Progress,
+    failed: Map<string, string>,
+    attempts: Map<StepKey, number>,
+    context: SkillContext,
+  ): Promise<SkillResult<PlanOutcome> | undefined> {
+    const { deps } = this
+    const scaffolder = deps.scaffolder
+    const config = options.scaffold
+    if (scaffolder === undefined || config === undefined) return undefined
+    for (;;) {
+      if (context.signal.aborted) return failure('aborted', 'Cancelled.', progress)
+      const feet = deps.vitals.read()?.position
+      if (feet === undefined)
+        return err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })
+      const todo = remaining.filter((s) => !this.satisfied(s) && !failed.has(keyOf(s)))
+      const doable = todo.filter(
+        (s) =>
+          deps.spots.inReach(feet, s.at) &&
+          (s.kind !== 'place' || this.support(s.at) !== undefined),
+      )
+      const step = doable[0]
+      if (step === undefined) {
+        const higher = todo.some((s) => s.at.y > Math.floor(feet.y))
+        const room = tower.cells.length < config.maxHeight
+        const carried = countItems(deps.inventory.snapshot()).get(config.block) ?? 0
+        if (!higher || !room || carried === 0) return undefined
+        const more = await scaffolder.pillarOnce(tower, context.signal)
+        if (!more.ok) {
+          if (more.error.reason === 'aborted') return failure('aborted', 'Cancelled.', progress)
+          return undefined
+        }
+        continue
+      }
+      const outcome =
+        step.kind === 'place'
+          ? await this.place(step.at, step.block, options, progress, context)
+          : step.kind === 'break'
+            ? await this.breakCell(step.at, undefined, progress, context)
+            : ({ kind: 'done' } as Outcome)
+      if (outcome.kind === 'stop') return outcome.result
+      if (outcome.kind === 'retry') {
+        const tried = (attempts.get(keyOf(step)) ?? 0) + 1
+        attempts.set(keyOf(step), tried)
+        if (tried >= MAX_ATTEMPTS) failed.set(keyOf(step), outcome.why)
+      }
+    }
   }
 
   private satisfied(step: WorkStep): boolean {
@@ -341,7 +545,7 @@ export class PlanExecutor {
       if (!deps.safety.needsTorch(step.at, step.minLight)) return { kind: 'done' }
       if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) === 0) return { kind: 'done' }
     }
-    const moved = await this.standNear(plan, step, pending, context)
+    const moved = await this.standNear(plan, step, pending, options, context)
     if (moved !== undefined) return moved
 
     switch (step.kind) {
@@ -361,6 +565,7 @@ export class PlanExecutor {
     plan: WorkPlan,
     step: WorkStep,
     pending: readonly WorkStep[],
+    options: PlanOptions,
     context: SkillContext,
   ): Promise<Outcome | undefined> {
     const { deps } = this
@@ -378,8 +583,11 @@ export class PlanExecutor {
         ? { alignAxis: step.alignAxis }
         : {}),
     })
-    if (spot === undefined)
+    if (spot === undefined) {
+      // Too high (or too far from any ground) to reach: a tower may do it.
+      if (this.scaffolding(options)) return { kind: 'high' }
       return { kind: 'retry', why: `no place to stand near ${this.where(step.at)}` }
+    }
     if (spot === here) return undefined
     const walked = await deps.navigator.goToPosition(spot, 0.4, { signal: context.signal })
     if (walked.ok) return undefined
@@ -510,6 +718,8 @@ const keyOf = (step: WorkStep): StepKey => `${step.kind}:${cellKey(step.at)}`
 type Outcome =
   | { readonly kind: 'done' }
   | { readonly kind: 'retry'; readonly why: string }
+  /** Cannot be reached from the ground: wait for a tower. */
+  | { readonly kind: 'high' }
   | { readonly kind: 'stop'; readonly result: SkillResult<PlanOutcome> }
 
 const stop = (result: SkillResult<PlanOutcome>): Outcome => ({ kind: 'stop', result })

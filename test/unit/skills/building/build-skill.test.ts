@@ -74,6 +74,8 @@ const request = (patch: Partial<BuildInput> = {}): BuildInput => ({
   origin: undefined,
   clearObstacles: false,
   fetchFromStorage: true,
+  scaffoldBlock: 'cobblestone',
+  maxScaffoldHeight: 0,
   ...patch,
 })
 

@@ -4,7 +4,12 @@ import { err, ok } from '../../core/result.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { InventoryFullKind } from '../../state/storage-policy.js'
-import type { PlanExecutor, PlanOutcome, PlanPreview } from '../construction/plan-executor.js'
+import type {
+  PlanExecutor,
+  PlanOptions,
+  PlanOutcome,
+  PlanPreview,
+} from '../construction/plan-executor.js'
 import { boundsOf, planFor } from './blueprint-plan.js'
 import type { Blueprint } from './blueprint.types.js'
 import type { BlueprintRegistry } from './blueprint-registry.js'
@@ -21,6 +26,10 @@ export interface BuildInput {
   readonly origin: Position | undefined
   readonly clearObstacles: boolean
   readonly fetchFromStorage: boolean
+  /** The block a scaffold tower is made of (see `maxScaffoldHeight`). */
+  readonly scaffoldBlock: string
+  /** How high the bot may pillar up to reach high steps; 0 keeps it on the ground. */
+  readonly maxScaffoldHeight: number
   readonly onInventoryFull?: InventoryFullKind | undefined
 }
 
@@ -60,9 +69,7 @@ export class BuildSkill implements Skill<BuildInput, BuildOutput> {
     const prepared = this.prepare(input)
     if (!prepared.ok) return prepared
     const { blueprint, origin, defaultOrigin } = prepared.value
-    const preview = this.deps.executor.preview(planFor(blueprint, origin), {
-      clearObstacles: input.clearObstacles,
-    })
+    const preview = this.deps.executor.preview(planFor(blueprint, origin), this.optionsFor(input))
     return ok({
       ...preview,
       blueprint: blueprint.name,
@@ -77,10 +84,7 @@ export class BuildSkill implements Skill<BuildInput, BuildOutput> {
     if (!prepared.ok) return prepared
     const { blueprint, origin } = prepared.value
     const plan = planFor(blueprint, origin)
-    const options = {
-      clearObstacles: input.clearObstacles,
-      onInventoryFull: input.onInventoryFull,
-    }
+    const options = this.optionsFor(input)
     const { executor, fetcher } = this.deps
 
     const fetched: ItemCount[] = []
@@ -99,6 +103,17 @@ export class BuildSkill implements Skill<BuildInput, BuildOutput> {
       bounds: boundsOf(blueprint, origin),
       fetched,
     })
+  }
+
+  private optionsFor(input: BuildInput): PlanOptions {
+    return {
+      clearObstacles: input.clearObstacles,
+      onInventoryFull: input.onInventoryFull,
+      scaffold:
+        input.maxScaffoldHeight > 0
+          ? { block: input.scaffoldBlock, maxHeight: input.maxScaffoldHeight }
+          : undefined,
+    }
   }
 
   private prepare(
