@@ -8,6 +8,8 @@ const fail = (reason: PlaceFailure['reason'], message: string): Result<never, Pl
   err({ reason, message })
 
 const UP = toVec3({ x: 0, y: 1, z: 0 })
+/** The server needs a moment to turn the bot and to act on the bucket. */
+const BUCKET_TICKS = 5
 
 export class MineflayerPlacer implements Placer {
   constructor(private readonly holder: BotHolder) {}
@@ -53,6 +55,25 @@ export class MineflayerPlacer implements Placer {
   ): Promise<Result<void, PlaceFailure>> {
     try {
       await bot.equip(itemId, 'hand')
+      const item = bot.registry.items[itemId]?.name ?? ''
+      if (item.endsWith('_bucket')) {
+        // A bucket is not placed against a block: it is used, on the face the bot looks at. Water then flows out
+        // into the cell next to that face.
+        const reference = (against as { position?: Position }).position
+        if (reference === undefined)
+          return fail('failed', 'The block to place against has no position.')
+        await bot.lookAt(
+          {
+            x: reference.x + 0.5 + face.x * 0.5,
+            y: reference.y + 0.5 + face.y * 0.5,
+            z: reference.z + 0.5 + face.z * 0.5,
+          },
+          true,
+        )
+        bot.activateItem()
+        await bot.waitForTicks(BUCKET_TICKS)
+        return ok(undefined)
+      }
       await bot.placeBlock(against, face)
       return ok(undefined)
     } catch (error) {

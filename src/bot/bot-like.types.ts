@@ -189,6 +189,8 @@ export interface BotLike {
   openFurnace(block: BlockLike): Promise<FurnaceLike>
   /** The bot's own inventory window with raw click, wait, and sync operations. Installed by our factory after spawn. */
   readonly inventoryWindow: ContainerWindowLike
+  /** Uses the item in hand (a bucket is used this way, not placed as a block), on whatever the bot looks at. */
+  activateItem(): void
   /** Turns to face a point. */
   lookAt(point: Position, force?: boolean): Promise<void>
   /** Waits for game ticks (50 ms each). */
