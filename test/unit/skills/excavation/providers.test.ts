@@ -3,6 +3,7 @@ import type { Position } from '../../../../src/core/position.types.js'
 import type { WorkPlan, WorkStep } from '../../../../src/skills/construction/work-plan.types.js'
 import { ExcavationRegistry } from '../../../../src/skills/excavation/excavation-registry.js'
 import {
+  ringAround,
   PitProvider,
   QuarryProvider,
   ShaftProvider,
@@ -87,6 +88,152 @@ describe('PitProvider', () => {
     expect(pit.params.safeParse({ width: 3, length: 40, depth: 2 }).success).toBe(false)
     expect(pit.params.safeParse({ width: 3, length: 3, depth: 300 }).success).toBe(false)
     expect(pit.params.safeParse({ width: 3, length: 3 }).success).toBe(false)
+  })
+})
+
+describe('stairs out of a pit', () => {
+  const pit = new PitProvider()
+  const make = (params: object, origin = at(10, 63, 20)) =>
+    asPlan(pit.generate(pit.params.parse({ exit: 'stairs', ...params }), context(origin)))
+
+  it('winds around the outside of the footprint, clockwise from the north-west corner', () => {
+    const ring = ringAround(10, 20, 3, 3)
+
+    expect(ring).toHaveLength(16)
+    expect(ring[0]).toEqual({ x: 9, z: 19 })
+    expect(ring[4]).toEqual({ x: 13, z: 19 }) // the north-east corner
+    expect(ring[8]).toEqual({ x: 13, z: 23 }) // the south-east corner
+    expect(ring[12]).toEqual({ x: 9, z: 23 }) // the south-west corner
+    expect(ring.every((c) => c.x < 10 || c.x > 12 || c.z < 20 || c.z > 22)).toBe(true) // outside the footprint
+  })
+
+  it('every cell of the ring touches the next, all the way round', () => {
+    for (const [w, l] of [
+      [1, 1],
+      [3, 5],
+      [5, 5],
+      [2, 7],
+    ] as const) {
+      const ring = ringAround(0, 0, w, l)
+      expect(ring).toHaveLength(2 * (w + l) + 4)
+      ring.forEach((c, i) => {
+        const next = ring[(i + 1) % ring.length] ?? c
+        expect(Math.abs(c.x - next.x) + Math.abs(c.z - next.z)).toBe(1)
+      })
+      expect(new Set(ring.map((c) => `${String(c.x)},${String(c.z)}`)).size).toBe(ring.length)
+    }
+  })
+
+  it('cuts one step per layer: three cells high, one lower than the step before, in the next ring cell', () => {
+    const p = make({ width: 3, length: 3, depth: 4 })
+
+    const stairs = breaks(p).filter((s) => s.branch === 'stairs')
+    expect(stairs).toHaveLength(12)
+    expect(keys(stairs).slice(0, 6)).toEqual([
+      '9,63,19',
+      '9,64,19',
+      '9,65,19',
+      '10,62,19',
+      '10,63,19',
+      '10,64,19',
+    ])
+    expect(keys(stairs).slice(6)).toEqual([
+      '11,61,19',
+      '11,62,19',
+      '11,63,19',
+      '12,60,19',
+      '12,61,19',
+      '12,62,19',
+    ])
+    expect(ladders(p)).toEqual([])
+  })
+
+  it('makes each cell need the one before it', () => {
+    const stairs = breaks(make({ width: 3, length: 3, depth: 3 })).filter(
+      (s) => s.branch === 'stairs',
+    )
+
+    expect(stairs[0]?.needs).toBeUndefined() // the very first cell
+    expect(stairs[1]?.needs).toEqual(at(9, 63, 19)) // the cell above it
+    expect(stairs[3]?.needs).toEqual(at(9, 63, 19)) // the next step's foot needs the previous foot open... one up
+    expect(stairs[3]?.at).toEqual(at(10, 62, 19))
+  })
+
+  it('goes round again when the pit is deeper than the ring is long, one loop lower', () => {
+    const p = make({ width: 1, length: 1, depth: 12 })
+
+    const stairs = breaks(p).filter((s) => s.branch === 'stairs')
+    const columns = new Set(
+      keys(stairs).map((k) =>
+        k
+          .split(',')
+          .filter((_, i) => i !== 1)
+          .join(','),
+      ),
+    )
+    expect(columns.size).toBe(8) // a 1x1 pit has a ring of 8 cells
+    expect(keys(stairs)).toContain('9,63,19') // step 0
+    expect(keys(stairs)).toContain('9,55,19') // step 8: the same column, eight blocks lower
+  })
+})
+
+describe('water landing', () => {
+  const quarry = new QuarryProvider()
+  const make = (params: object, origin = at(10, 63, 20), minY = -64) =>
+    quarry.generate(quarry.params.parse({ to_y: 60, ...params }), context(origin, minY))
+
+  it('is off by default', () => {
+    const p = asPlan(make({ width: 4, length: 4 }))
+
+    expect(p.steps.some((s) => s.kind === 'place' && s.block === 'water_bucket')).toBe(false)
+    expect(breaks(p).every((s) => s.at.y >= 60)).toBe(true)
+  })
+
+  it('digs a 2x2x2 pit below the floor in the far corner, and sets two water sources diagonally', () => {
+    const p = asPlan(make({ width: 4, length: 4, water_landing: true }))
+
+    const landing = breaks(p).filter((s) => s.branch === 'landing')
+    expect(landing).toHaveLength(8)
+    expect(new Set(keys(landing))).toEqual(
+      new Set([
+        '12,59,22',
+        '13,59,22',
+        '12,59,23',
+        '13,59,23',
+        '12,58,22',
+        '13,58,22',
+        '12,58,23',
+        '13,58,23',
+      ]),
+    )
+    const water = p.steps.filter((s) => s.kind === 'place' && s.block === 'water_bucket')
+    expect(water.map((s) => s.at)).toEqual([at(12, 59, 22), at(13, 59, 23)])
+    expect(water.every((s) => s.kind === 'place' && s.branch === 'landing')).toBe(true)
+  })
+
+  it('comes last, after the layers and the way out', () => {
+    const p = asPlan(make({ width: 4, length: 4, water_landing: true }))
+
+    const lastLayerBreak = breaks(p).filter((s) => s.branch !== 'landing').length
+    expect(
+      p.steps
+        .slice(-10)
+        .every((s) =>
+          s.kind === 'break'
+            ? s.branch === 'landing'
+            : s.kind === 'place' && s.block === 'water_bucket',
+        ),
+    ).toBe(true)
+    expect(lastLayerBreak).toBeGreaterThan(0)
+  })
+
+  it('needs a footprint of at least 2x2 and room above the bedrock', () => {
+    expect(make({ width: 1, length: 5, water_landing: true })).toEqual({
+      error: 'A water landing needs a footprint of at least 2 by 2.',
+    })
+    expect(make({ width: 3, length: 3, water_landing: true, to_y: -62 })).toMatchObject({
+      error: expect.stringContaining('no room for a water landing'),
+    })
   })
 })
 

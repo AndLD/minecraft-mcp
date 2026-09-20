@@ -636,6 +636,37 @@ export class FakeBot implements BotLike {
   }
 
   waitedTicks = 0
+  /** What was in hand each time `activateItem` was called. */
+  readonly activated: string[] = []
+
+  /**
+   * Uses the item in hand: a water or lava bucket empties into the open cell at the point the bot last looked at (the
+   * point lies on the face between a solid block and the empty cell).
+   */
+  activateItem(): void {
+    const held = this.heldItem?.name ?? ''
+    this.activated.push(held)
+    const fluid = held === 'water_bucket' ? 'water' : held === 'lava_bucket' ? 'lava' : undefined
+    const point = this.lookedAt.at(-1)
+    if (fluid === undefined || point === undefined) return
+    const eps = 0.001
+    for (const dx of [-eps, eps])
+      for (const dy of [-eps, eps])
+        for (const dz of [-eps, eps]) {
+          const cell = {
+            x: Math.floor(point.x + dx),
+            y: Math.floor(point.y + dy),
+            z: Math.floor(point.z + dz),
+          }
+          const name = this.blocks.get(key(cell))
+          if (name !== 'air' && name !== 'cave_air') continue
+          this.setBlock(cell, fluid)
+          this.removeItems(held, 1)
+          this.addItems('bucket', 1)
+          this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
+          return
+        }
+  }
 
   waitForTicks(ticks: number): Promise<void> {
     this.waitedTicks += ticks

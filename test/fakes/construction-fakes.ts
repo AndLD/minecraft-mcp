@@ -198,8 +198,11 @@ export class ConstructionWorld
       return Promise.resolve(err({ reason: 'failed', message: 'The bot is in the way.' }))
     this.log.push(`place ${item} ${key(at)}`)
     if (failure === 'ignored') return Promise.resolve(ok(undefined))
-    this.setBlock(at, item)
+    // A bucket makes the fluid, and comes back empty.
+    const fluid = item === 'water_bucket' ? 'water' : item === 'lava_bucket' ? 'lava' : undefined
+    this.setBlock(at, fluid ?? item)
     this.carried.set(item, (this.carried.get(item) ?? 0) - 1)
+    if (fluid !== undefined) this.give('bucket', 1)
     this.settle()
     this.onPlaced(at)
     return Promise.resolve(ok(undefined))

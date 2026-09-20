@@ -3,6 +3,7 @@ import type { BotHolder, BotLike } from '../../../src/bot/bot-like.types.js'
 import { MineflayerDigger } from '../../../src/bot/mineflayer-digger.js'
 import { MineflayerDroppedItems } from '../../../src/bot/mineflayer-dropped-items.js'
 import { MineflayerFurnaceAccess } from '../../../src/bot/mineflayer-furnace.js'
+import { toVec3 } from '../../../src/bot/vec3.js'
 import { MineflayerLightReader } from '../../../src/bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from '../../../src/bot/mineflayer-placer.js'
 import { MineflayerRecipes } from '../../../src/bot/mineflayer-recipes.js'
@@ -394,6 +395,60 @@ describe('MineflayerPlacer', () => {
       ok: false,
       error: { reason: 'failed', message: 'cannot hold it' },
     })
+  })
+})
+
+describe('MineflayerPlacer.placeAgainst: buckets', () => {
+  it('uses a water bucket on the face instead of placing it as a block', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.setBlock({ x: 3, y: 64, z: 0 }, 'air')
+    bot.inventoryItems = [{ name: 'water_bucket', count: 1 }]
+
+    const result = await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+      'water_bucket',
+      { x: 2, y: 64, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    )
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(bot.placed).toEqual([]) // not placeBlock: a bucket is used
+    expect(bot.activated).toEqual(['water_bucket'])
+    expect(bot.lookedAt.at(-1)).toEqual({ x: 3, y: 64.5, z: 0.5 }) // the centre of the east face
+    expect(bot.waitedTicks).toBe(5)
+    expect(bot.blockAt(toVec3({ x: 3, y: 64, z: 0 }))?.name).toBe('water')
+    expect(bot.inventoryItems).toEqual([{ name: 'bucket', count: 1 }])
+  })
+
+  it('looks at the right face for a wall on the west and for the floor below', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.setBlock({ x: 1, y: 64, z: 0 }, 'air')
+    bot.inventoryItems = [{ name: 'water_bucket', count: 1 }]
+
+    await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+      'water_bucket',
+      { x: 2, y: 64, z: 0 },
+      { x: -1, y: 0, z: 0 },
+    )
+
+    expect(bot.lookedAt.at(-1)).toEqual({ x: 2, y: 64.5, z: 0.5 })
+    expect(bot.blockAt(toVec3({ x: 1, y: 64, z: 0 }))?.name).toBe('water')
+  })
+
+  it('reports a bucket the game cannot use', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.inventoryItems = [{ name: 'water_bucket', count: 1 }]
+    bot.failEquip = new Error('cannot hold it')
+
+    expect(
+      await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+        'water_bucket',
+        { x: 2, y: 64, z: 0 },
+        { x: 1, y: 0, z: 0 },
+      ),
+    ).toMatchObject({ ok: false, error: { reason: 'failed', message: 'cannot hold it' } })
   })
 })
 

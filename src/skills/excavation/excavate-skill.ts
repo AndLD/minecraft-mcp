@@ -24,6 +24,8 @@ export interface ExcavateInput {
   /** Where the dig starts; see each shape. Without it, it is worked out from where the bot stands. */
   readonly origin: Position | undefined
   readonly fetchFromStorage: boolean
+  /** Where the spoil goes when the inventory is full: the standing storage policy (default), or the junk is thrown away. */
+  readonly spoilPolicy?: 'storage' | 'discard_junk' | undefined
   readonly onInventoryFull?: InventoryFullKind | undefined
 }
 
@@ -135,6 +137,7 @@ export class ExcavateSkill implements Skill<ExcavateInput, ExcavateOutput> {
       // Digging is what this is for; natural blocks in the way are simply part of it.
       clearObstacles: true,
       onInventoryFull: input.onInventoryFull,
+      spoil: input.spoilPolicy,
       scaffold: undefined,
     }
   }
