@@ -59,6 +59,8 @@ export interface BlockLike {
   readonly name: string
   /** `block` for full solid blocks, `empty` for air, liquids, and plants. */
   readonly boundingBox?: string | undefined
+  /** Light from torches and other sources at this block, 0 to 15 (not sunlight). */
+  readonly light?: number | undefined
 }
 
 /** A crafting recipe as Mineflayer builds it. `delta` lists what changes in the inventory (ingredients negative). */

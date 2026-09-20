@@ -3,6 +3,7 @@ import type { BotHolder, BotLike } from '../../../src/bot/bot-like.types.js'
 import { MineflayerDigger } from '../../../src/bot/mineflayer-digger.js'
 import { MineflayerDroppedItems } from '../../../src/bot/mineflayer-dropped-items.js'
 import { MineflayerFurnaceAccess } from '../../../src/bot/mineflayer-furnace.js'
+import { MineflayerLightReader } from '../../../src/bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from '../../../src/bot/mineflayer-placer.js'
 import { MineflayerRecipes } from '../../../src/bot/mineflayer-recipes.js'
 import { FakeBot } from '../../fakes/fake-bot.js'
@@ -393,6 +394,83 @@ describe('MineflayerPlacer', () => {
       ok: false,
       error: { reason: 'failed', message: 'cannot hold it' },
     })
+  })
+})
+
+describe('MineflayerPlacer.placeAgainst', () => {
+  it('places the block on the given face of the reference block', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.setBlock({ x: 3, y: 64, z: 0 }, 'air')
+    bot.inventoryItems = [{ name: 'oak_planks', count: 3 }]
+
+    const result = await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+      'oak_planks',
+      { x: 2, y: 64, z: 0 },
+      { x: 1, y: 0, z: 0 },
+    )
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(bot.placed).toEqual([{ name: 'oak_planks', position: { x: 3, y: 64, z: 0 } }])
+  })
+
+  it('refuses without the item, without a solid reference, and without a bot', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'air')
+    bot.inventoryItems = [{ name: 'oak_planks', count: 1 }]
+    const placer = new MineflayerPlacer(holderOf(bot))
+    const east = { x: 1, y: 0, z: 0 }
+
+    expect(await placer.placeAgainst('stone', { x: 2, y: 64, z: 0 }, east)).toMatchObject({
+      ok: false,
+      error: { reason: 'no_item' },
+    })
+    expect(await placer.placeAgainst('oak_planks', { x: 2, y: 64, z: 0 }, east)).toMatchObject({
+      ok: false,
+      error: { reason: 'no_support' },
+    })
+    expect(await placer.placeAgainst('oak_planks', { x: 90, y: 64, z: 0 }, east)).toMatchObject({
+      ok: false,
+      error: { reason: 'no_support' },
+    })
+    expect(
+      await new MineflayerPlacer(holderOf(undefined)).placeAgainst(
+        'oak_planks',
+        { x: 2, y: 64, z: 0 },
+        east,
+      ),
+    ).toMatchObject({ ok: false, error: { reason: 'not_connected' } })
+  })
+
+  it('reports a placement the game rejects', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.inventoryItems = [{ name: 'oak_planks', count: 1 }]
+    bot.failEquip = new Error('cannot hold it')
+
+    expect(
+      await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+        'oak_planks',
+        { x: 2, y: 64, z: 0 },
+        { x: 0, y: 1, z: 0 },
+      ),
+    ).toMatchObject({ ok: false, error: { reason: 'failed', message: 'cannot hold it' } })
+  })
+})
+
+describe('MineflayerLightReader', () => {
+  it('reads the block light of a loaded cell, and nothing for an unloaded one or without a bot', () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'air')
+    bot.setLight({ x: 2, y: 64, z: 0 }, 11)
+
+    const reader = new MineflayerLightReader(holderOf(bot))
+
+    expect(reader.blockLightAt({ x: 2, y: 64, z: 0 })).toBe(11)
+    expect(reader.blockLightAt({ x: 9, y: 64, z: 9 })).toBeUndefined()
+    expect(
+      new MineflayerLightReader(holderOf(undefined)).blockLightAt({ x: 2, y: 64, z: 0 }),
+    ).toBeUndefined()
   })
 })
 
