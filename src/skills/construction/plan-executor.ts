@@ -16,6 +16,7 @@ import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
 import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
 import { isOpenAir, isPlanned, isReplaceable } from './block-match.js'
+import type { Hazard, HazardReason, HazardRule } from './hazard-rule.js'
 import type { Scaffolder, Tower } from './scaffolder.js'
 import type { SiteSafety } from './site-safety.js'
 import { cellKey, type StandingSpotChooser } from './standing-spot.js'
@@ -30,6 +31,9 @@ const CONFIRM_POLLS = 15
 const TORCH = 'torch'
 /** The plan is checked against the world this many times (the second look is the verification pass). */
 const ROUNDS = 2
+/** Blocks that stay in a dug opening (a ladder, a torch): the cell still counts as dug. */
+const PLACED_IN_OPENINGS = new Set(['ladder', 'torch', 'wall_torch'])
+const ORE = /(_ore|ancient_debris)$/
 /** From the ground the bot reaches about this far above the cell it stands in (eye height plus reach, at arm's length). */
 const GROUND_REACH = 4.8
 const GROUND_REACH_ROWS = 5
@@ -69,6 +73,16 @@ export interface PlanPreview {
     { readonly steps: number; readonly height: number; readonly block: string } | undefined
 }
 
+/** A chain of cells (a tunnel, a side branch, an ore vein) that stopped before its end. */
+export interface EndedBranch {
+  readonly branch: string
+  readonly reason: HazardReason | 'blocked_by_earlier'
+  /** Where it stopped: the fluid, the cavity, the spawner, and so on. */
+  readonly at: Position | undefined
+  /** How many cells of it were left undone. */
+  readonly skipped: number
+}
+
 export interface PlanOutcome {
   readonly steps: number
   readonly placed: number
@@ -76,6 +90,8 @@ export interface PlanOutcome {
   readonly lights: number
   readonly alreadyDone: number
   readonly used: readonly ItemCount[]
+  /** Chains that ended early, with why and where. */
+  readonly ended: readonly EndedBranch[]
 }
 
 export interface PlanExecutorDeps {
@@ -94,6 +110,8 @@ export interface PlanExecutorDeps {
   readonly full?: InventoryFullHandler
   /** Lets the bot pillar up; without it steps beyond the reach from the ground fail. */
   readonly scaffolder?: Scaffolder
+  /** The rule that ends a dig at lava, water, cavities, and the like (used by plans that ask for it). */
+  readonly hazard?: HazardRule
 }
 
 const failure = (
@@ -133,12 +151,14 @@ export class PlanExecutor {
     let toBreak = 0
     let done = 0
     let torches = 0
+    let requiredTorches = 0
     let protectedArea: string | undefined
     for (const step of plan.steps) {
       protectedArea ??= deps.guard.protectedAt(step.at)?.label
       const found = deps.blocks.blockAt(step.at)
       if (step.kind === 'light') {
         torches += 1
+        if (step.required === true) requiredTorches += 1
         continue
       }
       if (step.kind === 'break') {
@@ -157,6 +177,7 @@ export class PlanExecutor {
         else blocked.push(step.at)
       }
     }
+    if (requiredTorches > 0) needs.set(TORCH, (needs.get(TORCH) ?? 0) + requiredTorches)
     const scaffold = this.estimateScaffold(plan, options)
     if (scaffold !== undefined)
       needs.set(scaffold.block, (needs.get(scaffold.block) ?? 0) + scaffold.height)
@@ -177,7 +198,7 @@ export class PlanExecutor {
       blocked: blocked.slice(0, SAMPLE),
       blockedCount: blocked.length,
       protectedArea,
-      hazards: deps.safety.hazards(plan),
+      hazards: plan.hazards === 'end_branch' ? [] : deps.safety.hazards(plan),
       scaffold,
     }
   }
@@ -221,9 +242,15 @@ export class PlanExecutor {
     const attempts = new Map<StepKey, number>()
     const fullSession = deps.full?.begin(options.onInventoryFull)
     let inARow = 0
+    const ended = new Map<string, EndedBranch>()
+    const skipped = new Set<StepKey>()
+    const veinSeen = new Set<string>()
+    this.planCells = new Set(plan.steps.map((step) => cellKey(step.at)))
 
     for (let round = 0; round < ROUNDS; round += 1) {
-      const pending = plan.steps.filter((step) => !this.satisfied(step) && !failed.has(keyOf(step)))
+      const pending = plan.steps.filter(
+        (step) => !this.satisfied(step) && !failed.has(keyOf(step)) && !skipped.has(keyOf(step)),
+      )
       if (pending.length === 0) break
       if (round === 0) context.progress(`Working on ${plan.name}: ${String(pending.length)} steps`)
       /** Steps that are too high for the ground: they wait for a tower. */
@@ -231,6 +258,23 @@ export class PlanExecutor {
       while (pending.length > 0) {
         if (context.signal.aborted) return failure('aborted', 'Cancelled.', progress)
         const step = this.next(pending)
+        if (
+          step === undefined &&
+          pending.every((s) => s.kind === 'break' && s.needs !== undefined)
+        ) {
+          // What is left starts from a cell that never got dug (the tunnel it leaves ended early).
+          for (const s of pending) {
+            this.recordEnded(
+              ended,
+              s.kind === 'break' ? (s.branch ?? 'plan') : 'plan',
+              'blocked_by_earlier',
+              s.kind === 'break' ? s.needs : undefined,
+            )
+            skipped.add(keyOf(s))
+          }
+          pending.length = 0
+          break
+        }
         if (step === undefined && this.scaffolding(options)) {
           // What is left needs something above the ground to be built first.
           high.push(...pending)
@@ -261,10 +305,16 @@ export class PlanExecutor {
           high.push(step)
           continue
         }
+        if (outcome.kind === 'end') {
+          this.endChain(step, outcome.hazard, [pending, high], ended, skipped)
+          inARow = 0
+          continue
+        }
         if (outcome.kind === 'retry') {
           const tried = (attempts.get(keyOf(step)) ?? 0) + 1
           attempts.set(keyOf(step), tried)
           if (tried < MAX_ATTEMPTS) pending.push(step)
+          else if (step.kind === 'break' && step.optional === true) skipped.add(keyOf(step))
           else {
             failed.set(keyOf(step), outcome.why)
             inARow += 1
@@ -276,7 +326,12 @@ export class PlanExecutor {
               progress,
               { failedSteps: failed.size },
             )
-        } else inARow = 0
+        } else {
+          inARow = 0
+          // Ore that touches a dug cell is mined too, vein by vein.
+          if (step.kind === 'break' && plan.veins !== undefined)
+            pending.unshift(...this.veinSteps(step.at, plan.veins.maxSize, veinSeen))
+        }
         context.progress(`Placed ${String(progress.placed)}, broke ${String(progress.broken)}`)
       }
       if (high.length > 0) {
@@ -299,12 +354,16 @@ export class PlanExecutor {
         'incomplete',
         `${String(failed.size)} step(s) could not be done (${reasons}). Run it again to try the rest.`,
         progress,
-        { failedSteps: failed.size, reasons: [...new Set(failed.values())] },
+        {
+          failedSteps: failed.size,
+          reasons: [...new Set(failed.values())],
+          ended: [...ended.values()],
+        },
       )
     }
     // Lighting is a courtesy (no torches, no torch), so it is not part of what must hold.
     const stillOpen = plan.steps.filter(
-      (step) => step.kind !== 'light' && !this.satisfied(step),
+      (step) => step.kind !== 'light' && !skipped.has(keyOf(step)) && !this.satisfied(step),
     ).length
     if (stillOpen > 0)
       return failure(
@@ -320,6 +379,7 @@ export class PlanExecutor {
       lights: progress.lights,
       alreadyDone: preview.alreadyDone,
       used: [...progress.used].map(([name, count]) => ({ name, count })),
+      ended: [...ended.values()],
     })
   }
 
@@ -344,7 +404,86 @@ export class PlanExecutor {
 
   /** The first pending step that can be done now: breaks and lights always, placements once something supports them. */
   private next(pending: readonly WorkStep[]): WorkStep | undefined {
-    return pending.find((step) => step.kind !== 'place' || this.support(step.at) !== undefined)
+    return pending.find((step) => this.available(step))
+  }
+
+  /** Every cell the running plan works on (for the hazard rule). */
+  private planCells: ReadonlySet<string> = new Set()
+
+  /** Whether a step can be done right now. */
+  private available(step: WorkStep): boolean {
+    switch (step.kind) {
+      case 'place':
+        return this.support(step.at, step.against) !== undefined
+      case 'break':
+        return step.needs === undefined || isOpenAir(this.deps.blocks.blockAt(step.needs))
+      case 'light':
+        return true
+    }
+  }
+
+  /** Notes that a chain stopped early, once per chain and reason, counting the cells it left. */
+  private recordEnded(
+    ended: Map<string, EndedBranch>,
+    branch: string,
+    reason: EndedBranch['reason'],
+    at: Position | undefined,
+  ): void {
+    const label = branch.startsWith('vein@') ? 'vein' : branch
+    const key = `${label}|${reason}|${label === 'vein' ? '' : cellKey(at ?? { x: 0, y: 0, z: 0 })}`
+    const found = ended.get(key)
+    ended.set(key, {
+      branch: label,
+      reason,
+      at: found?.at ?? at,
+      skipped: (found?.skipped ?? 0) + 1,
+    })
+  }
+
+  /** A hazard ends the chain of the step that met it: the step and the rest of its chain are dropped. */
+  private endChain(
+    step: WorkStep,
+    hazard: Hazard,
+    lists: readonly WorkStep[][],
+    ended: Map<string, EndedBranch>,
+    skipped: Set<StepKey>,
+  ): void {
+    const branch = step.kind === 'break' ? (step.branch ?? keyOf(step)) : keyOf(step)
+    skipped.add(keyOf(step))
+    this.recordEnded(ended, branch, hazard.reason, hazard.at)
+    for (const list of lists)
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const other = list[i]
+        if (other?.kind !== 'break' || other.branch !== branch) continue
+        skipped.add(keyOf(other))
+        this.recordEnded(ended, branch, hazard.reason, hazard.at)
+        list.splice(i, 1)
+      }
+  }
+
+  /** Ore touching a dug cell, followed vein by vein (neighbours in all directions, up to `maxSize` blocks). */
+  private veinSteps(dug: Position, maxSize: number, seen: Set<string>): WorkStep[] {
+    const { blocks, guard } = this.deps
+    const found: WorkStep[] = []
+    const queue: Position[] = [dug]
+    while (queue.length > 0 && found.length < maxSize) {
+      const current = queue.shift()
+      if (current === undefined) break
+      for (let dx = -1; dx <= 1; dx += 1)
+        for (let dy = -1; dy <= 1; dy += 1)
+          for (let dz = -1; dz <= 1; dz += 1) {
+            const cell = { x: current.x + dx, y: current.y + dy, z: current.z + dz }
+            const key = cellKey(cell)
+            if (seen.has(key) || this.planCells.has(key)) continue
+            const name = blocks.blockAt(cell)
+            if (name === undefined || !ORE.test(name) || guard.protectedAt(cell) !== undefined)
+              continue
+            seen.add(key)
+            found.push({ kind: 'break', at: cell, branch: `vein@${cellKey(dug)}`, optional: true })
+            queue.push(cell)
+          }
+    }
+    return found
   }
 
   private scaffolding(options: PlanOptions): boolean {
@@ -477,7 +616,7 @@ export class PlanExecutor {
       }
       const outcome =
         step.kind === 'place'
-          ? await this.place(step.at, step.block, options, progress, context)
+          ? await this.place(step.at, step.block, options, progress, context, step.against)
           : step.kind === 'break'
             ? await this.breakCell(step.at, undefined, progress, context)
             : ({ kind: 'done' } as Outcome)
@@ -496,14 +635,23 @@ export class PlanExecutor {
       case 'place':
         return isPlanned(step.block, found)
       case 'break':
-        return isOpenAir(found)
+        return isOpenAir(found) || (found !== undefined && PLACED_IN_OPENINGS.has(found))
       case 'light':
-        return !this.deps.safety.needsTorch(step.at, step.minLight)
+        return !this.deps.safety.needsTorch(step.at, step.minLight, step.spacing)
     }
   }
 
   /** A neighbouring solid block to place against, preferring the one below. */
-  private support(at: Position): { reference: Position; face: Position } | undefined {
+  private support(
+    at: Position,
+    against?: Position,
+  ): { reference: Position; face: Position } | undefined {
+    if (against !== undefined) {
+      const reference = { x: at.x + against.x, y: at.y + against.y, z: at.z + against.z }
+      return this.deps.blocks.isSolid(reference) === true
+        ? { reference, face: { x: -against.x, y: -against.y, z: -against.z } }
+        : undefined
+    }
     const offsets: Position[] = [
       { x: 0, y: -1, z: 0 },
       { x: 0, y: 0, z: -1 },
@@ -540,17 +688,28 @@ export class PlanExecutor {
         ),
       )
 
+    if (step.kind === 'break' && deps.hazard !== undefined) {
+      const hazard = deps.hazard.check(step, plan, this.planCells)
+      if (hazard !== undefined) return { kind: 'end', hazard }
+    }
     if (step.kind === 'light') {
-      // Lighting is a courtesy: nothing to do when it is bright enough, or when there are no torches.
-      if (!deps.safety.needsTorch(step.at, step.minLight)) return { kind: 'done' }
-      if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) === 0) return { kind: 'done' }
+      if (!deps.safety.needsTorch(step.at, step.minLight, step.spacing)) return { kind: 'done' }
+      if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) === 0) {
+        // Lighting is a courtesy in a building; in a mine it is a rule.
+        if (step.required !== true) return { kind: 'done' }
+        return stop(
+          failure('no_torches', 'There are no torches left to light the way.', progress, {
+            missing: [{ name: TORCH, count: 1 }],
+          }),
+        )
+      }
     }
     const moved = await this.standNear(plan, step, pending, options, context)
     if (moved !== undefined) return moved
 
     switch (step.kind) {
       case 'place':
-        return this.place(step.at, step.block, options, progress, context)
+        return this.place(step.at, step.block, options, progress, context, step.against)
       case 'break':
         return this.breakCell(step.at, fullSession, progress, context)
       case 'light': {
@@ -602,6 +761,7 @@ export class PlanExecutor {
     options: PlanOptions,
     progress: Progress,
     context: SkillContext,
+    against?: Position,
   ): Promise<Outcome> {
     const { deps } = this
     const found = deps.blocks.blockAt(at)
@@ -611,7 +771,7 @@ export class PlanExecutor {
       const cleared = await this.breakCell(at, undefined, progress, context)
       if (cleared.kind !== 'done') return cleared
     }
-    const support = this.support(at)
+    const support = this.support(at, against)
     if (support === undefined)
       return { kind: 'retry', why: `nothing to place against at ${this.where(at)}` }
 
@@ -720,6 +880,8 @@ type Outcome =
   | { readonly kind: 'retry'; readonly why: string }
   /** Cannot be reached from the ground: wait for a tower. */
   | { readonly kind: 'high' }
+  /** A hazard ends this cell's chain. */
+  | { readonly kind: 'end'; readonly hazard: Hazard }
   | { readonly kind: 'stop'; readonly result: SkillResult<PlanOutcome> }
 
 const stop = (result: SkillResult<PlanOutcome>): Outcome => ({ kind: 'stop', result })

@@ -102,7 +102,7 @@ export class StandingSpotChooser {
     if (this.blocks.isSolid(below) !== true) return false
     if (this.blocks.isSolid(spot) !== false || this.blocks.isSolid(head) !== false) return false
     const feet = this.blocks.blockAt(spot)
-    if (feet !== undefined && FLUIDS.has(feet)) return false
+    if (feet !== undefined && (FLUIDS.has(feet) || feet === 'ladder')) return false
     const eyes = { x: spot.x + 0.5, y: spot.y + EYE_HEIGHT, z: spot.z + 0.5 }
     const centre = {
       x: Math.floor(request.target.x) + 0.5,

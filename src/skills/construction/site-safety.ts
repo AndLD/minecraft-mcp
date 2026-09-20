@@ -36,12 +36,12 @@ export class SiteSafety {
   }
 
   /** Whether a torch belongs in the cell: it is darker than `minLight` and no torch stands within the spacing. */
-  needsTorch(at: Position, minLight: number): boolean {
+  needsTorch(at: Position, minLight: number, spacing: number = TORCH_SPACING): boolean {
     const level = this.light.blockLightAt(at)
     if (level === undefined || level >= minLight) return false
-    for (let dx = -TORCH_SPACING; dx <= TORCH_SPACING; dx += 1)
+    for (let dx = -spacing; dx <= spacing; dx += 1)
       for (let dy = -2; dy <= 2; dy += 1)
-        for (let dz = -TORCH_SPACING; dz <= TORCH_SPACING; dz += 1) {
+        for (let dz = -spacing; dz <= spacing; dz += 1) {
           const name = this.blocks.blockAt({ x: at.x + dx, y: at.y + dy, z: at.z + dz })
           if (name !== undefined && TORCHES.includes(name)) return false
         }
