@@ -27,6 +27,7 @@ import { MineflayerItemFacts } from './bot/mineflayer-item-facts.js'
 import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
+import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
 import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
 import { MineflayerServerCommands } from './bot/mineflayer-server-commands.js'
@@ -108,6 +109,12 @@ import {
   WithdrawItemsTool,
 } from './mcp/tools/storage-task-tools.js'
 import { ResumeTaskTool, SetStoragePolicyTool } from './mcp/tools/storage-policy-tools.js'
+import {
+  BuildTool,
+  ListBlueprintsTool,
+  PlaceBlockTool,
+  PreviewBuildTool,
+} from './mcp/tools/build-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -151,6 +158,19 @@ import { StandingInstructions } from './state/standing-instructions.js'
 import { TaskJournal } from './state/task-journal.js'
 import { WorldRegistry } from './state/world-registry.js'
 import { WorldStateManager } from './state/world-state-manager.js'
+import { BlueprintRegistry } from './skills/building/blueprint-registry.js'
+import { BuildSkill } from './skills/building/build-skill.js'
+import { StorageMaterialFetcher } from './skills/building/material-fetcher.js'
+import {
+  BoxProvider,
+  FloorProvider,
+  SingleBlockProvider,
+  SolidProvider,
+  WallsProvider,
+} from './skills/building/providers/basic-providers.js'
+import { PlanExecutor } from './skills/construction/plan-executor.js'
+import { SiteSafety } from './skills/construction/site-safety.js'
+import { StandingSpotChooser } from './skills/construction/standing-spot.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
 import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
@@ -587,6 +607,37 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     guard: protectedAreas,
     full: inventoryFull,
   })
+  // Construction: one engine (plans of block operations) and building as its first client.
+  const planExecutor = new PlanExecutor({
+    blocks,
+    placer: new MineflayerPlacer(connection),
+    digger: new MineflayerDigger(connection),
+    navigator,
+    inventory,
+    vitals,
+    guard: protectedAreas,
+    drops: dropCollector,
+    spots: new StandingSpotChooser(blocks),
+    safety: new SiteSafety(blocks, new MineflayerLightReader(connection)),
+    scheduler,
+    full: inventoryFull,
+  })
+  const blueprints = new BlueprintRegistry()
+    .register(new FloorProvider())
+    .register(new WallsProvider())
+    .register(new BoxProvider())
+    .register(new SolidProvider())
+    .register(new SingleBlockProvider())
+  const buildSkill = new BuildSkill({
+    registry: blueprints,
+    executor: planExecutor,
+    vitals,
+    fetcher: new StorageMaterialFetcher({
+      inventory,
+      withdrawer: withdrawItems,
+      scanner: scanContainers,
+    }),
+  })
   const craftItem = new CraftItemSkill({
     book: recipes,
     planner,
@@ -695,6 +746,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GiveItemsTool(giveItems, launcher, config.owner))
     .register(new DropItemsTool(dropItems, launcher))
     .register(new ResolveItemTool(new ItemResolver(itemFacts), inventory, containerIndex))
+    .register(new BuildTool(buildSkill, launcher))
+    .register(new PreviewBuildTool(buildSkill))
+    .register(new ListBlueprintsTool(blueprints))
+    .register(new PlaceBlockTool(buildSkill, launcher))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))

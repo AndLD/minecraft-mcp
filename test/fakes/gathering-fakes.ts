@@ -241,6 +241,18 @@ export class FakePlacer implements Placer {
     this.onPlace(item, target)
     return Promise.resolve(ok(undefined))
   }
+
+  readonly placedAgainst: { item: string; reference: Position; face: Position }[] = []
+
+  placeAgainst(
+    item: string,
+    reference: Position,
+    face: Position,
+  ): Promise<Result<void, PlaceFailure>> {
+    if (this.failure !== undefined) return Promise.resolve(err(this.failure))
+    this.placedAgainst.push({ item, reference, face })
+    return Promise.resolve(ok(undefined))
+  }
 }
 
 /** A furnace session whose slots the test controls directly. */

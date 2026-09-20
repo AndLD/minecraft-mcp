@@ -358,6 +358,7 @@ export class FakeBot implements BotLike {
     if (name === undefined) return null
     return {
       name,
+      light: this.lights.get(key(position)),
       boundingBox: ['air', 'cave_air', 'water', 'lava'].includes(name) ? 'empty' : 'block',
       position: {
         x: Math.floor(position.x),
@@ -365,6 +366,12 @@ export class FakeBot implements BotLike {
         z: Math.floor(position.z),
       },
     }
+  }
+
+  private readonly lights = new Map<string, number>()
+  /** Sets the block light a cell reports. */
+  setLight(position: Position, level: number): void {
+    this.lights.set(key(position), level)
   }
 
   /** Time source for furnaces; tests point it at their fake clock. */
