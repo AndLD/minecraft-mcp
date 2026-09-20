@@ -11,6 +11,10 @@ import {
   SingleBlockProvider,
   WallsProvider,
 } from '../../../../src/skills/building/providers/basic-providers.js'
+import {
+  ShelterProvider,
+  SmallHouseProvider,
+} from '../../../../src/skills/building/providers/house-providers.js'
 import { PlanExecutor } from '../../../../src/skills/construction/plan-executor.js'
 import { SiteSafety } from '../../../../src/skills/construction/site-safety.js'
 import { StandingSpotChooser } from '../../../../src/skills/construction/standing-spot.js'
@@ -53,6 +57,8 @@ function setup(fetcher?: MaterialFetcher) {
     .register(new WallsProvider())
     .register(new BoxProvider())
     .register(new SingleBlockProvider())
+    .register(new ShelterProvider())
+    .register(new SmallHouseProvider())
   const skill = new BuildSkill({
     registry,
     executor,
@@ -137,6 +143,37 @@ describe('BuildSkill: building', () => {
   })
 })
 
+describe('BuildSkill: a shelter around the bot', () => {
+  it('is built where the bot stands, with no origin needed', async () => {
+    const s = setup()
+    s.world.give('cobblestone', 40)
+    s.world.bot = { x: 10.5, y: 64, z: 20.5 }
+
+    const result = await s.skill.run(
+      request({ blueprint: 'shelter', params: {} }),
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { placed: 32, origin: { x: 9, y: 64, z: 19 } },
+    })
+    expect(s.world.nameAt({ x: 10, y: 64, z: 20 })).toBe('air') // the bot's cell
+    expect(s.world.nameAt({ x: 10, y: 66, z: 20 })).toBe('cobblestone') // the roof over it
+    expect(s.world.trips).toEqual([])
+  })
+
+  it('previews the same origin', () => {
+    const s = setup()
+    s.world.bot = { x: 10.5, y: 64, z: 20.5 }
+
+    expect(s.skill.preview(request({ blueprint: 'shelter', params: {} }))).toMatchObject({
+      ok: true,
+      value: { origin: { x: 9, y: 64, z: 19 }, defaultOrigin: true, toPlace: 32 },
+    })
+  })
+})
+
 describe('BuildSkill: refusing', () => {
   it('names the known blueprints for an unknown one', async () => {
     const s = setup()
@@ -144,9 +181,7 @@ describe('BuildSkill: refusing', () => {
     const result = await s.skill.run(request({ blueprint: 'castle' }), skillContext().context)
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_blueprint' } })
-    expect(!result.ok && result.error.message).toContain(
-      'box, block, floor, walls'.split(', ').sort().join(', '),
-    )
+    expect(!result.ok && result.error.message).toContain('block, box, floor, house, shelter, walls')
   })
 
   it('names the wrong parameters', async () => {
@@ -189,6 +224,51 @@ describe('BuildSkill: refusing', () => {
     expect(await s.skill.run(request(), skillContext().context)).toMatchObject({
       ok: false,
       error: { reason: 'not_connected' },
+    })
+  })
+})
+
+describe('BuildSkill: a house', () => {
+  it('builds walls, a roof, a doorway, and puts the door in last', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 100)
+    s.world.give('oak_door', 1)
+    s.world.give('torch', 4)
+
+    const result = await s.skill.run(
+      request({
+        blueprint: 'house',
+        params: { width: 5, depth: 5 },
+        origin: { x: 20, y: 64, z: 20 },
+      }),
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(s.world.nameAt({ x: 22, y: 65, z: 20 })).toBe('oak_door')
+    expect(s.world.nameAt({ x: 22, y: 66, z: 20 })).toBe('air') // the upper half is the door's own
+    expect(s.world.nameAt({ x: 22, y: 67, z: 20 })).toBe('oak_planks') // wall above the doorway
+    expect(s.world.nameAt({ x: 22, y: 68, z: 22 })).toBe('oak_planks') // roof
+    const blocks = s.world.log.filter((line) => line.startsWith('place') && !line.includes('torch'))
+    expect(blocks.at(-1)).toContain('oak_door') // the door comes after all the walls and the roof
+  })
+
+  it('reports the missing door like any other material', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 100)
+
+    const result = await s.skill.run(
+      request({
+        blueprint: 'house',
+        params: { width: 5, depth: 5 },
+        origin: { x: 20, y: 64, z: 20 },
+      }),
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { reason: 'missing_materials', detail: { missing: [{ name: 'oak_door', count: 1 }] } },
     })
   })
 })

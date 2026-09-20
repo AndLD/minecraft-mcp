@@ -168,6 +168,8 @@ import {
   SolidProvider,
   WallsProvider,
 } from './skills/building/providers/basic-providers.js'
+import { CustomBlueprintProvider } from './skills/building/providers/custom-provider.js'
+import { ShelterProvider, SmallHouseProvider } from './skills/building/providers/house-providers.js'
 import { PlanExecutor } from './skills/construction/plan-executor.js'
 import { SiteSafety } from './skills/construction/site-safety.js'
 import { StandingSpotChooser } from './skills/construction/standing-spot.js'
@@ -628,6 +630,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BoxProvider())
     .register(new SolidProvider())
     .register(new SingleBlockProvider())
+    .register(new SmallHouseProvider())
+    .register(new ShelterProvider())
+    .register(new CustomBlueprintProvider())
   const buildSkill = new BuildSkill({
     registry: blueprints,
     executor: planExecutor,

@@ -373,7 +373,10 @@ export class PlanExecutor {
       target: step.at,
       from: here,
       reserved,
-      avoid: this.insideOf(plan),
+      avoid: this.avoidOf(plan),
+      ...(step.kind === 'place' && step.alignAxis !== undefined
+        ? { alignAxis: step.alignAxis }
+        : {}),
     })
     if (spot === undefined)
       return { kind: 'retry', why: `no place to stand near ${this.where(step.at)}` }
@@ -468,6 +471,12 @@ export class PlanExecutor {
     progress.broken += 1
     await deps.drops.collectNear(at, context.signal)
     return { kind: 'done' }
+  }
+
+  /** Cells to avoid standing in: the volume being built, or, for a shelter built around the bot, everything outside it. */
+  private avoidOf(plan: WorkPlan): (cell: Position) => boolean {
+    const inside = this.insideOf(plan)
+    return plan.standing === 'inside' ? (cell) => !inside(cell) : inside
   }
 
   /** The volume the plan works in: standing inside it risks being sealed in by the last blocks. */

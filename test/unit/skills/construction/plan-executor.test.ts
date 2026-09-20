@@ -5,6 +5,8 @@ import {
   PlanExecutor,
   type PlanOptions,
 } from '../../../../src/skills/construction/plan-executor.js'
+import { planFor } from '../../../../src/skills/building/blueprint-plan.js'
+import { ShelterProvider } from '../../../../src/skills/building/providers/house-providers.js'
 import { SiteSafety } from '../../../../src/skills/construction/site-safety.js'
 import { StandingSpotChooser } from '../../../../src/skills/construction/standing-spot.js'
 import type { WorkPlan, WorkStep } from '../../../../src/skills/construction/work-plan.types.js'
@@ -151,6 +153,43 @@ describe('PlanExecutor: placing', () => {
       ok: true,
       value: { placed: 1 },
     })
+  })
+})
+
+describe('PlanExecutor: doors and shelters', () => {
+  it('stands in line with a door when it places it', async () => {
+    const s = setup()
+    s.world.give('oak_door', 1)
+    s.world.bot = at(20.5, 64, 30.5)
+    let standing: Position | undefined
+    s.world.onPlaced = () => {
+      standing = s.world.bot
+    }
+
+    const result = await s.executor.run(
+      plan({ kind: 'place', at: at(3, 64, 5), block: 'oak_door', alignAxis: 'z' }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(Math.floor(standing?.x ?? 0)).toBe(3)
+    expect(Math.abs(Math.floor(standing?.z ?? 0) - 5)).toBeGreaterThanOrEqual(1)
+  })
+
+  it('builds a shelter from the inside, without leaving it', async () => {
+    const s = setup()
+    s.world.give('cobblestone', 40)
+    s.world.bot = at(11.5, 64, 21.5)
+    const shelter = new ShelterProvider().generate({ block: 'cobblestone' })
+    const around = planFor(shelter, { x: 10, y: 64, z: 20 })
+
+    const result = await s.executor.run(around, options, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { placed: 32 } })
+    expect(s.world.trips).toEqual([]) // it never walked: everything was in reach from where it stood
+    expect(s.world.nameAt(at(11, 64, 21))).toBe('air') // the bot's own cell stays free
+    expect(s.world.nameAt(at(11, 66, 21))).toBe('cobblestone') // the roof above it
   })
 })
 

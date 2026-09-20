@@ -24,6 +24,8 @@ export interface SpotRequest {
    * sealed in by the last blocks.
    */
   readonly avoid?: (cell: Position) => boolean
+  /** The bot must stand in line with the target along this axis, one to three blocks away (see `WorkStep`). */
+  readonly alignAxis?: 'x' | 'z'
 }
 
 /**
@@ -62,6 +64,14 @@ export class StandingSpotChooser {
     return { x: best.spot.x + 0.5, y: best.spot.y, z: best.spot.z + 0.5 }
   }
 
+  /** In line with the target along the axis, one to three blocks away, at about the same height. */
+  private inLine(spot: Position, target: Position, axis: 'x' | 'z'): boolean {
+    const cell = this.cell(target)
+    const across = axis === 'z' ? spot.x - cell.x : spot.z - cell.z
+    const along = Math.abs(axis === 'z' ? spot.z - cell.z : spot.x - cell.x)
+    return across === 0 && along >= 1 && along <= 3 && Math.abs(spot.y - cell.y) <= 1
+  }
+
   private cell(position: Position): Position {
     return { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }
   }
@@ -69,6 +79,8 @@ export class StandingSpotChooser {
   private fits(spot: Position, request: SpotRequest): boolean {
     const head = { ...spot, y: spot.y + 1 }
     const below = { ...spot, y: spot.y - 1 }
+    if (request.alignAxis !== undefined && !this.inLine(spot, request.target, request.alignAxis))
+      return false
     if (request.reserved.has(cellKey(spot)) || request.reserved.has(cellKey(head))) return false
     if (cellKey(spot) === cellKey(request.target) || cellKey(head) === cellKey(request.target))
       return false

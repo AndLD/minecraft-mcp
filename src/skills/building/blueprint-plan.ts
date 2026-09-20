@@ -14,11 +14,13 @@ export function planFor(blueprint: Blueprint, origin: Position): WorkPlan {
   })
   return {
     name: blueprint.name,
+    ...(blueprint.standing === undefined ? {} : { standing: blueprint.standing }),
     steps: [
       ...blueprint.placements.map((p) => ({
         kind: 'place' as const,
         at: cell(p.dx, p.dy, p.dz),
         block: p.block,
+        ...(p.alignAxis === undefined ? {} : { alignAxis: p.alignAxis }),
       })),
       ...blueprint.lights.map((l) => ({
         kind: 'light' as const,

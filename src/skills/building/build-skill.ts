@@ -119,19 +119,25 @@ export class BuildSkill implements Skill<BuildInput, BuildOutput> {
           .join('; ')}. See list_blueprints.`,
       })
 
+    const blueprint = provider.generate(parsed.data)
     let origin = input.origin
     const defaultOrigin = origin === undefined
     if (origin === undefined) {
       const here = this.deps.vitals.read()?.position
       if (here === undefined)
         return err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })
-      origin = {
-        x: Math.floor(here.x) + DEFAULT_OFFSET_X,
-        y: Math.floor(here.y),
-        z: Math.floor(here.z),
-      }
+      const feet = { x: Math.floor(here.x), y: Math.floor(here.y), z: Math.floor(here.z) }
+      // A shelter is built around the bot: its anchor cell is where the bot stands. Otherwise beside the bot.
+      origin =
+        blueprint.anchor === undefined
+          ? { x: feet.x + DEFAULT_OFFSET_X, y: feet.y, z: feet.z }
+          : {
+              x: feet.x - blueprint.anchor.dx,
+              y: feet.y - blueprint.anchor.dy,
+              z: feet.z - blueprint.anchor.dz,
+            }
     }
-    return ok({ blueprint: provider.generate(parsed.data), origin, defaultOrigin })
+    return ok({ blueprint, origin, defaultOrigin })
   }
 
   private withHint(

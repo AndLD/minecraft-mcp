@@ -57,7 +57,7 @@ describe('building through the MCP server', () => {
     const listed = await h.call('list_blueprints')
 
     const names = (listed.data as { blueprints: { name: string }[] }).blueprints.map((b) => b.name)
-    expect(names).toEqual(['block', 'box', 'floor', 'solid', 'walls'])
+    expect(names).toEqual(['block', 'box', 'custom', 'floor', 'house', 'shelter', 'solid', 'walls'])
   })
 
   it('previews a build: origin, materials, and what is missing, without changing anything', async () => {
