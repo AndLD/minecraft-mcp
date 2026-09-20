@@ -51,10 +51,21 @@ function tunnelSteps(input: {
   const steps: WorkStep[] = []
   const cell = (i: number, a: number, b: number): Position =>
     add(add(add(input.origin, forward, i), right, a), UP, b)
+  // Every cell needs the one before it to be open: a cell that could only be reached through rock is not dug.
+  const before = (i: number, a: number, b: number): Position | undefined =>
+    b > 0 ? cell(i, a, b - 1) : a > 0 ? cell(i, a - 1, 0) : i > 0 ? cell(i - 1, 0, 0) : undefined
   for (let i = 0; i < input.length; i += 1) {
     for (let b = 0; b < input.height; b += 1)
-      for (let a = 0; a < input.width; a += 1)
-        steps.push({ kind: 'break', at: cell(i, a, b), branch: input.branch, probe })
+      for (let a = 0; a < input.width; a += 1) {
+        const needs = before(i, a, b)
+        steps.push({
+          kind: 'break',
+          at: cell(i, a, b),
+          branch: input.branch,
+          probe,
+          ...(needs === undefined ? {} : { needs }),
+        })
+      }
     if (input.torchSpacing > 0 && (i + 1) % input.torchSpacing === 0)
       steps.push({
         kind: 'light',
@@ -62,6 +73,7 @@ function tunnelSteps(input: {
         minLight: input.minLight,
         spacing: input.torchSpacing,
         required: true,
+        branch: input.branch,
       })
   }
   return steps
@@ -189,6 +201,7 @@ export class BranchMineProvider implements ExcavationProvider<z.output<typeof br
         minLight: p.min_light,
         spacing: 3,
         required: p.torch_spacing > 0,
+        branch: 'main',
       })
       for (const s of sides) {
         const sideVector = { x: right.x * s, y: 0, z: right.z * s }
@@ -200,8 +213,8 @@ export class BranchMineProvider implements ExcavationProvider<z.output<typeof br
               kind: 'break',
               at: add(add(junction, sideVector, k), UP, b),
               branch,
-              // The first cells leave the main tunnel at the junction: it has to be dug first.
-              ...(k === 1 && b === 0 ? { needs: junction } : {}),
+              // Each cell needs the one before it (the first: the junction on the main tunnel) to be open.
+              needs: b === 1 ? add(junction, sideVector, k) : add(junction, sideVector, k - 1),
               probe,
             })
           if (p.torch_spacing > 0 && k % p.torch_spacing === 0)
@@ -211,6 +224,7 @@ export class BranchMineProvider implements ExcavationProvider<z.output<typeof br
               minLight: p.min_light,
               spacing: p.torch_spacing,
               required: true,
+              branch,
             })
         }
       }
@@ -257,8 +271,15 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
     const steps: WorkStep[] = []
     for (let i = 0; i < p.depth; i += 1) {
       const foot = add(add(context.origin, forward, i), UP, -i)
+      const previousFoot = add(add(context.origin, forward, i - 1), UP, -(i - 1))
       for (let b = 0; b < 3; b += 1)
-        steps.push({ kind: 'break', at: add(foot, UP, b), branch: 'stairs', probe })
+        steps.push({
+          kind: 'break',
+          at: add(foot, UP, b),
+          branch: 'stairs',
+          probe,
+          ...(b > 0 ? { needs: add(foot, UP, b - 1) } : i > 0 ? { needs: previousFoot } : {}),
+        })
       if (p.torch_spacing > 0 && (i + 1) % p.torch_spacing === 0)
         steps.push({
           kind: 'light',
@@ -266,6 +287,7 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
           minLight: p.min_light,
           spacing: p.torch_spacing,
           required: true,
+          branch: 'stairs',
         })
     }
     return {

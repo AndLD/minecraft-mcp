@@ -20,6 +20,8 @@ export type WorkStep =
        * Without it the block is placed against whatever supports it, preferring the block below.
        */
       readonly against?: Position
+      /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
+      readonly branch?: string
     }
   /** Break whatever is in the cell. */
   | {
@@ -46,6 +48,8 @@ export type WorkStep =
       readonly spacing?: number
       /** Stop the plan with `no_torches` when there is none to place, instead of carrying on in the dark. */
       readonly required?: boolean
+      /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
+      readonly branch?: string
     }
 
 export interface WorkPlan {

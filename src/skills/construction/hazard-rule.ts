@@ -13,6 +13,16 @@ export type HazardReason =
   | 'player_block'
   | 'unloaded'
 
+/** What the dig knows about its own cells, so an opening it made itself is not mistaken for a cave. */
+export interface DigState {
+  /** The position of every step of the plan in the order it is worked, by cell. */
+  readonly order: ReadonlyMap<string, number>
+  /** This step's own position in that order. */
+  readonly index: number
+  /** Cells broken during this run (the plan's and ore veins'). */
+  readonly dug: ReadonlySet<string>
+}
+
 export interface Hazard {
   readonly reason: HazardReason
   /** The cell that stopped the dig (the fluid, the cavity, the spawner, ...). */
@@ -62,11 +72,11 @@ const isFalling = (name: string | undefined): boolean =>
 export class HazardRule {
   constructor(private readonly blocks: BlockScanner) {}
 
-  /** The hazard at a break step, or undefined when it is safe to break. `cells` are all cells the plan works on. */
+  /** The hazard at a break step, or undefined when it is safe to break. */
   check(
     step: Extract<WorkStep, { kind: 'break' }>,
     plan: WorkPlan,
-    cells: ReadonlySet<string>,
+    state: DigState,
   ): Hazard | undefined {
     const at = step.at
     const here = this.blocks.blockAt(at)
@@ -82,17 +92,25 @@ export class HazardRule {
     }
 
     const above = { x: at.x, y: at.y + 1, z: at.z }
-    if (isFalling(this.blocks.blockAt(above)) && !cells.has(cellKey(above)))
-      return { reason: 'falling_blocks', at: above }
+    // Sand or gravel above would fall into the opening, even when that cell is itself still to be dug.
+    if (isFalling(this.blocks.blockAt(above))) return { reason: 'falling_blocks', at: above }
 
     if (plan.cavityCheck === true) {
       for (const offset of step.probe ?? []) {
         const cell = { x: at.x + offset.x, y: at.y + offset.y, z: at.z + offset.z }
-        if (cells.has(cellKey(cell))) continue // part of the dig itself
+        if (this.isOurOwn(cell, state)) continue
         const name = this.blocks.blockAt(cell)
         if (name !== undefined && OPEN.has(name)) return { reason: 'cave_breakthrough', at: cell }
       }
     }
     return undefined
+  }
+
+  /** An opening the dig itself made or has already worked through (an earlier cell of the plan, a mined ore). */
+  private isOurOwn(cell: Position, state: DigState): boolean {
+    const key = cellKey(cell)
+    if (state.dug.has(key)) return true
+    const position = state.order.get(key)
+    return position !== undefined && position < state.index
   }
 }

@@ -153,6 +153,9 @@ export class PlanExecutor {
     let torches = 0
     let requiredTorches = 0
     let protectedArea: string | undefined
+    const dugBySteps = new Set(
+      plan.steps.filter((step) => step.kind === 'break').map((step) => cellKey(step.at)),
+    )
     for (const step of plan.steps) {
       protectedArea ??= deps.guard.protectedAt(step.at)?.label
       const found = deps.blocks.blockAt(step.at)
@@ -172,7 +175,7 @@ export class PlanExecutor {
       }
       toPlace += 1
       needs.set(step.block, (needs.get(step.block) ?? 0) + 1)
-      if (found !== undefined && !isReplaceable(found)) {
+      if (found !== undefined && !isReplaceable(found) && !dugBySteps.has(cellKey(step.at))) {
         if (options.clearObstacles) toBreak += 1
         else blocked.push(step.at)
       }
@@ -246,6 +249,8 @@ export class PlanExecutor {
     const skipped = new Set<StepKey>()
     const veinSeen = new Set<string>()
     this.planCells = new Set(plan.steps.map((step) => cellKey(step.at)))
+    this.order = new Map(plan.steps.map((step, index) => [cellKey(step.at), index]))
+    this.dug = new Set()
 
     for (let round = 0; round < ROUNDS; round += 1) {
       const pending = plan.steps.filter(
@@ -407,8 +412,11 @@ export class PlanExecutor {
     return pending.find((step) => this.available(step))
   }
 
-  /** Every cell the running plan works on (for the hazard rule). */
+  /** Every cell the running plan works on (used to tell ore veins from the plan), and each cell's place in the order. */
   private planCells: ReadonlySet<string> = new Set()
+  private order: ReadonlyMap<string, number> = new Map()
+  /** Cells broken during this run. */
+  private dug = new Set<string>()
 
   /** Whether a step can be done right now. */
   private available(step: WorkStep): boolean {
@@ -416,10 +424,15 @@ export class PlanExecutor {
       case 'place':
         return this.support(step.at, step.against) !== undefined
       case 'break':
-        return step.needs === undefined || isOpenAir(this.deps.blocks.blockAt(step.needs))
+        return step.needs === undefined || this.isOpening(this.deps.blocks.blockAt(step.needs))
       case 'light':
         return true
     }
+  }
+
+  /** A dug cell: open air, or one with a torch or ladder standing in it. */
+  private isOpening(name: string | undefined): boolean {
+    return isOpenAir(name) || (name !== undefined && PLACED_IN_OPENINGS.has(name))
   }
 
   /** Notes that a chain stopped early, once per chain and reason, counting the cells it left. */
@@ -454,7 +467,7 @@ export class PlanExecutor {
     for (const list of lists)
       for (let i = list.length - 1; i >= 0; i -= 1) {
         const other = list[i]
-        if (other?.kind !== 'break' || other.branch !== branch) continue
+        if (other?.branch !== branch) continue
         skipped.add(keyOf(other))
         this.recordEnded(ended, branch, hazard.reason, hazard.at)
         list.splice(i, 1)
@@ -635,7 +648,7 @@ export class PlanExecutor {
       case 'place':
         return isPlanned(step.block, found)
       case 'break':
-        return isOpenAir(found) || (found !== undefined && PLACED_IN_OPENINGS.has(found))
+        return this.isOpening(found)
       case 'light':
         return !this.deps.safety.needsTorch(step.at, step.minLight, step.spacing)
     }
@@ -689,10 +702,16 @@ export class PlanExecutor {
       )
 
     if (step.kind === 'break' && deps.hazard !== undefined) {
-      const hazard = deps.hazard.check(step, plan, this.planCells)
+      const hazard = deps.hazard.check(step, plan, {
+        order: this.order,
+        index: this.order.get(cellKey(step.at)) ?? Infinity,
+        dug: this.dug,
+      })
       if (hazard !== undefined) return { kind: 'end', hazard }
     }
     if (step.kind === 'light') {
+      // A torch goes into an open cell: never dig one out for it (the tunnel that would have made it ended early).
+      if (!this.isOpening(deps.blocks.blockAt(step.at))) return { kind: 'done' }
       if (!deps.safety.needsTorch(step.at, step.minLight, step.spacing)) return { kind: 'done' }
       if ((countItems(deps.inventory.snapshot()).get(TORCH) ?? 0) === 0) {
         // Lighting is a courtesy in a building; in a mine it is a rule.
@@ -837,6 +856,7 @@ export class PlanExecutor {
       return { kind: 'retry', why: dug.error.message }
     }
     progress.broken += 1
+    this.dug.add(cellKey(at))
     await deps.drops.collectNear(at, context.signal)
     return { kind: 'done' }
   }

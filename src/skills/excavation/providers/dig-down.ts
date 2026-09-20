@@ -50,6 +50,8 @@ export function digDown(spec: DigDown): WorkPlan {
         at: { x: spec.x0, y, z: ladderZ },
         block: 'ladder',
         against: { x: -1, y: 0, z: 0 },
+        // The ladder belongs to its column: when a hazard ends the column, no ladder goes further down.
+        branch: `column-0-${String(Math.floor(spec.length / 2))}`,
       })
   }
   return {
