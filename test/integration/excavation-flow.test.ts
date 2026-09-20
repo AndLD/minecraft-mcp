@@ -243,6 +243,7 @@ describe('excavating through the MCP server', () => {
       wait_seconds: 55,
     })
 
+    expect(task(result)).toMatchObject({ status: 'succeeded' })
     expect(nameAt(h, 13, 61, 5)).toBe('air') // the fourth step: 3 blocks east, 3 down
     expect(nameAt(h, 13, 60, 5)).toBe('dirt') // its floor
     expect(nameAt(h, 15, 59, 5)).toBe('torch') // the last step, with the torch the spacing calls for
