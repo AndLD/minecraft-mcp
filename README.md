@@ -90,6 +90,7 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 | Memory across sessions | Per-world saved state: the bot recognizes your world automatically, remembers landmarks, chests, standing instructions, and notes, offers to resume interrupted tasks, and briefs the agent on connect |
 | Hunting and food | Hunt cows, pigs, sheep, chickens; skip pets, named animals, and the last breeding pair; cook the meat; hunt when food runs low if you allow it |
 | Drop recovery | After a death the bot tells you where and recovers its items by itself (never entering lava or void without asking); leftover handover drops are collected back; say "skip it" and it leaves them and gives you the coordinates |
+| Teleport | "Teleport to me" puts the bot next to you when the server allows commands (cheats on, and the bot made an operator with `/op`); otherwise it explains exactly what to enable |
 | Handover | Give you items on request (from the inventory or chests) by dropping them at your feet, or into a chest for large amounts |
 | Storage | Remember chests you point at, keep item kinds in designated chests (or any chest), find items across chests, offload and return when the inventory is full |
 | Building | Place blocks from blueprints (floors, walls, shelters, simple houses), material checks *(planned)* |
