@@ -321,7 +321,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | State | `list_worlds`, `set_world_profile`, `resume_interrupted_task`, `discard_interrupted_task`, `get_recent_history`, `remember`, `recall`, `forget`, `set_standing_instruction`, `remove_standing_instruction` |
 | Chat | `wait_for_chat`, `say`, `whisper` |
 | Perception | `look_around`, `find_blocks`, `get_inventory`, `get_nearby_entities`, `get_player_position` |
-| Movement | `goto`, `follow_player`, `stop` |
+| Movement | `goto`, `follow_player`, `stop`, `lead_player` (not built yet) |
 | Gathering | `collect_block`, `pickup_items` |
 | Crafting | `craft`, `smelt`, `list_recipes` |
 | Protection | `protect_area`, `unprotect_area`, `list_protected_areas` |
