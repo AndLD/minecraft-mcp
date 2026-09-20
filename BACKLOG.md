@@ -49,6 +49,15 @@ The planned `room` shape in Phase 15 digs one room per call. To connect rooms to
 - **Approach:** one plan for the whole layout, so it resumes as one job, is checked for overlaps before anything is dug, and the preview lists every room and doorway. The same hazard rules apply to each room; a room that meets water or a cave ends only its own chain. One summary covers all rooms.
 - **Effort:** about half a session on top of the single room, in `feature/dug-rooms` after the `room` shape.
 
+### Take an item the player hands over ("take this pickaxe")
+
+Today the player throws an item on the ground and asks the agent to pick it up: `pickup_items` with the item name walks onto it, and the digger and the combat code then use the best tool, weapon, or armour the bot carries, so a diamond pickaxe replaces a wooden one without any crafting chain. What is missing is one spoken step: "take this pickaxe" while the player holds it out or throws it.
+
+- **Idea:** a `receive_item` tool: the bot goes to the player, says what it expects (or names the item the agent passed), and watches for a matching item that the player drops or throws near it, then picks it up and confirms in chat what it got. It waits a short time (about 30 s) and reports `nothing_received` when nothing comes.
+- **Approach:** built from what exists: `give_items`' reverse. The player lookup and walking to 1.5 blocks, `DroppedItemScanner` filtered by the wanted name and the player's position at the throw, `DropCollector` to pick it up, and the `DropIgnoreList` left out of the check so items from the player are never mistaken for junk the bot threw away itself. Only items that appear near the player after the request count, so old drops on the ground are not taken.
+- **Extra:** an optional "and use it" step, which equips the received tool or armour at once (`equipBestGear`) and says so in chat.
+- **Effort:** small, well under a session; needs a Docker e2e scenario where the owner bot throws an item and the bot ends up carrying it.
+
 ## Deferred from finished work
 
 ### Survival reflexes
