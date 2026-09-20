@@ -65,7 +65,7 @@ describe('build', () => {
       origin: { x: 10, y: 64, z: -3 },
       clearObstacles: true,
       fetchFromStorage: true,
-      scaffoldBlock: 'cobblestone',
+      scaffoldBlock: 'dirt',
       maxScaffoldHeight: 12,
       onInventoryFull: undefined,
     })
@@ -78,7 +78,7 @@ describe('build', () => {
         origin: { x: 10, y: 64, z: -3 },
         clear_obstacles: true,
         fetch_from_storage: true,
-        scaffold_block: 'cobblestone',
+        scaffold_block: 'dirt',
         max_scaffold_height: 12,
       },
     })
@@ -184,7 +184,7 @@ describe('place_block', () => {
       origin: { x: 3, y: 65, z: -2 },
       clearObstacles: false,
       fetchFromStorage: false,
-      scaffoldBlock: 'cobblestone',
+      scaffoldBlock: 'dirt',
       maxScaffoldHeight: 0,
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Place torch at 3, 65, -2' } })

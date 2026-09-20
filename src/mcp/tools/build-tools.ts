@@ -36,9 +36,9 @@ const buildShape = {
   scaffold_block: z
     .string()
     .min(1)
-    .default('cobblestone')
+    .default('dirt')
     .describe(
-      'The block the bot pillars up with when part of the building is too high to reach from the ground (default cobblestone). It takes the tower down afterwards and gets the blocks back.',
+      'The block the bot pillars up with when part of the building is too high to reach from the ground (default dirt). It takes the tower down afterwards and gets the blocks back, so choose one it can break with what it carries: dirt or sand by hand, cobblestone only with a pickaxe (by hand it drops nothing and would be lost).',
     ),
   max_scaffold_height: z
     .number()
@@ -208,7 +208,7 @@ export class PlaceBlockTool implements ToolDefinition<typeof placeSchema> {
       origin: { x: input.x, y: input.y, z: input.z },
       clearObstacles: input.clear_obstacles,
       fetchFromStorage: false,
-      scaffoldBlock: 'cobblestone',
+      scaffoldBlock: 'dirt',
       maxScaffoldHeight: 0,
     }
     return this.launcher.launch(
