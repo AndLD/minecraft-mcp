@@ -331,6 +331,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Storage | `register_container`, `label_container`, `list_containers`, `scan_containers`, `set_storage_rule`, `list_storage_rules`, `remove_storage_rule`, `deposit_items`, `withdraw_items`, `find_items`, `set_storage_policy` |
 | Building | `build`, `list_blueprints`, `place_block`, `preview_build` (blueprints: floor, walls, box, solid, block, house, shelter, custom) |
 | Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down, room: not built yet), `preview_excavation`, `list_excavations` |
+| Signs | `place_sign`, `edit_sign`, `remove_sign`, `read_signs` (not built yet) |
 | Site leveling | `flatten_area`, `preview_flatten` (cut, fill, and clear a rectangle to a level; not built yet) |
 | Railways | `plan_railway`, `build_railway`, `place_minecart` |
 | Sleeping | `sleep`, `set_respawn_point`, `place_bed`, `list_beds`, `set_sleep_policy` (never in the Nether or the End: a bed explodes there) |
