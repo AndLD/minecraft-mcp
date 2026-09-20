@@ -57,7 +57,7 @@ Left out of the farming feature in the plan: shearing sheep, milking cows, colle
 
 ### Gathering, crafting, smelting
 - **Blast furnace and smoker**: `smelt` only uses a regular furnace (twice as slow for ores and food).
-- **Reaching high logs**: tall tree trunks cannot be finished from the ground because the bot never pillars up. Options: allow towering with a safe block, or leave the top logs.
+- **Reaching high logs**: tall tree trunks cannot be finished from the ground because the bot never pillars up. Options: allow towering with a safe block, or leave the top logs. The pillar-up tower planned for building (`Scaffolder`) is the mechanism to reuse.
 - **Bare-floor mining**: asking for `stone` on a stone floor digs the floor blocks next to the bot (never the one underfoot). A "surface only" or "walls only" option could keep the ground intact.
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 
