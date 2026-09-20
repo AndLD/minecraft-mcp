@@ -514,6 +514,9 @@ export class FakeBot implements BotLike {
     const finish = (): void => {
       this.dug.push({ name: block.name, position: at })
       this.setBlock(at, 'air')
+      queueMicrotask(() => {
+        this.settle()
+      })
       const data = this.registry.blocksByName[block.name]
       const harvestable =
         data?.harvestTools === undefined ||
@@ -573,6 +576,7 @@ export class FakeBot implements BotLike {
     this.heldItem = this.count(name) > 0 ? { name, count: this.count(name) } : null
     this.setBlock(target, name)
     this.placed.push({ name, position: target })
+    this.settle()
     return Promise.resolve()
   }
 
@@ -694,8 +698,28 @@ export class FakeBot implements BotLike {
     return Promise.resolve()
   }
 
+  /** When true the bot jumps (1.25 blocks up) and falls until it stands on something solid, so it can pillar up. */
+  physics = false
+
   setControlState(control: 'jump' | 'sprint', active: boolean): void {
     this.controlStates.push({ control, active })
+    const position = this.entity?.position
+    if (this.physics && control === 'jump' && active && position !== undefined)
+      this.entity = { position: { ...position, y: Math.floor(position.y) + 1.25 } }
+  }
+
+  /** The bot falls until it stands on something solid (only with `physics`). */
+  private settle(): void {
+    const position = this.entity?.position
+    if (!this.physics || position === undefined) return
+    const solid = (y: number): boolean => {
+      const name = this.blocks.get(key({ x: position.x, y, z: position.z }))
+      return name !== undefined && !['air', 'cave_air', 'water', 'lava'].includes(name)
+    }
+    let y = Math.floor(position.y)
+    while (y > -64 && !solid(y - 1)) y -= 1
+    this.entity = { position: { ...position, y } }
+    this.pickUpNearby()
   }
 
   equip(itemType: number, slot: EquipSlot): Promise<void> {

@@ -5,6 +5,9 @@ import {
   PlanExecutor,
   type PlanOptions,
 } from '../../../../src/skills/construction/plan-executor.js'
+import { planFor } from '../../../../src/skills/building/blueprint-plan.js'
+import { ShelterProvider } from '../../../../src/skills/building/providers/house-providers.js'
+import { Scaffolder } from '../../../../src/skills/construction/scaffolder.js'
 import { SiteSafety } from '../../../../src/skills/construction/site-safety.js'
 import { StandingSpotChooser } from '../../../../src/skills/construction/standing-spot.js'
 import type { WorkPlan, WorkStep } from '../../../../src/skills/construction/work-plan.types.js'
@@ -38,6 +41,17 @@ function setup() {
     spots: new StandingSpotChooser(world),
     safety: new SiteSafety(world, world),
     scheduler,
+    scaffolder: new Scaffolder({
+      blocks: world,
+      placer: world,
+      digger: world,
+      locomotion: world,
+      navigator: world,
+      vitals: world,
+      guard: world,
+      drops,
+      scheduler,
+    }),
   })
   return { world, executor }
 }
@@ -151,6 +165,43 @@ describe('PlanExecutor: placing', () => {
       ok: true,
       value: { placed: 1 },
     })
+  })
+})
+
+describe('PlanExecutor: doors and shelters', () => {
+  it('stands in line with a door when it places it', async () => {
+    const s = setup()
+    s.world.give('oak_door', 1)
+    s.world.bot = at(20.5, 64, 30.5)
+    let standing: Position | undefined
+    s.world.onPlaced = () => {
+      standing = s.world.bot
+    }
+
+    const result = await s.executor.run(
+      plan({ kind: 'place', at: at(3, 64, 5), block: 'oak_door', alignAxis: 'z' }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(Math.floor(standing?.x ?? 0)).toBe(3)
+    expect(Math.abs(Math.floor(standing?.z ?? 0) - 5)).toBeGreaterThanOrEqual(1)
+  })
+
+  it('builds a shelter from the inside, without leaving it', async () => {
+    const s = setup()
+    s.world.give('cobblestone', 40)
+    s.world.bot = at(11.5, 64, 21.5)
+    const shelter = new ShelterProvider().generate({ block: 'cobblestone' })
+    const around = planFor(shelter, { x: 10, y: 64, z: 20 })
+
+    const result = await s.executor.run(around, options, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { placed: 32 } })
+    expect(s.world.trips).toEqual([]) // it never walked: everything was in reach from where it stood
+    expect(s.world.nameAt(at(11, 64, 21))).toBe('air') // the bot's own cell stays free
+    expect(s.world.nameAt(at(11, 66, 21))).toBe('cobblestone') // the roof above it
   })
 })
 
@@ -639,5 +690,178 @@ describe('PlanExecutor: lighting', () => {
     )
 
     expect(result).toMatchObject({ ok: true, value: { lights: 2 } })
+  })
+})
+
+describe('PlanExecutor: pillaring up', () => {
+  const tall: PlanOptions = {
+    clearObstacles: false,
+    scaffold: { block: 'cobblestone', maxHeight: 12 },
+  }
+  /** A wall three blocks wide and `height` high along x at z = 5, listed from the bottom up. */
+  const wall = (height: number): WorkStep[] => {
+    const steps: WorkStep[] = []
+    for (let y = 64; y < 64 + height; y += 1)
+      for (let x = 0; x < 3; x += 1) steps.push(place(x, y, 5, 'oak_planks'))
+    return steps
+  }
+  const scaffoldBlocksLeft = (world: ConstructionWorld): number =>
+    [...world.builtBlocks().values()].filter((name) => name === 'cobblestone').length
+
+  it('builds a wall higher than the reach from the ground, and leaves no tower behind', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+
+    const result = await s.executor.run(plan(...wall(9)), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { placed: 27 } })
+    expect(s.world.builtBlocks().size).toBe(27) // only the wall
+    expect(scaffoldBlocksLeft(s.world)).toBe(0)
+    expect(s.world.bot.y).toBe(64) // back on the ground
+    expect(s.world.carried.get('cobblestone')).toBe(10) // every scaffold block came back
+    expect(s.world.jumps).toBeGreaterThan(0)
+  })
+
+  it('does not pillar for a wall it can reach from the ground', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+
+    await s.executor.run(plan(...wall(4)), tall, skillContext().context)
+
+    expect(s.world.jumps).toBe(0)
+  })
+
+  it('fails on the high steps when pillaring is off, and does everything else', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+
+    const result = await s.executor.run(plan(...wall(9)), options, skillContext().context)
+
+    // The rows within reach are built; the rest has nothing to stand on to be reached.
+    expect(result).toMatchObject({ ok: false, error: { reason: 'unsupported_steps' } })
+    expect(s.world.builtBlocks().size).toBeGreaterThan(10)
+    expect(s.world.jumps).toBe(0)
+  })
+
+  it('previews the tower: how many steps are high, how tall it is, and the blocks it needs', () => {
+    const s = setup()
+    s.world.give('oak_planks', 27)
+
+    const preview = s.executor.preview(plan(...wall(9)), tall)
+
+    expect(preview.scaffold).toMatchObject({ block: 'cobblestone', steps: 9 })
+    expect(preview.scaffold?.height).toBeGreaterThanOrEqual(3)
+    expect(preview.missing).toEqual([{ name: 'cobblestone', count: preview.scaffold?.height }])
+    expect(preview.needs).toContainEqual({ name: 'cobblestone', count: preview.scaffold?.height })
+  })
+
+  it('previews no tower for a low wall, or when pillaring is off', () => {
+    const s = setup()
+
+    expect(s.executor.preview(plan(...wall(4)), tall).scaffold).toBeUndefined()
+    expect(s.executor.preview(plan(...wall(9)), options).scaffold).toBeUndefined()
+    expect(
+      s.executor.preview(plan(...wall(9)), {
+        ...tall,
+        scaffold: { block: 'cobblestone', maxHeight: 0 },
+      }).scaffold,
+    ).toBeUndefined()
+  })
+
+  it('refuses up front when the scaffold blocks are missing, and changes nothing', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+
+    const result = await s.executor.run(plan(...wall(9)), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'missing_materials' } })
+    expect(s.world.log).toEqual([])
+  })
+
+  it('counts the scaffold block together with the building block when they are the same', () => {
+    const s = setup()
+    s.world.give('cobblestone', 27)
+    const steps = wall(9).map((step) =>
+      step.kind === 'place' ? { ...step, block: 'cobblestone' } : step,
+    )
+
+    const preview = s.executor.preview(plan(...steps), tall)
+
+    expect(preview.missing[0]?.count).toBe(preview.scaffold?.height)
+  })
+
+  it('comes down first when cancelled up on the tower', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+    const { context, controller } = skillContext()
+    s.world.onPlaced = (position) => {
+      if (position.y >= 69 && s.world.bot.y > 66) controller.abort() // cancelled once it is high up
+    }
+
+    const result = await s.executor.run(plan(...wall(9)), tall, context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    expect(scaffoldBlocksLeft(s.world)).toBe(0)
+    expect(s.world.bot.y).toBe(64)
+  })
+
+  it('comes down when a step keeps failing up there', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+    s.world.stubbornCells.add('1,70,5')
+
+    const result = await s.executor.run(plan(...wall(9)), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'incomplete' } })
+    expect(scaffoldBlocksLeft(s.world)).toBe(0)
+    expect(s.world.bot.y).toBe(64)
+  })
+
+  it('reports steps for which no safe tower place exists', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+    // Everything around the wall is protected: there is nowhere to put the tower.
+    s.world.protectedBoxes.push({
+      label: 'garden',
+      contains: (p) => !(p.z === 5 && p.x >= 0 && p.x <= 2),
+    })
+
+    const result = await s.executor.run(plan(...wall(9)), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'incomplete' } })
+    expect(!result.ok && result.error.message).toContain('no safe place for a scaffold tower')
+    expect(s.world.jumps).toBe(0)
+  })
+
+  it('reports a tower that cannot be built', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 40)
+    s.world.give('cobblestone', 10)
+    s.world.canJump = false
+
+    const result = await s.executor.run(plan(...wall(9)), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'incomplete' } })
+    expect(s.world.bot.y).toBe(64)
+  })
+
+  it('raises the tower as needed for cells above the wall (a roof over a tall room)', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 80)
+    s.world.give('cobblestone', 10)
+    const steps = wall(9)
+    for (let x = 0; x < 3; x += 1)
+      steps.push(place(x, 73, 5, 'oak_planks'), place(x, 73, 6, 'oak_planks'))
+
+    const result = await s.executor.run(plan(...steps), tall, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(s.world.nameAt(at(1, 73, 6))).toBe('oak_planks')
+    expect(scaffoldBlocksLeft(s.world)).toBe(0)
   })
 })

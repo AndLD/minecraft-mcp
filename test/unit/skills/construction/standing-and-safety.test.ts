@@ -98,6 +98,52 @@ describe('StandingSpotChooser', () => {
     expect(spot).toEqual(at(2.5, 64, 2.5))
   })
 
+  it('lines up with the target along the axis when asked (a door has to face along the wall)', () => {
+    const world = new ConstructionWorld()
+    const chooser = new StandingSpotChooser(world)
+
+    const spot = chooser.choose({
+      target: at(3, 64, 5),
+      from: at(0.5, 64, 40),
+      reserved: new Set(),
+      alignAxis: 'z',
+    })
+
+    expect(spot).toBeDefined()
+    expect(Math.floor(spot?.x ?? 0)).toBe(3)
+    const along = Math.abs(Math.floor(spot?.z ?? 0) - 5)
+    expect(along).toBeGreaterThanOrEqual(1)
+    expect(along).toBeLessThanOrEqual(3)
+  })
+
+  it('does not keep a place that is beside the target when it has to be in line', () => {
+    const world = new ConstructionWorld()
+    const chooser = new StandingSpotChooser(world)
+
+    const spot = chooser.choose({
+      target: at(3, 64, 5),
+      from: at(1.5, 64, 5.5), // beside it: reaches, but not in line
+      reserved: new Set(),
+      alignAxis: 'z',
+    })
+
+    expect(Math.floor(spot?.x ?? 0)).toBe(3)
+  })
+
+  it('keeps the place when it is already in line', () => {
+    const world = new ConstructionWorld()
+    const from = at(3.5, 64, 2.5)
+
+    expect(
+      new StandingSpotChooser(world).choose({
+        target: at(3, 64, 5),
+        from,
+        reserved: new Set(),
+        alignAxis: 'z',
+      }),
+    ).toBe(from)
+  })
+
   it('avoids ground next to lava, and fluids', () => {
     const world = new ConstructionWorld()
     world.setBlock(at(4, 64, 3), 'lava')

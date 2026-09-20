@@ -168,7 +168,10 @@ import {
   SolidProvider,
   WallsProvider,
 } from './skills/building/providers/basic-providers.js'
+import { CustomBlueprintProvider } from './skills/building/providers/custom-provider.js'
+import { ShelterProvider, SmallHouseProvider } from './skills/building/providers/house-providers.js'
 import { PlanExecutor } from './skills/construction/plan-executor.js'
+import { Scaffolder } from './skills/construction/scaffolder.js'
 import { SiteSafety } from './skills/construction/site-safety.js'
 import { StandingSpotChooser } from './skills/construction/standing-spot.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
@@ -608,10 +611,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     full: inventoryFull,
   })
   // Construction: one engine (plans of block operations) and building as its first client.
+  const constructionPlacer = new MineflayerPlacer(connection)
+  const constructionDigger = new MineflayerDigger(connection)
   const planExecutor = new PlanExecutor({
     blocks,
-    placer: new MineflayerPlacer(connection),
-    digger: new MineflayerDigger(connection),
+    placer: constructionPlacer,
+    digger: constructionDigger,
     navigator,
     inventory,
     vitals,
@@ -621,6 +626,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     safety: new SiteSafety(blocks, new MineflayerLightReader(connection)),
     scheduler,
     full: inventoryFull,
+    scaffolder: new Scaffolder({
+      blocks,
+      placer: constructionPlacer,
+      digger: constructionDigger,
+      locomotion,
+      navigator,
+      vitals,
+      guard: protectedAreas,
+      drops: dropCollector,
+      scheduler,
+    }),
   })
   const blueprints = new BlueprintRegistry()
     .register(new FloorProvider())
@@ -628,6 +644,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BoxProvider())
     .register(new SolidProvider())
     .register(new SingleBlockProvider())
+    .register(new SmallHouseProvider())
+    .register(new ShelterProvider())
+    .register(new CustomBlueprintProvider())
   const buildSkill = new BuildSkill({
     registry: blueprints,
     executor: planExecutor,

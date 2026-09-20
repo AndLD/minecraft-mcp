@@ -21,6 +21,7 @@ async function start(setup: (bot: FakeBot) => void = () => undefined): Promise<H
       bot.setBlock({ x, y: 63, z }, 'dirt')
       for (let y = 64; y <= 72; y += 1) bot.setBlock({ x, y, z }, 'air')
     }
+  bot.physics = true
   setup(bot)
   const h = await createHarness({}, { bot })
   harness = h
@@ -57,7 +58,7 @@ describe('building through the MCP server', () => {
     const listed = await h.call('list_blueprints')
 
     const names = (listed.data as { blueprints: { name: string }[] }).blueprints.map((b) => b.name)
-    expect(names).toEqual(['block', 'box', 'floor', 'solid', 'walls'])
+    expect(names).toEqual(['block', 'box', 'custom', 'floor', 'house', 'shelter', 'solid', 'walls'])
   })
 
   it('previews a build: origin, materials, and what is missing, without changing anything', async () => {
@@ -256,5 +257,132 @@ describe('building through the MCP server', () => {
     expect(wrong.text).toContain('depth')
     expect(unknown.text).toContain('unknown_blueprint')
     expect(unknown.text).toContain('box')
+  })
+})
+
+describe('houses, shelters, custom shapes, and pillaring up through the MCP server', () => {
+  it('builds a house with a door in the doorway', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'oak_planks', count: 100 },
+        { name: 'oak_door', count: 1 },
+      ]
+    })
+
+    const result = await call(h, 'build', {
+      blueprint: 'house',
+      params: { width: 5, depth: 5 },
+      origin: { x: 20, y: 64, z: 0 },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { blueprint: 'house 5x5x3' },
+    })
+    expect(nameAt(h, 22, 65, 0)).toBe('oak_door') // the door stands in the doorway
+    expect(nameAt(h, 22, 67, 0)).toBe('oak_planks') // and there is wall above it
+    expect(nameAt(h, 22, 68, 2)).toBe('oak_planks') // roof
+    expect(nameAt(h, 22, 65, 2)).toBe('air') // inside
+    expect(h.bot.count('oak_door')).toBe(0)
+  })
+
+  it('builds an emergency shelter around the bot, from the inside', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [{ name: 'cobblestone', count: 40 }]
+    })
+
+    const preview = await h.call('preview_build', { blueprint: 'shelter' })
+    const result = await call(h, 'build', { blueprint: 'shelter', wait_seconds: 55 })
+
+    expect(preview.data).toMatchObject({
+      origin: { x: 9, y: 64, z: -6 },
+      defaultOrigin: true,
+      toPlace: 32,
+    })
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { placed: 32 } })
+    expect(nameAt(h, 10, 64, -5)).toBe('air') // the bot's own cell
+    expect(nameAt(h, 10, 66, -5)).toBe('cobblestone') // the roof over it
+    expect(nameAt(h, 9, 64, -5)).toBe('cobblestone') // a wall beside it
+    expect(h.bot.entity?.position).toEqual(HERE) // it never left the spot
+  })
+
+  it('builds a shape the agent describes itself', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'stone_bricks', count: 30 },
+        { name: 'torch', count: 2 },
+      ]
+    })
+
+    const result = await call(h, 'build', {
+      blueprint: 'custom',
+      params: {
+        name: 'tower base',
+        layers: [
+          ['###', '###', '###'],
+          ['###', '#.#', '###'],
+          ['#T#', '...', '###'],
+        ],
+        legend: { '#': 'stone_bricks', T: 'torch' },
+      },
+      origin: { x: 20, y: 64, z: 0 },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { blueprint: 'tower base', placed: 9 + 8 + 6 },
+    })
+    expect(nameAt(h, 21, 65, 1)).toBe('air')
+    expect(nameAt(h, 21, 66, 0)).toBe('torch')
+  })
+
+  it('previews and builds a tall house by pillaring up, and takes the tower down again', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'oak_planks', count: 400 },
+        { name: 'oak_door', count: 1 },
+        { name: 'dirt', count: 12 },
+      ]
+    })
+    const args = {
+      blueprint: 'house',
+      params: { width: 5, depth: 5, height: 8, lit: false },
+      origin: { x: 20, y: 64, z: 0 },
+    }
+
+    const preview = await h.call('preview_build', args)
+    const result = await call(h, 'build', { ...args, wait_seconds: 55 })
+
+    expect(preview.data).toMatchObject({ scaffold: { block: 'dirt' } })
+    expect(task(result)).toMatchObject({ status: 'succeeded' })
+    expect(nameAt(h, 22, 65, 0)).toBe('oak_door')
+    expect(nameAt(h, 20, 72, 4)).toBe('oak_planks') // the top wall layer, far above the reach from the ground
+    expect(nameAt(h, 22, 73, 2)).toBe('oak_planks') // the roof
+    // No scaffold left, every block back, and the bot on the ground.
+    for (let x = 14; x <= 30; x += 1)
+      for (let z = -6; z <= 8; z += 1)
+        for (let y = 64; y <= 75; y += 1) expect(nameAt(h, x, y, z) === 'dirt').toBe(false)
+    expect(h.bot.count('dirt')).toBe(12)
+    expect(h.bot.entity?.position.y).toBe(64)
+  })
+
+  it('does not pillar when the height limit is zero', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [{ name: 'oak_planks', count: 300 }]
+    })
+
+    const result = await call(h, 'build', {
+      blueprint: 'walls',
+      params: { width: 4, depth: 4, height: 9, block: 'oak_planks' },
+      origin: { x: 20, y: 64, z: 0 },
+      max_scaffold_height: 0,
+      wait_seconds: 55,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('no place to stand')
+    expect(h.bot.controlStates.filter((c) => c.control === 'jump')).toEqual([])
   })
 })

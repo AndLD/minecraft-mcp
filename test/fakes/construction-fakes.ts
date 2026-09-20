@@ -7,6 +7,7 @@ import type {
 } from '../../src/core/block-scanner.port.js'
 import type { DigAssessment, DigFailure, Digger } from '../../src/core/digger.port.js'
 import type { InventoryReader, InventorySnapshot } from '../../src/core/inventory.port.js'
+import type { Locomotion } from '../../src/core/locomotion.port.js'
 import type { LightReader } from '../../src/core/light-reader.port.js'
 import type {
   NavigationFailure,
@@ -48,7 +49,8 @@ export class ConstructionWorld
     InventoryReader,
     VitalsReader,
     LightReader,
-    AreaGuard
+    AreaGuard,
+    Locomotion
 {
   readonly cells = new Map<string, string>()
   readonly protectedBoxes: { label: string; contains: (p: Position) => boolean }[] = []
@@ -70,6 +72,9 @@ export class ConstructionWorld
   /** Blocks that need a tool to harvest. */
   needsTool = new Map<string, string>()
   hasTool = true
+  /** When false the bot cannot jump (something is wrong), so pillaring up fails. */
+  canJump = true
+  jumps = 0
   /** Called after every placement, so a test can react (for example abort). */
   onPlaced: (at: Position) => void = () => undefined
 
@@ -151,6 +156,20 @@ export class ConstructionWorld
     return Promise.resolve(ok(undefined))
   }
 
+  // Locomotion: a jump lifts the bot 1.25 blocks; it lands on whatever is below it when something changes.
+  setJump(active: boolean): void {
+    if (!active || !this.canJump) return
+    this.jumps += 1
+    this.bot = { ...this.bot, y: Math.floor(this.bot.y) + 1.25 }
+  }
+
+  /** The bot falls until it stands on something solid. */
+  private settle(): void {
+    let y = Math.floor(this.bot.y)
+    while (y > 0 && this.isSolid({ x: this.bot.x, y: y - 1, z: this.bot.z }) !== true) y -= 1
+    this.bot = { ...this.bot, y }
+  }
+
   // Placer
   placeAt(): Promise<Result<void, PlaceFailure>> {
     return Promise.resolve(err({ reason: 'failed', message: 'not used' }))
@@ -181,6 +200,7 @@ export class ConstructionWorld
     if (failure === 'ignored') return Promise.resolve(ok(undefined))
     this.setBlock(at, item)
     this.carried.set(item, (this.carried.get(item) ?? 0) - 1)
+    this.settle()
     this.onPlaced(at)
     return Promise.resolve(ok(undefined))
   }
@@ -203,7 +223,10 @@ export class ConstructionWorld
     const failure = this.digFailures.shift()
     if (failure !== undefined) return Promise.resolve(err(failure))
     this.log.push(`dig ${key(position)}`)
+    const name = this.nameAt(position)
     this.setBlock(position, 'air')
+    this.give(name, 1) // the drop is picked up at once
+    this.settle()
     return Promise.resolve(ok(undefined))
   }
 

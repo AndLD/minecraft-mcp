@@ -7,6 +7,8 @@ export interface Placement {
   readonly dz: number
   /** An item name that places this block. */
   readonly block: string
+  /** Doors: the axis the bot must stand along when placing it (see `WorkStep`). */
+  readonly alignAxis?: 'x' | 'z'
 }
 
 export interface Blueprint {
@@ -15,6 +17,13 @@ export interface Blueprint {
   readonly placements: readonly Placement[]
   /** Cells that get a torch when they are dark. */
   readonly lights: readonly { readonly dx: number; readonly dy: number; readonly dz: number }[]
+  /** Where the bot works from (default outside the building). */
+  readonly standing?: 'outside' | 'inside'
+  /**
+   * A cell of the blueprint that should be where the bot stands, when no origin is given (a shelter is built around
+   * the bot). Without it the default origin is beside the bot.
+   */
+  readonly anchor?: { readonly dx: number; readonly dy: number; readonly dz: number }
   /** Extent along x, y, and z. */
   readonly size: { readonly width: number; readonly height: number; readonly depth: number }
 }

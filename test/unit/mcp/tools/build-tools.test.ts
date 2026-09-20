@@ -65,6 +65,8 @@ describe('build', () => {
       origin: { x: 10, y: 64, z: -3 },
       clearObstacles: true,
       fetchFromStorage: true,
+      scaffoldBlock: 'dirt',
+      maxScaffoldHeight: 12,
       onInventoryFull: undefined,
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Build box' } })
@@ -76,8 +78,34 @@ describe('build', () => {
         origin: { x: 10, y: 64, z: -3 },
         clear_obstacles: true,
         fetch_from_storage: true,
+        scaffold_block: 'dirt',
+        max_scaffold_height: 12,
       },
     })
+  })
+
+  it('passes on the scaffold block and the height limit', async () => {
+    const s = setup()
+    const tool = new BuildTool(s.skill, s.launcher)
+
+    await tool.execute(
+      tool.inputSchema.parse({
+        blueprint: 'house',
+        scaffold_block: 'dirt',
+        max_scaffold_height: 0,
+      }),
+      context,
+    )
+
+    expect(s.inputs[0]).toMatchObject({ scaffoldBlock: 'dirt', maxScaffoldHeight: 0 })
+  })
+
+  it('limits the scaffold height', () => {
+    const tool = new BuildTool(setup().skill, setup().launcher)
+
+    expect(
+      tool.inputSchema.safeParse({ blueprint: 'house', max_scaffold_height: 40 }).success,
+    ).toBe(false)
   })
 
   it('uses defaults: no origin, nothing cleared', async () => {
@@ -156,6 +184,8 @@ describe('place_block', () => {
       origin: { x: 3, y: 65, z: -2 },
       clearObstacles: false,
       fetchFromStorage: false,
+      scaffoldBlock: 'dirt',
+      maxScaffoldHeight: 0,
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Place torch at 3, 65, -2' } })
   })
