@@ -115,6 +115,11 @@ import {
   PlaceBlockTool,
   PreviewBuildTool,
 } from './mcp/tools/build-tools.js'
+import {
+  ExcavateTool,
+  ListExcavationsTool,
+  PreviewExcavationTool,
+} from './mcp/tools/excavation-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -170,10 +175,23 @@ import {
 } from './skills/building/providers/basic-providers.js'
 import { CustomBlueprintProvider } from './skills/building/providers/custom-provider.js'
 import { ShelterProvider, SmallHouseProvider } from './skills/building/providers/house-providers.js'
+import { HazardRule } from './skills/construction/hazard-rule.js'
 import { PlanExecutor } from './skills/construction/plan-executor.js'
 import { Scaffolder } from './skills/construction/scaffolder.js'
 import { SiteSafety } from './skills/construction/site-safety.js'
 import { StandingSpotChooser } from './skills/construction/standing-spot.js'
+import { ExcavateSkill } from './skills/excavation/excavate-skill.js'
+import { ExcavationRegistry } from './skills/excavation/excavation-registry.js'
+import {
+  PitProvider,
+  QuarryProvider,
+  ShaftProvider,
+} from './skills/excavation/providers/dig-down.js'
+import {
+  BranchMineProvider,
+  StaircaseDownProvider,
+  TunnelProvider,
+} from './skills/excavation/providers/tunnels.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
 import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
@@ -626,6 +644,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     safety: new SiteSafety(blocks, new MineflayerLightReader(connection)),
     scheduler,
     full: inventoryFull,
+    hazard: new HazardRule(blocks),
     scaffolder: new Scaffolder({
       blocks,
       placer: constructionPlacer,
@@ -656,6 +675,24 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       withdrawer: withdrawItems,
       scanner: scanContainers,
     }),
+  })
+  const materialFetcher = new StorageMaterialFetcher({
+    inventory,
+    withdrawer: withdrawItems,
+    scanner: scanContainers,
+  })
+  const excavations = new ExcavationRegistry()
+    .register(new PitProvider())
+    .register(new ShaftProvider())
+    .register(new QuarryProvider())
+    .register(new TunnelProvider())
+    .register(new BranchMineProvider())
+    .register(new StaircaseDownProvider())
+  const excavateSkill = new ExcavateSkill({
+    registry: excavations,
+    executor: planExecutor,
+    vitals,
+    fetcher: materialFetcher,
   })
   const craftItem = new CraftItemSkill({
     book: recipes,
@@ -769,6 +806,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PreviewBuildTool(buildSkill))
     .register(new ListBlueprintsTool(blueprints))
     .register(new PlaceBlockTool(buildSkill, launcher))
+    .register(new ExcavateTool(excavateSkill, launcher))
+    .register(new PreviewExcavationTool(excavateSkill))
+    .register(new ListExcavationsTool(excavations))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))
