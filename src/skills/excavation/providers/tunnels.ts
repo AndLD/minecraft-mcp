@@ -267,7 +267,8 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
 
   generate(p: z.output<typeof stairParams>, context: ExcavationContext): WorkPlan {
     const { forward } = HEADINGS[p.direction]
-    const probe = probeAllBut(negate(forward))
+    // Not upwards: near the entrance the ceiling is the open sky, which is no cave.
+    const probe = probeAllBut(negate(forward), UP)
     const steps: WorkStep[] = []
     for (let i = 0; i < p.depth; i += 1) {
       const foot = add(add(context.origin, forward, i), UP, -i)

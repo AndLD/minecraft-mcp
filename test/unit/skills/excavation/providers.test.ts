@@ -399,6 +399,8 @@ describe('StaircaseDownProvider', () => {
 
     expect(lights(p).map((s) => s.at)).toEqual([at(5, 55, 0), at(11, 49, 0)])
     expect(p.cavityCheck).toBe(true)
+    // The ceiling near the entrance is the open sky, so the way up is not checked for caves.
+    expect(breaks(p)[0]?.probe?.some((o) => o.y === 1)).toBe(false)
   })
 })
 
