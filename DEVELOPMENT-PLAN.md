@@ -71,14 +71,15 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 12 Server commands and teleport | done, merged into `development` |
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); merged into `development` |
-| 15 Site preparation: leveling and dug rooms | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
-| 16 Railways | not started (added) |
-| 17 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
-| 18 Sleeping and respawn point | not started (added; small, can go right after teleport) |
-| 19 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
-| 20 World discovery, including caves and canyons | not started (cave flow added) |
-| 21 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
-| 22 Hardening and polish | not started (was 14, then 19, then 20, then 21) |
+| 15 Site preparation: leveling, dug rooms, and opening doors | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
+| 16 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
+| 17 Railways | not started (added) |
+| 18 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
+| 19 Sleeping and respawn point | not started (added; small, can go right after teleport) |
+| 20 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
+| 21 World discovery, including caves and canyons | not started (cave flow added) |
+| 22 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
+| 23 Hardening and polish | not started (was 14, then 19, then 20, then 21, then 22) |
 
 ## Phases
 
@@ -361,9 +362,9 @@ The bot can walk to you, but sometimes you want it next to you at once (it is fa
   - e2e: a 3×3×2 pit dug and verified through RCON; a small quarry (5×5, a few levels) with stair walls and a water pit: every step block exists, the bot walks out and in again, the pit holds water; a tunnel that stops one block before lava and before water placed by RCON, with the fluid untouched; a branch mine whose branch positions match the spacing; torches present where the rule says
 - **Exit criteria:** "dig a 3×3×2 pit" works; "dig a 5×5 quarry down to 9 above the bedrock with stair walls and a water landing, then a 50-block tunnel with side branches every 3 blocks, torches all the way" runs to the end (or stops for a stated reason such as lava, no torches, or no tools) and reports what it found.
 
-### Phase 15: Site preparation: leveling and dug rooms (1.75 sessions)
+### Phase 15: Site preparation: leveling, dug rooms, and opening doors (2 sessions)
 
-Two features that prepare a place for building or living, each on its own branch: `feature/site-leveling` (about 1 session) and `feature/dug-rooms` (about 0.75). Both are clients of the excavation machinery and the construction engine.
+Three features that prepare a place for building or living, each on its own branch: `feature/site-leveling` (about 1 session), `feature/dug-rooms` (about 0.75), and `feature/door-opening` (about 0.25). The first two are clients of the excavation machinery and the construction engine; the third belongs to movement.
 
 #### Site leveling (`feature/site-leveling`)
 
@@ -410,7 +411,40 @@ Preparing a plot for building: "get me a clean field for building, 20x10, on the
   - e2e: a solid stone hill built over RCON, the owner bot made to look at its wall (`world.face`): a 5x5x4 room with a 1x2 entrance and an oak door (and a 2x2 entrance with two doors), torches placed in the dark, and every cell checked through RCON; `entrance: player` waits, then continues after the entrance is cut by hand; water or lava behind the wall stops the dig one block short
 - **Exit criteria:** after "follow me" to a hill and "dig a room 5x5x4 behind this wall", the bot digs a 1x2 entrance into the wall the player is looking at and a lit 5x5x4 room behind it, and with "put a door here on finish" ends by hanging a door in the entrance; "I will dig you an entrance" makes it wait for the player instead of digging one.
 
-### Phase 16: Railways (2 sessions)
+#### Opening ordinary doors (`feature/door-opening`)
+
+Today a closed door is a wall for the bot: the movement library's door option is off (its own comment says it "causes issues", probably on servers other than Paper), so `goto` into a house with a closed wooden door fails as unreachable or stuck, and the bot cannot leave a room whose door it (or the player) closed. This makes ordinary doors work; **iron doors and buttons are the next phase.**
+
+- **Which blocks.** Wooden doors (`*_door` except iron), fence gates (`*_fence_gate`), and wooden trapdoors (`*_trapdoor` except iron), by a table in one place; anything else that is openable is left alone. An iron door or iron trapdoor is not handled here: navigation reports the reason `needs_switch` (the next phase deals with it) instead of trying.
+- **How, and the risk.** First a spike with a Docker e2e: turn on the library's own door handling in the safe movement profile and see whether it is reliable. If it is not, the bot handles doors itself in `NavigationRunner`: when the route ends at a closed openable block, or the bot is stuck right beside one, it opens it (a right click on the block), walks through, and continues. Either way the result is the same to the tools: `goto`, `follow_player`, and every task that walks can go through doors.
+- **Close behind.** After passing, the bot **closes the door or gate behind it** (default `close_doors: true`, also settable as a standing instruction), so animals do not get out of pens, monsters do not get into houses, and a house is not left open. A fence gate of a registered pen is always closed again. A door that was already open is left open, and one that cannot be closed (something in the doorway) is reported.
+- **Never through a locked way.** A door that will not open after two tries ends the walk as `door_stuck` with the place; the bot does not break doors down.
+- **Tests:**
+  - unit: the openable-block table (wooden doors, gates, trapdoors yes; iron no), open state read from the block, the open-pass-close sequence, closing behind only what it opened, a stuck door, `needs_switch` for iron, `close_doors: false`
+  - integration: `goto` into a room behind a closed door on a stateful fake world: the door is open while passing and closed afterwards
+  - e2e: a small house with a closed oak door: `goto` inside and back out, the door is closed after each pass (checked through RCON); a fence-gate pen: the bot passes and the gate is closed again; an iron door built over RCON: `goto` reports `needs_switch`
+- **Exit criteria:** "go inside the house" through a closed wooden door works and leaves the door closed; an iron door is reported, not attempted.
+
+### Phase 16: Iron doors and switches (¾ session)
+
+An iron door cannot be opened by hand. It opens while something powers it: a button, a lever, or a pressure plate, usually beside the door. The bot cannot see the redstone behind them, so this phase recognises switches by where they are and checks by trying. It follows Phase 15's ordinary door opening.
+
+- Branch: `feature/switches`. Reuses the door handling and `NavigationRunner` of Phase 15, and `LookTarget` for "the button I am looking at".
+- **Tools:**
+  - `press_switch`: press a button, toggle a lever, or step onto a plate at `at`, or the one the player looks at; the result says what happened to the door beside it, if any.
+  - `open_door`: open a door, ordinary or iron, by position or the one the player looks at, optionally walking through (`walk_through`) and closing or restoring things behind (`restore`, default true). For an iron door it finds and tries the switches itself (below).
+  - `find_switches`: read-only, lists the buttons, levers, and plates around a door or a position, with their kind and distance.
+- **`SwitchFinder`.** Around a closed iron door, within about 4 blocks and on the side the bot is on, it lists buttons (wood and stone), levers, and pressure plates, nearest first, with the wall or floor each is on. It cannot know the wiring, so it is a **ranked guess that is verified**: press the best candidate, watch whether the door's `open` state changes, and if not, try the next one, at most 4 candidates and 2 rounds. A door that stays shut is reported as `door_did_not_open` with what was tried.
+- **Timing.** A stone button holds the door open for about 1 second, a wooden one for 1.5 seconds, a lever until it is toggled back, and a plate while somebody stands on it. So `open_door` stands where both the switch and the door are within reach, presses, and **walks through at once** (`DoorPasser`); for a lever it goes through and then puts the lever back to how it was found (`restore`), so a house is not left open. A pressure plate in front of a door opens as the bot walks on it; the route does not avoid plates that lead to a door.
+- **Safety.** Buttons and levers can also fire dispensers, pistons, TNT, or traps, and the bot cannot tell. So: **a `SwitchPolicy` standing instruction** (`ask`, the default, `auto`, `never`, mirrored as a standing instruction like the other policies): with `ask`, a walk that meets an iron door fails with `iron_door_blocked` and the switches found, and the agent asks the player before `open_door`; with `auto` the bot tries the switches beside the door it needs by itself; with `never` it does not. Only switches **within 4 blocks of the door** are ever tried on its own; anything else needs the player to point at it or give its position. It never presses switches in a protected area's machinery unless the player names them, and it stops after the limits above. A pressed switch that seems to have done something else (blocks changed around, an explosion) ends the attempt and is reported.
+- **Navigation.** `goto` and the other walks report `iron_door_blocked` (with the candidates) instead of `needs_switch` when the policy is `ask`, and go through by themselves when it is `auto`.
+- **Tests:**
+  - unit: `SwitchFinder` (each kind, ranking, ignoring far or wrong-side switches), the press-verify-next loop and its limits, timing per button kind, the walk-through window, lever restore, `SwitchPolicy` (`ask`, `auto`, `never`), refusals, and `find_switches` changing nothing
+  - integration: `open_door` and `goto` through an iron door on a stateful fake world with a button and a lever
+  - e2e: an iron door with a stone button on the frame block beside it (over RCON): `open_door` with `walk_through` gets the bot in before the door closes; a lever door is left as it was found; a door with a decoy button that does nothing tries the next candidate; `find_switches` lists them; with policy `ask` `goto` reports `iron_door_blocked`
+- **Exit criteria:** "get into the house" through an iron door with a button beside it asks (or, with the standing instruction `auto`, simply does it), presses the button, walks in, and leaves the house as it was (a lever put back); a door that does not react is reported with what was tried.
+
+### Phase 17: Railways (2 sessions)
 
 - Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
 - **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
@@ -428,7 +462,7 @@ Preparing a plot for building: "get me a clean field for building, 20x10, on the
   - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
 - **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
 
-### Phase 17: Farming, crops, animals, and trees (3.25 sessions)
+### Phase 18: Farming, crops, animals, and trees (3.25 sessions)
 
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
@@ -469,7 +503,7 @@ Hunting takes animals from the world and never adds any, and food stops when the
   - e2e: a small farm with a cow pen, a chicken pen, and a wheat field: `discover_farm` proposes all three; after registering them as one group, `inspect_farm` reports the ripe and growing counts and the animal counts without changing a block, and `tend_farm` on the group harvests and replants the field, collects the eggs, and returns one summary with three parts; a gap cut into a fence shows up as a problem in `inspect_farm`; eggs summoned as items in a fenced pen with chickens: `collect_eggs` picks them all up, stores exactly 10% (rounded up) in a chest and throws the rest (the chest count is exact; with 64 eggs at least one chick appears, the chance of none being under 0.03%); `store_fraction: 1` stores everything; a full pen throws nothing; `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size; saplings planted around a point with the right spacing and grown with bone meal
 - **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair; "go check our farm near home" answers with one report over every pen and field of the group without changing anything, and "run the farm" tends all of them with one summary; "collect the eggs" stores a tenth in a chest and throws the rest into the pen for chicks (unless told otherwise or the pen is full); "plant a forest of 10 trees around the house" places 10 saplings with room to grow, and felling them later replants.
 
-### Phase 18: Sleeping and respawn point (1 session)
+### Phase 19: Sleeping and respawn point (1 session)
 
 Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes up at home instead of at the far-away world spawn, which also makes drop recovery quicker and safer), and sleeping skips the night.
 
@@ -494,7 +528,7 @@ Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes
   - e2e: at night the bot sleeps in a bed and the night is skipped when the server's sleeping percentage lets it; by day the respawn point is set and, after the bot is killed, it wakes up at the bed (position check); a destroyed bed makes it respawn at the spawn and report it; a zombie near the bed makes sleeping fail with the reason; in the Nether-guard case the tool refuses without touching the bed (unit and integration only: the e2e server has no Nether)
 - **Exit criteria:** "set your spawn at this bed" makes the bot respawn there after a death; at night "go to sleep" puts the bot to bed, and it tells you exactly what else is needed for the night to pass; it never uses a bed in the Nether or the End.
 
-### Phase 19: Signs (½ session)
+### Phase 20: Signs (½ session)
 
 Place a sign with text where the player says, and take one down again. Signs are how a player labels a chest, marks a farm, or names a room, and the bot only ever labels things in its own memory (`label_container`, `set_landmark`) with nothing visible in the world.
 
@@ -516,7 +550,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: a sign placed on a wall and a sign on the ground (blocks and text checked through RCON `data get block`), `edit_sign` changes the text, `remove_sign` removes the sign and the item ends in the inventory, a waxed sign (made over RCON) refuses editing but can be removed on request, a protected area refuses, and `read_signs` returns what the owner bot wrote
 - **Exit criteria:** "put a sign 'Iron' on this chest" (looking at the chest) hangs a wall sign with that text; "change it to 'Ores'" edits it; "take that sign down" removes exactly that sign and picks it up; "what do the signs here say?" lists their text.
 
-### Phase 20: World discovery, including caves and canyons (2 sessions)
+### Phase 21: World discovery, including caves and canyons (2 sessions)
 
 - `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
 - `StructureSignature` implementations detected from loaded chunks and entities:
@@ -544,7 +578,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
 - **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
 
-### Phase 21: Leading a player (½ session)
+### Phase 22: Leading a player (½ session)
 
 "Come to me and lead me to the village." A standalone feature, not part of discovery: the target can be a structure the bot found, a landmark (`home`), a registered container or farm, or plain coordinates, so it is useful with or without exploration. It builds on `Navigator`, the player lookup, `Gaze`, and chat.
 
@@ -567,7 +601,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: on flat ground the owner bot follows the bot to a target 40 blocks away (both end near it, and the chat calls stayed within the limit); when the owner walks perpendicular the bot stays within `lead_distance` of the owner and does not reach the target; a `stop` ends the task
 - **Exit criteria:** "come to me and lead me to the village" brings the bot to the player and then to the village, waiting and calling whenever the player falls behind, following the player if they wander, and saying when they have arrived.
 
-### Phase 22: Hardening and polish (1 session)
+### Phase 23: Hardening and polish (1 session)
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.

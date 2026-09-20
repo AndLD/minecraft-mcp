@@ -322,6 +322,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Chat | `wait_for_chat`, `say`, `whisper` |
 | Perception | `look_around`, `find_blocks`, `get_inventory`, `get_nearby_entities`, `get_player_position` |
 | Movement | `goto`, `follow_player`, `stop`, `lead_player` (not built yet) |
+| Doors | ordinary doors, gates, and trapdoors are opened by walking tools themselves (not built yet); `press_switch`, `open_door`, `find_switches` for iron doors and buttons, levers, and plates (not built yet) |
 | Gathering | `collect_block`, `pickup_items` |
 | Crafting | `craft`, `smelt`, `list_recipes` |
 | Protection | `protect_area`, `unprotect_area`, `list_protected_areas` |
