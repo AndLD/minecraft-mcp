@@ -26,6 +26,7 @@ import { MineflayerInventory } from './bot/mineflayer-inventory.js'
 import { MineflayerItemFacts } from './bot/mineflayer-item-facts.js'
 import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
+import { MineflayerDoorAccess } from './bot/mineflayer-door-access.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
@@ -232,6 +233,7 @@ import { FindItemsSkill } from './skills/storage/find-items-skill.js'
 import { InventoryFullHandler } from './skills/storage/inventory-full-handler.js'
 import { ScanContainersSkill } from './skills/storage/scan-containers-skill.js'
 import { WithdrawItemsSkill } from './skills/storage/withdraw-items-skill.js'
+import { DoorOpeningNavigator } from './skills/movement/door-opening-navigator.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
 import { TaskManager } from './tasks/task-manager.js'
@@ -300,13 +302,15 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const entities = new MineflayerEntityScanner(connection)
   const inventory = new MineflayerInventory(connection)
   const paths = new MineflayerPathDriver(connection, pathGoals)
-  const navigator = new MineflayerNavigator({
+  const rawNavigator = new MineflayerNavigator({
     holder: connection,
     driver: paths,
     entities,
     clock,
     scheduler,
   })
+  const doors = new MineflayerDoorAccess(connection)
+  const navigator = new DoorOpeningNavigator({ inner: rawNavigator, blocks, doors, logger })
   const tasks = new TaskManager({ clock, scheduler, logger })
   const stopHandler = overrides.stopHandler ?? tasks
   const lanDiscovery = new UdpLanDiscovery(socketFactory, scheduler)

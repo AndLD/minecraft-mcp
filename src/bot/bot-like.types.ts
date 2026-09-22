@@ -61,6 +61,8 @@ export interface BlockLike {
   readonly boundingBox?: string | undefined
   /** Light from torches and other sources at this block, 0 to 15 (not sunlight). */
   readonly light?: number | undefined
+  /** Block-state properties (doors, gates, and trapdoors carry `open: boolean`). */
+  getProperties?(): Readonly<Record<string, unknown>>
 }
 
 /** A crafting recipe as Mineflayer builds it. `delta` lists what changes in the inventory (ingredients negative). */
@@ -196,6 +198,8 @@ export interface BotLike {
   readonly inventoryWindow: ContainerWindowLike
   /** Uses the item in hand (a bucket is used this way, not placed as a block), on whatever the bot looks at. */
   activateItem(): void
+  /** Right-clicks a block (a door, gate, or trapdoor toggles open/closed; a button or lever is used this way too). */
+  activateBlock(block: BlockLike): Promise<void>
   /** Turns to face a point. */
   lookAt(point: Position, force?: boolean): Promise<void>
   /** Waits for game ticks (50 ms each). */

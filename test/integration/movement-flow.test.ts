@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from '@jest/globals'
+import { toVec3 } from '../../src/bot/vec3.js'
 import { createHarness, type Harness } from './support/app-harness.js'
 
 let harness: Harness | undefined
@@ -135,6 +136,70 @@ describe('movement through the MCP server', () => {
 
       expect(result.isError).toBe(true)
       expect(result.text).toContain('(reason: unreachable)')
+    })
+
+    it('opens a closed door in the way, walks through, and closes it behind the bot', async () => {
+      const h = await connected()
+      h.bot.registry = { ...h.bot.registry, blocksByName: { ...h.bot.registry.blocksByName, oak_door: { id: 900 } } }
+      const doorAt = { x: 5, y: 64, z: 5 }
+      h.bot.setBlock(doorAt, 'oak_door')
+
+      const pending = h.call('goto', { x: 10, y: 64, z: 10, wait_seconds: 10 })
+      await h.settle()
+      h.bot.pathfinder.failWith('NoPath') // the closed door blocks the first attempt
+      await h.settle()
+
+      expect(h.bot.activateBlockCalls).toEqual([doorAt]) // opened once, so far
+      expect(h.bot.blockAt(toVec3(doorAt))?.getProperties?.()).toEqual({ open: true })
+
+      h.bot.pathfinder.arrive() // the retried trip succeeds now that the door is open
+      const result = await pending
+      await h.settle()
+
+      expect(result.data).toMatchObject({ status: 'succeeded' })
+      expect(h.bot.pathfinder.gotoGoals).toHaveLength(2)
+      expect(h.bot.activateBlockCalls).toEqual([doorAt, doorAt]) // closed again behind the bot
+      expect(h.bot.blockAt(toVec3(doorAt))?.getProperties?.()).toEqual({ open: false })
+    })
+
+    it('leaves the door open when close_doors is false', async () => {
+      const h = await connected()
+      h.bot.registry = { ...h.bot.registry, blocksByName: { ...h.bot.registry.blocksByName, oak_door: { id: 900 } } }
+      const doorAt = { x: 5, y: 64, z: 5 }
+      h.bot.setBlock(doorAt, 'oak_door')
+
+      const pending = h.call('goto', {
+        x: 10,
+        y: 64,
+        z: 10,
+        wait_seconds: 10,
+        close_doors: false,
+      })
+      await h.settle()
+      h.bot.pathfinder.failWith('NoPath')
+      await h.settle()
+      h.bot.pathfinder.arrive()
+      const result = await pending
+
+      expect(result.data).toMatchObject({ status: 'succeeded' })
+      expect(h.bot.activateBlockCalls).toEqual([doorAt]) // opened, never closed again
+      expect(h.bot.blockAt(toVec3(doorAt))?.getProperties?.()).toEqual({ open: true })
+    })
+
+    it('reports needs_switch for an iron door instead of trying it', async () => {
+      const h = await connected()
+      h.bot.registry = { ...h.bot.registry, blocksByName: { ...h.bot.registry.blocksByName, iron_door: { id: 901 } } }
+      const doorAt = { x: 5, y: 64, z: 5 }
+      h.bot.setBlock(doorAt, 'iron_door')
+
+      const pending = h.call('goto', { x: 10, y: 64, z: 10, wait_seconds: 10 })
+      await h.settle()
+      h.bot.pathfinder.failWith('NoPath')
+      const result = await pending
+
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('(reason: needs_switch)')
+      expect(h.bot.activateBlockCalls).toEqual([]) // never tried to open it
     })
 
     it('gives up when the bot is stuck and stops the pathfinder', async () => {

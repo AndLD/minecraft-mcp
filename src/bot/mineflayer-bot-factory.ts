@@ -46,6 +46,9 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
     movements.canDig = false
     movements.allow1by1towers = false
     movements.scafoldingBlocks = []
+    // The plugin's own door option (canOpenDoors) was spiked and dropped: in a Docker e2e test it never
+    // found a path through a closed door at all (4/4 runs, "no_path"), matching its own source comment
+    // ("Causes issues. Probably due to none paper servers."). Doors are handled in NavigationRunner instead.
     bot.pathfinder.setMovements(movements)
     // Only now: Mineflayer's own crafting is injected as the bot joins and would overwrite ours.
     installWindowCrafter(bot)
