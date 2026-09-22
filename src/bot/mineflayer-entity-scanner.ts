@@ -44,6 +44,7 @@ export class MineflayerEntityScanner implements EntityScanner {
         origin === undefined || position === undefined
           ? undefined
           : distanceBetween(origin, position),
+      yaw: player.entity?.yaw,
     }
   }
 }

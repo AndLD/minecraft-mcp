@@ -72,7 +72,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`), cave sealing (`feature/excavation-cave-sealing`), and staircase target/width (`feature/excavation-staircase-target`) done; all merged into `development` |
 | 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
-| 16 Site preparation: leveling, dug rooms, and opening doors | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
+| 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms and door opening not started |
 | 17 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
 | 18 Railways | not started (added) |
 | 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
@@ -417,7 +417,16 @@ Found live: gathering a bulk terrain block (dirt, stone, cobblestone, sand, grav
 
 Three features that prepare a place for building or living, each on its own branch: `feature/site-leveling` (about 1 session), `feature/dug-rooms` (about 0.75), and `feature/door-opening` (about 0.25). The first two are clients of the excavation machinery and the construction engine; the third belongs to movement.
 
-#### Site leveling (`feature/site-leveling`)
+#### Site leveling (`feature/site-leveling`, done)
+
+**Built as planned, with a few narrowings, noted here rather than left silent:**
+- **Landmark saving (`label`) was not built.** `set_landmark`/`list_landmarks` are Phase 22 (discovery), not built yet, so there is nowhere to save a plot's name and bounds to. The result still reports `bounds` and `level` so the agent can pass them straight to `build`/`build_farm`.
+- **The height survey looks 30 blocks above and 30 below the resolved level (`SURVEY_REACH`), not the whole world column.** A plot whose fill or cut goes deeper than that is not supported (an edge case for ordinary building or farming ground; a deep hole is `too_deep` at 6 by default long before that limit is reached anyway).
+- **`MarkerFinder`'s search is centred on the bot, not the player** (the underlying `BlockScanner.findBlocks` has no "from position" of its own, the same as every other proximity search in this codebase). It also has to consider many more than a couple of nearest matches (`count: 400`, found while writing the e2e test): dirt and cobblestone are also ordinary terrain, so in a dirt-heavy area the closest 50 matches can all be buried ground with the two actual marker stacks never in the running. `radius` still defaults to 64 as planned.
+- **Cutting and filling run as two separate `PlanExecutor` passes** (not visible from the outside, but worth recording): a single combined plan would refuse up front with `missing_materials` for fill blocks the cut has not produced yet, since the executor checks what is carried once, before anything runs. Cutting first, then building the fill plan from what the cut actually gained, is what makes "little or nothing needs fetching" true.
+- **Tests:** unit for every pure piece (`facing.ts`: yaw snapping and the facing rectangle; `natural-terrain.ts`: the natural/vegetation/tree/player-made classification and fill-block picking; `height-survey.ts`; `marker-finder.ts`: a valid pair, one or none, more than two takes the nearest, isolation and height checks; `flatten-plan.ts`: cut top-down, cut vs cleared vs blocked, fill bottom-up, `surfaceBlock` only on top, `maxFillDepth`) plus `FlattenAreaSkill` itself (cut, fill, fill from what cutting produced, an explicit `fillBlock` override, `clearTrees`, `clearStructures`, every `level` mode including the `auto`/`y`/`markers` refusals and combinations, `too_large`, player not online/visible, fetching missing fill material from storage, a fill failure after the cut already finished); integration through the MCP tools on a stateful fake world (preview changes nothing, facing-derived and marker-derived plots, `blocked_cells` with and without `clear_structures`, `ambiguous_level`); e2e (`test/e2e/site-leveling`, real server via Docker) cutting a mound and filling a hole in a plot given by `origin`/`direction`/`width`/`length`, and refusing with `unsafe_site` when lava is in the plot.
+
+Original plan:
 
 Preparing a plot for building: "get me a clean field for building, 20x10, on the level I am standing on." Building, farming (a crop field, a pen), and railways all need flat, clear ground, and doing it by hand block by block is slow. This is the excavation machinery (break and place steps, the hazard rule, spoil handling) pointed at a *surface* instead of a hole: cut what is above the level, fill what is below it, clear what grows there.
 

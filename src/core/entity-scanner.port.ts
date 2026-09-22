@@ -18,6 +18,8 @@ export interface PlayerInfo {
   /** Undefined when the player is out of the bot's view distance. */
   readonly position: Position | undefined
   readonly distance: number | undefined
+  /** Where the player looks, in radians (yaw 0 faces -z, the same convention as `LookTarget`). Undefined when out of view. */
+  readonly yaw?: number | undefined
 }
 
 export interface EntityScanner {

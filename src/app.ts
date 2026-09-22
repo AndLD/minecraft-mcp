@@ -120,6 +120,7 @@ import {
   ListExcavationsTool,
   PreviewExcavationTool,
 } from './mcp/tools/excavation-tools.js'
+import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -194,6 +195,8 @@ import {
   StaircaseDownProvider,
   TunnelProvider,
 } from './skills/excavation/providers/tunnels.js'
+import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
+import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
 import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
@@ -719,6 +722,15 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inventory,
     excavate: excavateSkill,
   })
+  const flattenArea = new FlattenAreaSkill({
+    blocks,
+    entities,
+    vitals,
+    inventory,
+    executor: planExecutor,
+    markers: new MarkerFinder(blocks),
+    fetcher: materialFetcher,
+  })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -826,6 +838,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ExcavateTool(excavateSkill, launcher))
     .register(new PreviewExcavationTool(excavateSkill))
     .register(new ListExcavationsTool(excavations))
+    .register(new FlattenAreaTool(flattenArea, launcher, config.owner))
+    .register(new PreviewFlattenTool(flattenArea, config.owner))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))

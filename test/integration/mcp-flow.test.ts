@@ -85,6 +85,8 @@ describe('MCP server over an in-memory transport', () => {
         'excavate',
         'preview_excavation',
         'list_excavations',
+        'flatten_area',
+        'preview_flatten',
         'build',
         'preview_build',
         'list_blueprints',
