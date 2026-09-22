@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from '@jest/globals'
+import { toVec3 } from '../../src/bot/vec3.js'
 import { FakeBot } from '../fakes/fake-bot.js'
 import { createHarness, type Harness } from './support/app-harness.js'
 
@@ -69,6 +70,9 @@ const call = (h: Harness, name: string, args: Record<string, unknown> = {}) =>
 
 const task = (result: { data: unknown }): Record<string, unknown> =>
   result.data as Record<string, unknown>
+
+const nameAt = (h: Harness, x: number, y: number, z: number): string | undefined =>
+  h.bot.blockAt(toVec3({ x, y, z }))?.name
 
 describe('gathering, crafting, and smelting through the MCP server', () => {
   it('goes from trees to a wooden pickaxe: collect logs, craft planks, and a table is made on the way', async () => {
@@ -283,5 +287,68 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
 
     expect(unknown.text).toContain('unknown_item')
     expect(raw.text).toContain('no_recipe')
+  })
+
+  it('digs a small quarry for a big bulk-terrain request instead of scattered holes', async () => {
+    // One more solid layer below the floor, so drops from the second dug layer land on something and are not
+    // lost falling into the (otherwise unset, non-solid) void beneath the fixture's shallow floor.
+    const h = await start((bot) => {
+      for (let x = 8; x <= 18; x += 1)
+        for (let z = -8; z <= 2; z += 1) bot.setBlock({ x, y: 61, z }, 'bedrock')
+    })
+
+    const collected = await call(h, 'collect_block', {
+      blocks: ['dirt'],
+      count: 32,
+      wait_seconds: 45,
+    })
+
+    const result = task(collected).result as { layout: string; mined: number; shape?: string }
+    expect(task(collected).status).toBe('succeeded')
+    expect(result.layout).toBe('structured')
+    expect(result.shape).toContain('quarry')
+    expect(result.mined).toBeGreaterThanOrEqual(32)
+    // The footprint (2 blocks east of the bot at x=10,z=-5, per the shared default origin) is a contained block,
+    // not scattered single-block holes: both layers of a corner cell are open.
+    expect(nameAt(h, 12, 63, -5)).toBe('air')
+    expect(nameAt(h, 12, 62, -5)).toBe('air')
+    expect(h.bot.count('dirt')).toBeGreaterThanOrEqual(32)
+  })
+
+  it('still digs scattered for a small bulk-terrain request, unchanged', async () => {
+    const h = await start()
+
+    const collected = await call(h, 'collect_block', {
+      blocks: ['dirt'],
+      count: 3,
+      wait_seconds: 30,
+    })
+
+    const result = task(collected).result as { layout: string; mined: number }
+    expect(task(collected).status).toBe('succeeded')
+    expect(result.layout).toBe('scattered')
+    expect(result.mined).toBe(3)
+  })
+
+  it('falls back to scattered when the structured site is not suitable, and says why', async () => {
+    const h = await start()
+    // The default structured-dig origin (12, 63, -5) sits inside this protected area.
+    await h.call('protect_area', { label: 'base', x1: 10, y1: 60, z1: -10, x2: 20, y2: 70, z2: 0 })
+
+    const collected = await call(h, 'collect_block', {
+      blocks: ['dirt'],
+      count: 32,
+      wait_seconds: 45,
+    })
+
+    const result = task(collected).result as {
+      layout: string
+      mined: number
+      structuredFallbackReason?: string
+    }
+    expect(task(collected).status).toBe('succeeded')
+    expect(result.layout).toBe('scattered')
+    expect(result.mined).toBe(32)
+    expect(result.structuredFallbackReason).toMatch(/protected/)
   })
 })

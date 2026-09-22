@@ -1,8 +1,9 @@
 import { describe, expect, it } from '@jest/globals'
-import { ok } from '../../../../src/core/result.js'
+import { err, ok } from '../../../../src/core/result.js'
 import type { SkillContext, SkillResult } from '../../../../src/core/skill.types.js'
 import { TaskLauncher } from '../../../../src/mcp/task-launcher.js'
 import { CollectBlockTool } from '../../../../src/mcp/tools/collect-block-tool.js'
+import type { StructuredGatherSkill } from '../../../../src/skills/gathering/structured-gather-skill.js'
 import { CraftTool } from '../../../../src/mcp/tools/craft-tool.js'
 import { ListRecipesTool } from '../../../../src/mcp/tools/list-recipes-tool.js'
 import { PickupItemsTool } from '../../../../src/mcp/tools/pickup-items-tool.js'
@@ -61,7 +62,7 @@ describe('CollectBlockTool', () => {
   it('validates its arguments and applies defaults', () => {
     const { launcher } = launching()
     const { skill } = stubSkill('collect_block')
-    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, launcher)
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, undefined, launcher)
     const valid = (input: unknown): boolean => tool.inputSchema.safeParse(input).success
 
     expect(tool.inputSchema.parse({ blocks: ['oak_log'] })).toMatchObject({
@@ -80,7 +81,7 @@ describe('CollectBlockTool', () => {
   it('starts a task with the blocks, count, and distance, and returns it finished', async () => {
     const { launcher } = launching()
     const { skill, inputs } = stubSkill('collect_block', () => ok({ mined: 3 }))
-    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, launcher)
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, undefined, launcher)
 
     const result = await tool.execute(
       tool.inputSchema.parse({ blocks: ['oak_log', 'birch_log'], count: 3, max_distance: 20 }),
@@ -105,7 +106,7 @@ describe('CollectBlockTool', () => {
       input.onMined?.(8)
       return ok('done')
     })
-    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, launcher)
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, undefined, launcher)
 
     const started = await tool.execute(
       tool.inputSchema.parse({ blocks: ['oak_log'], count: 20 }),
@@ -129,11 +130,192 @@ describe('CollectBlockTool', () => {
       input.onMined?.(5)
       return ok('done')
     })
-    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, launcher)
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, undefined, launcher)
 
     await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], count: 5 }), context)
 
     expect(tasks.latest()?.resume?.arguments).toMatchObject({ count: 1 })
+  })
+})
+
+describe('CollectBlockTool: structured layout', () => {
+  function stubStructured(run: () => SkillResult<unknown> = () => ok({ mined: 32, gained: [] })) {
+    const inputs: unknown[] = []
+    return {
+      inputs,
+      structured: {
+        run: (input: unknown) => {
+          inputs.push(input)
+          return Promise.resolve(run())
+        },
+      } as unknown as StructuredGatherSkill,
+    }
+  }
+
+  it('never offers a structured dig when none is wired in, whatever the request', async () => {
+    const { launcher } = launching()
+    const { skill, inputs } = stubSkill('collect_block', () => ok({ mined: 32, gained: [] }))
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, undefined, launcher)
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32, layout: 'structured' }),
+      context,
+    )
+
+    expect(inputs).toHaveLength(1) // the scattered skill ran; nothing else to call
+  })
+
+  it('never offers a structured dig for a group, several names, or a non-terrain block', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () => ok({ mined: 32, gained: [] }))
+    const { structured, inputs } = stubStructured()
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['logs'], count: 32 }), context)
+    await tool.execute(tool.inputSchema.parse({ blocks: ['dirt', 'sand'], count: 32 }), context)
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32, layout: 'structured' }),
+      context,
+    ) // still structured-eligible: covered by the next test, kept out of this count
+    expect(inputs).toHaveLength(1) // only the last, terrain call reached the structured skill
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['iron_ore'], count: 32, layout: 'structured' }),
+      context,
+    )
+    expect(inputs).toHaveLength(1) // forcing "structured" on ore has no effect
+  })
+
+  it('layout: structured digs the shape even for a small count', async () => {
+    const { launcher } = launching()
+    const { skill, inputs: scatteredInputs } = stubSkill('collect_block', () =>
+      ok({ mined: 3, gained: [] }),
+    )
+    const { structured, inputs } = stubStructured()
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 3, layout: 'structured' }),
+      context,
+    )
+
+    expect(inputs).toEqual([{ block: 'dirt', count: 3, onInventoryFull: undefined }])
+    expect(scatteredInputs).toHaveLength(0)
+  })
+
+  it('layout: scattered never tries the structured dig, however big the count', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () => ok({ mined: 40, gained: [] }))
+    const { structured, inputs } = stubStructured()
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 40, layout: 'scattered' }),
+      context,
+    )
+
+    expect(inputs).toHaveLength(0)
+  })
+
+  it('auto switches at structured_threshold and below it', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () => ok({ mined: 10, gained: [] }))
+    const { structured, inputs } = stubStructured()
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['dirt'], count: 3 }), context) // below default 5
+    expect(inputs).toHaveLength(0)
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 3, structured_threshold: 3 }),
+      context,
+    )
+    expect(inputs).toHaveLength(1)
+  })
+
+  it('returns the structured result, tagged with its layout, on success', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () => ok({ mined: 999, gained: [] }))
+    const { structured } = stubStructured(() =>
+      ok({
+        mined: 32,
+        requested: 32,
+        gained: [{ name: 'dirt', count: 32 }],
+        shape: 'quarry',
+        origin: {},
+      }),
+    )
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32 }),
+      context,
+    )
+
+    expect(result).toMatchObject({
+      data: { result: { layout: 'structured', mined: 32, shape: 'quarry' } },
+    })
+  })
+
+  it('falls back to the scattered dig, with the reason, when the site is not suitable', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () =>
+      ok({ mined: 32, gained: [{ name: 'dirt', count: 32 }] }),
+    )
+    const { structured } = stubStructured(() =>
+      err({ reason: 'protected_area', message: 'The plan reaches into "base".' }),
+    )
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32 }),
+      context,
+    )
+
+    expect(result).toMatchObject({
+      data: {
+        result: {
+          layout: 'scattered',
+          mined: 32,
+          structuredFallbackReason: 'The plan reaches into "base".',
+        },
+      },
+    })
+  })
+
+  it('reports the scattered failure directly when the fallback dig itself fails', async () => {
+    const { launcher } = launching()
+    const { skill } = stubSkill('collect_block', () =>
+      err({ reason: 'block_not_found', message: 'No dirt found nearby.' }),
+    )
+    const { structured } = stubStructured(() =>
+      err({ reason: 'protected_area', message: 'The plan reaches into "base".' }),
+    )
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32 }),
+      context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('block_not_found') })
+  })
+
+  it('does not fall back and reports the failure directly when not connected', async () => {
+    const { launcher } = launching()
+    const { skill, inputs: scatteredInputs } = stubSkill('collect_block', () => ok({ mined: 0 }))
+    const { structured } = stubStructured(() =>
+      err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' }),
+    )
+    const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 32 }),
+      context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('not_connected') })
+    expect(scatteredInputs).toHaveLength(0) // never falls back for this reason
   })
 })
 

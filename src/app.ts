@@ -199,6 +199,7 @@ import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
 import { Workstations } from './skills/crafting/workstations.js'
 import { CollectBlocksSkill } from './skills/gathering/collect-blocks-skill.js'
+import { StructuredGatherSkill } from './skills/gathering/structured-gather-skill.js'
 import { DropCollector } from './skills/gathering/drop-collector.js'
 import { PickupItemsSkill } from './skills/gathering/pickup-items-skill.js'
 import { AttackEntitySkill } from './skills/hunting/attack-entity-skill.js'
@@ -712,6 +713,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     vitals,
     fetcher: materialFetcher,
   })
+  const structuredGather = new StructuredGatherSkill({
+    blocks,
+    vitals,
+    inventory,
+    excavate: excavateSkill,
+  })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -779,7 +786,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GetInventoryTool(inventory))
     .register(new GoToTool(new GoToSkill(navigator, blockFinder), launcher))
     .register(new FollowPlayerTool(new FollowPlayerSkill(navigator), launcher, config.owner))
-    .register(new CollectBlockTool(collectBlocks, launcher))
+    .register(new CollectBlockTool(collectBlocks, structuredGather, launcher))
     .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
     .register(new CraftTool(craftItem, launcher))
     .register(new SmeltTool(smeltItems, launcher))

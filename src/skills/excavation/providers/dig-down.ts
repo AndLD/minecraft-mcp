@@ -246,7 +246,7 @@ const sealFor = (p: {
   p.seal_caves ? { block: p.seal_block, fallback: 'dirt' } : undefined
 
 /** Default: the ground block two blocks east of the bot, so the first layer is the one the bot stands on. */
-const surfaceOrigin = (feet: Position): Position => {
+export const surfaceOrigin = (feet: Position): Position => {
   const cell = feetCell(feet)
   return { x: cell.x + 2, y: cell.y - 1, z: cell.z }
 }

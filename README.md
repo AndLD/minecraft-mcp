@@ -85,7 +85,7 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 | Communication | Listens to in-game chat, replies in chat, reports task progress |
 | Movement | Go to coordinates / player / block, follow, come here |
 | Perception | Nearby blocks, entities, inventory, health, time, biome |
-| Gathering | Collect N blocks of a type (wood, stone, ores) with the right tool, pick up drops; never digs in areas you protect; a big request for dirt, stone, or the like digs one tidy pit or quarry instead of scattered holes *(planned)* |
+| Gathering | Collect N blocks of a type (wood, stone, ores) with the right tool, pick up drops; never digs in areas you protect; a big request for dirt, stone, or the like digs one tidy pit or quarry instead of scattered holes |
 | Crafting | Craft items with automatic sub-recipes (logs to planks to sticks to a pickaxe), placing a crafting table when needed; smelt and cook in furnaces with automatic fuel |
 | Memory across sessions | Per-world saved state: the bot recognizes your world automatically, remembers landmarks, chests, standing instructions, and notes, offers to resume interrupted tasks, and briefs the agent on connect |
 | Hunting and food | Hunt cows, pigs, sheep, chickens; skip pets, named animals, and the last breeding pair; cook the meat; hunt when food runs low if you allow it |
