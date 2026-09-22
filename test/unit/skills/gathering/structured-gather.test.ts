@@ -52,10 +52,10 @@ describe('structuredSizeFor', () => {
 
     const size = structuredSizeFor(world, at(0, 63, 0), 'dirt', 32)
 
-    expect(size.width).toBeLessThanOrEqual(5)
-    expect(size.length).toBe(size.width)
-    expect(size.depth).toBeLessThanOrEqual(4)
-    expect(size.width * size.length * size.depth).toBeGreaterThanOrEqual(32)
+    expect(size?.width).toBeLessThanOrEqual(5)
+    expect(size?.length).toBe(size?.width)
+    expect(size?.depth).toBeLessThanOrEqual(4)
+    expect((size?.width ?? 0) * (size?.length ?? 0) * (size?.depth ?? 0)).toBeGreaterThanOrEqual(32)
   })
 
   it('never grows a side past 5, however large the count', () => {
@@ -63,8 +63,8 @@ describe('structuredSizeFor', () => {
 
     const size = structuredSizeFor(world, at(0, 63, 0), 'dirt', 500)
 
-    expect(size.width).toBe(5)
-    expect(size.length).toBe(5)
+    expect(size?.width).toBe(5)
+    expect(size?.length).toBe(5)
   })
 
   it('picks an exact-fit small footprint for a small count', () => {
@@ -72,7 +72,7 @@ describe('structuredSizeFor', () => {
 
     const size = structuredSizeFor(world, at(0, 63, 0), 'dirt', 8)
 
-    expect(size.width * size.length * size.depth).toBe(8)
+    expect((size?.width ?? 0) * (size?.length ?? 0) * (size?.depth ?? 0)).toBe(8)
   })
 
   it('widens instead of digging into a different layer below', () => {
@@ -87,15 +87,16 @@ describe('structuredSizeFor', () => {
 
     const size = structuredSizeFor(world, at(0, 63, 0), 'dirt', 32)
 
-    expect(size.depth).toBeLessThanOrEqual(2) // never deeper than the dirt actually goes
-    expect(size.width * size.length * size.depth).toBeGreaterThanOrEqual(32)
+    expect(size?.depth).toBeLessThanOrEqual(2) // never deeper than the dirt actually goes
+    expect((size?.width ?? 0) * (size?.length ?? 0) * (size?.depth ?? 0)).toBeGreaterThanOrEqual(32)
   })
 
-  it('still digs at least one layer when the very first cell does not match', () => {
-    const world = new ColumnScanner(63, 'stone') // the origin itself is not dirt
+  it('is undefined when the requested block is not even at the origin itself', () => {
+    // A stone wall away from the bot, say, while the origin (near its feet) is plain dirt.
+    const world = new ColumnScanner(63, 'stone')
 
     const size = structuredSizeFor(world, at(0, 63, 0), 'dirt', 10)
 
-    expect(size.depth).toBeGreaterThanOrEqual(1)
+    expect(size).toBeUndefined()
   })
 })

@@ -53,14 +53,17 @@ function matchingDepth(
 /**
  * The quarry size to dig for `count` of `block` starting at `origin`: a real quarry fills whatever the ground
  * actually holds, so if the matching block only goes a few layers deep here, the footprint widens instead of
- * digging on into whatever comes next (stone under a shallow dirt layer, for example).
+ * digging on into whatever comes next (stone under a shallow dirt layer, for example). `undefined` when the
+ * requested block is not even at the origin itself (a stone wall ten blocks off while standing on dirt, for
+ * example): digging here would just quarry whatever is actually underfoot, not what was asked for.
  */
 export function structuredSizeFor(
   blocks: BlockScanner,
   origin: Position,
   block: string,
   count: number,
-): QuarrySize {
-  const natural = Math.max(1, matchingDepth(blocks, origin, block, PROBE_DEPTH))
+): QuarrySize | undefined {
+  const natural = matchingDepth(blocks, origin, block, PROBE_DEPTH)
+  if (natural === 0) return undefined
   return sizeFor(count, Math.min(PREFERRED_MAX_DEPTH, natural))
 }

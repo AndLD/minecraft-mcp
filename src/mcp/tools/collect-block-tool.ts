@@ -16,7 +16,7 @@ import type { ToolContext, ToolDefinition } from '../tool.types.js'
 import { taskOptionsShape } from './task-schema.js'
 
 const DEFAULT_WAIT_SECONDS = 25
-const DEFAULT_STRUCTURED_THRESHOLD = 32
+const DEFAULT_STRUCTURED_THRESHOLD = 5
 
 const schema = z.object({
   blocks: z
@@ -54,7 +54,7 @@ const schema = z.object({
     .max(2304)
     .default(DEFAULT_STRUCTURED_THRESHOLD)
     .describe(
-      `Only with layout: "auto". The block count at or above which a bulk terrain request switches to a structured dig (default ${String(DEFAULT_STRUCTURED_THRESHOLD)}, about two stacks).`,
+      `Only with layout: "auto". The block count at or above which a bulk terrain request switches to a structured dig (default ${String(DEFAULT_STRUCTURED_THRESHOLD)}).`,
     ),
   on_inventory_full: z
     .enum(INVENTORY_FULL_KINDS)

@@ -223,11 +223,11 @@ describe('CollectBlockTool: structured layout', () => {
     const { structured, inputs } = stubStructured()
     const tool = new CollectBlockTool(skill as unknown as CollectBlocksSkill, structured, launcher)
 
-    await tool.execute(tool.inputSchema.parse({ blocks: ['dirt'], count: 10 }), context) // below default 32
+    await tool.execute(tool.inputSchema.parse({ blocks: ['dirt'], count: 3 }), context) // below default 5
     expect(inputs).toHaveLength(0)
 
     await tool.execute(
-      tool.inputSchema.parse({ blocks: ['dirt'], count: 10, structured_threshold: 10 }),
+      tool.inputSchema.parse({ blocks: ['dirt'], count: 3, structured_threshold: 3 }),
       context,
     )
     expect(inputs).toHaveLength(1)

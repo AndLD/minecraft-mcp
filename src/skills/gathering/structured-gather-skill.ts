@@ -54,8 +54,9 @@ export function isSiteUnsuitable(failure: SkillFailure): boolean {
 
 /**
  * Gathers a bulk terrain block by digging one small, contained quarry sized to the request, instead of a scatter
- * of single-block holes. A thin client of `ExcavateSkill`: the hazard rule, cave sealing, the walk-out stairs, and
- * the spoil and inventory-full policies all come from there, unchanged.
+ * of single-block holes. A thin client of `ExcavateSkill`: the hazard rule, cave sealing, the exit stairs (skipped
+ * for a single-layer dig, which needs none), and the spoil and inventory-full policies all come from there,
+ * unchanged.
  */
 export class StructuredGatherSkill implements Skill<StructuredGatherInput, StructuredGatherOutput> {
   readonly name = 'structured_gather'
@@ -73,7 +74,16 @@ export class StructuredGatherSkill implements Skill<StructuredGatherInput, Struc
 
     const origin = surfaceOrigin(vitals.position)
     const size = structuredSizeFor(deps.blocks, origin, input.block, input.count)
+    if (size === undefined)
+      return err({
+        reason: 'not_terrain_here',
+        message: `The ground at the dig site is not ${input.block}; digging there would gather the wrong material.`,
+      })
     const before = countItems(deps.inventory.snapshot())
+
+    // A single-layer dig is only ever a shallow depression, no deeper than the block just broken: the bot steps
+    // out of it the same way it steps up onto any other block, so a staircase around it would be pure overhead.
+    const exit = size.depth === 1 ? 'none' : 'stairs'
 
     const excavated = await deps.excavate.run(
       {
@@ -82,7 +92,7 @@ export class StructuredGatherSkill implements Skill<StructuredGatherInput, Struc
           width: size.width,
           length: size.length,
           to_y: origin.y - size.depth + 1,
-          exit: 'stairs',
+          exit,
           water_landing: false,
         },
         origin,

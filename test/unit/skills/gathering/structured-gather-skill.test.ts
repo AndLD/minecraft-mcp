@@ -54,8 +54,15 @@ function setup() {
 }
 
 describe('StructuredGatherSkill', () => {
-  it('digs a quarry sized to the count, with a stair exit and no material fetching', async () => {
+  it('digs a quarry sized to the count, with a stair exit and no material fetching, when it goes several layers deep', async () => {
     const s = setup()
+    // Four layers of matching block below the origin, so the sizing picks more than one layer and needs an exit.
+    const origin = { x: 12, y: 62, z: 5 }
+    for (let depth = 0; depth < 4; depth += 1)
+      s.blocks.blockNames.set(
+        `${String(origin.x)},${String(origin.y - depth)},${String(origin.z)}`,
+        'dirt',
+      )
 
     const result = await s.skill.run({ block: 'dirt', count: 32 }, context)
 
@@ -70,8 +77,20 @@ describe('StructuredGatherSkill', () => {
     expect(params.width * params.length).toBeGreaterThan(0)
   })
 
+  it('digs no exit for a single-layer dig: there is nothing to climb out of', async () => {
+    const s = setup()
+    // Only the origin cell itself is dirt; the layer below is not, so the natural depth is exactly 1.
+    s.blocks.blockNames.set('12,62,5', 'dirt')
+
+    const result = await s.skill.run({ block: 'dirt', count: 32 }, context)
+
+    expect(result.ok).toBe(true)
+    expect(s.calls[0]?.input).toMatchObject({ params: { exit: 'none' } })
+  })
+
   it('reports what the inventory gained, not just what was targeted', async () => {
     const blocks = new FakeBlockScanner()
+    blocks.blockNames.set('12,62,5', 'dirt') // the origin, so the site is recognised as dirt
     const vitals = new FakeVitals()
     vitals.vitals = buildVitals({ position: { x: 10, y: 63, z: 5 } })
     const inventory = new FakeInventory()
@@ -111,6 +130,15 @@ describe('StructuredGatherSkill', () => {
     })
   })
 
+  it('reports not_terrain_here without excavating when the requested block is not at the site', async () => {
+    const s = setup() // default FakeBlockScanner: blockAt returns undefined everywhere, never 'dirt'
+
+    const result = await s.skill.run({ block: 'dirt', count: 32 }, context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'not_terrain_here' } })
+    expect(s.calls).toHaveLength(0)
+  })
+
   it('reports not_connected without excavating when the bot has no position', async () => {
     const s = setup()
     s.vitals.vitals = undefined
@@ -123,6 +151,7 @@ describe('StructuredGatherSkill', () => {
 
   it('passes an excavate failure straight through', async () => {
     const s = setup()
+    s.blocks.blockNames.set('12,62,5', 'dirt') // the origin, so the site is recognised as dirt
     s.setResult(err({ reason: 'protected_area', message: 'The plan reaches into "base".' }))
 
     const result = await s.skill.run({ block: 'dirt', count: 32 }, context)
