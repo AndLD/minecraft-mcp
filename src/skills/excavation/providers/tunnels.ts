@@ -266,53 +266,153 @@ export class BranchMineProvider implements ExcavationProvider<z.output<typeof br
   }
 }
 
-const stairParams = z.object({
-  direction: directionParam,
-  depth: z
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_LENGTH)
-    .describe(
-      `How many steps down (each step goes one block forward and one down; 1 to ${String(MAX_LENGTH)}).`,
-    ),
-  ...lightParams,
-  ...sealParams,
-})
+/** The default target when neither `depth`, `to_y`, nor `above_bedrock` is given: the same as `quarry`. */
+const DEFAULT_STAIR_ABOVE_BEDROCK = 9
+
+const stairParams = z
+  .object({
+    direction: directionParam,
+    depth: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_LENGTH)
+      .optional()
+      .describe(
+        `An exact number of steps down instead of a target level (each step goes one block forward and one down; ` +
+          `1 to ${String(MAX_LENGTH)}). Give this or a target level (to_y/above_bedrock), not both; with none of the ` +
+          `three, the default target is above_bedrock: ${String(DEFAULT_STAIR_ABOVE_BEDROCK)}.`,
+      ),
+    to_y: z
+      .number()
+      .int()
+      .optional()
+      .describe(
+        'Go down to this height (the last step is at this y). Give this or above_bedrock, not both.',
+      ),
+    above_bedrock: z
+      .number()
+      .int()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        'Go down to this many layers above the lowest layer of the world (-64 in the overworld, so 9 means y = -55; ' +
+          `0 in the Nether and the End). This is the default target, with ${String(DEFAULT_STAIR_ABOVE_BEDROCK)}, when ` +
+          'none of this, to_y, or depth is given.',
+      ),
+    stair_width: z
+      .number()
+      .int()
+      .min(1)
+      .max(8)
+      .default(2)
+      .describe(
+        'How many cells wide the staircase is, across the direction of travel (default 2: room for the bot and a ' +
+          'following player side by side). Every step is dug this wide, not only the exit.',
+      ),
+    stair_height: z
+      .number()
+      .int()
+      .min(2)
+      .max(8)
+      .default(4)
+      .describe('How many cells tall the headroom is at each step (default 4).'),
+    ...lightParams,
+    ...sealParams,
+  })
+  .refine((p) => p.to_y === undefined || p.above_bedrock === undefined, {
+    message: 'Give either to_y or above_bedrock, not both.',
+  })
+  .refine((p) => p.depth === undefined || (p.to_y === undefined && p.above_bedrock === undefined), {
+    message: 'Give either depth or a target level (to_y/above_bedrock), not both.',
+  })
+
+interface StairTarget {
+  readonly depth: number
+  /** How the target appears in the plan's name: "N down" for an explicit depth, "to y=N" for a target level. */
+  readonly label: string
+}
+
+/** Turns `depth`, `to_y`, or `above_bedrock` into a step count and a name label, or why it cannot be dug. */
+function resolveStairTarget(
+  p: { readonly depth?: number; readonly to_y?: number; readonly above_bedrock?: number },
+  context: ExcavationContext,
+): StairTarget | { readonly error: string } {
+  if (p.depth !== undefined) return { depth: p.depth, label: `${String(p.depth)} down` }
+  const bottom = p.to_y ?? context.minY + (p.above_bedrock ?? DEFAULT_STAIR_ABOVE_BEDROCK)
+  if (bottom < context.minY + 1)
+    return {
+      error: `The target level y = ${String(bottom)} is at or below the bedrock (the lowest layer is ${String(context.minY)}).`,
+    }
+  const depth = context.origin.y - bottom + 1
+  if (depth < 1)
+    return {
+      error: `The target level y = ${String(bottom)} is above where the dig starts (y = ${String(context.origin.y)}).`,
+    }
+  return { depth, label: `to y=${String(bottom)}` }
+}
 
 export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof stairParams>> {
   readonly name = 'staircase_down'
   readonly description =
-    'A staircase descending in a `direction`: `depth` steps, each one block forward and one down, one block wide and ' +
-    "three high so the bot can walk it. It starts where the bot stands (the first step is the bot's own cell). Use it to " +
-    'go underground or to reach the bottom of a pit on foot. Torches are placed about every `torch_spacing` steps.'
+    'A staircase descending in a `direction`, `stair_width` (default 2) cells wide and `stair_height` (default 4) cells ' +
+    'tall so the bot (and a following player) can walk it two abreast. Depth is a target level, `to_y` or `above_bedrock` ' +
+    '(default 9 above the bedrock, the same as quarry), or an exact `depth` in steps instead. It starts where the bot ' +
+    "stands (the first step is the bot's own cell). Use it to go underground or to reach the bottom of a pit on foot. " +
+    'Torches are placed about every `torch_spacing` steps.'
   readonly params = stairParams
 
   defaultOrigin(feet: Position): Position {
     return feetCell(feet)
   }
 
-  generate(p: z.output<typeof stairParams>, context: ExcavationContext): WorkPlan {
-    const { forward } = HEADINGS[p.direction]
+  generate(
+    p: z.output<typeof stairParams>,
+    context: ExcavationContext,
+  ): WorkPlan | { error: string } {
+    const target = resolveStairTarget(p, context)
+    if ('error' in target) return target
+    if (target.depth > MAX_LENGTH)
+      return {
+        error: `That is ${String(target.depth)} steps deep; the limit is ${String(MAX_LENGTH)}.`,
+      }
+
+    const { forward, right } = HEADINGS[p.direction]
     // Not upwards: near the entrance the ceiling is the open sky, which is no cave.
     const probe = probeAllBut(negate(forward), UP)
     const seal = sealFor(p)
     const steps: WorkStep[] = []
-    for (let i = 0; i < p.depth; i += 1) {
-      const foot = add(add(context.origin, forward, i), UP, -i)
-      const previousFoot = add(add(context.origin, forward, i - 1), UP, -(i - 1))
-      // The tread (one below foot) is never dug or built by this plan and is assumed solid; seal it when a cave
-      // may have hollowed it out, so every step has something underfoot.
-      if (seal !== undefined)
-        steps.push({ kind: 'seal', at: add(foot, UP, -1), block: seal.block, branch: 'stairs' })
-      for (let b = 0; b < 3; b += 1)
-        steps.push({
-          kind: 'break',
-          at: add(foot, UP, b),
-          branch: 'stairs',
-          probe,
-          ...(b > 0 ? { needs: add(foot, UP, b - 1) } : i > 0 ? { needs: previousFoot } : {}),
-        })
+    const footAt = (i: number): Position => add(add(context.origin, forward, i), UP, -i)
+    for (let i = 0; i < target.depth; i += 1) {
+      const foot = footAt(i)
+      for (let a = 0; a < p.stair_width; a += 1) {
+        const base = add(foot, right, a)
+        // The tread (one below the step) is never dug or built by this plan and is assumed solid; seal it when a
+        // cave may have hollowed it out, so every cell of the step has something underfoot.
+        if (seal !== undefined)
+          steps.push({ kind: 'seal', at: add(base, UP, -1), block: seal.block, branch: 'stairs' })
+        for (let b = 0; b < p.stair_height; b += 1) {
+          // Vertically, a cell needs the one below it; at the tread, a cell needs its neighbour towards the spine
+          // (so the step is dug from the centre outward, never from a distance), and the spine cell of the first
+          // step of a step needs the spine cell of the step before it.
+          const needs: Position | undefined =
+            b > 0
+              ? add(base, UP, b - 1)
+              : a > 0
+                ? add(foot, right, a - 1)
+                : i > 0
+                  ? footAt(i - 1)
+                  : undefined
+          steps.push({
+            kind: 'break',
+            at: add(base, UP, b),
+            branch: 'stairs',
+            probe,
+            ...(needs === undefined ? {} : { needs }),
+          })
+        }
+      }
       if (p.torch_spacing > 0 && (i + 1) % p.torch_spacing === 0)
         steps.push({
           kind: 'light',
@@ -324,7 +424,7 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
         })
     }
     return {
-      name: `staircase ${String(p.depth)} down ${p.direction}`,
+      name: `staircase ${target.label} ${p.direction}`,
       steps,
       standing: 'inside',
       hazards: 'end_branch',

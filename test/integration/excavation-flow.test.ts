@@ -293,6 +293,25 @@ describe('excavating through the MCP server', () => {
     expect(nameAt(h, 15, 59, 5)).toBe('torch') // the last step, with the torch the spacing calls for
   })
 
+  it('digs a staircase to a target level, fully walkable across a wider corridor', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [{ name: 'iron_pickaxe', count: 1 }]
+    })
+
+    const result = await call(h, 'excavate', {
+      shape: 'staircase_down',
+      params: { direction: 'east', to_y: 55, stair_width: 3, torch_spacing: 0 },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded' })
+    // Origin y = 64 (the bot's own cell): 10 steps reach y = 55, the last one 9 blocks east, 9 down.
+    for (const z of [5, 6, 7]) {
+      expect(nameAt(h, 19, 55, z)).toBe('air')
+      expect(nameAt(h, 19, 54, z)).toBe('dirt') // its floor, untouched
+    }
+  })
+
   it('refuses a dig that would reach into a protected area', async () => {
     const h = await start()
     await h.call('protect_area', { label: 'house', x1: 10, y1: 50, z1: 0, x2: 20, y2: 70, z2: 10 })

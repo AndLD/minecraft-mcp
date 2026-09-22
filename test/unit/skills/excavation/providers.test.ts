@@ -593,8 +593,8 @@ describe('StaircaseDownProvider', () => {
       stairs.generate(stairs.params.parse({ direction: 'east', ...params }), context(at(0, 60, 0))),
     )
 
-  it('goes one block forward and one down per step, three cells high', () => {
-    const p = make({ depth: 3 })
+  it('goes one block forward and one down per step, three cells high, when told an exact narrow size', () => {
+    const p = make({ depth: 3, stair_width: 1, stair_height: 3 })
 
     expect(keys(breaks(p))).toEqual([
       '0,60,0',
@@ -609,6 +609,20 @@ describe('StaircaseDownProvider', () => {
     ])
   })
 
+  it('defaults to 2 cells wide and 4 tall, the spine column matching the narrow layout exactly', () => {
+    const p = make({ depth: 2 })
+
+    expect(breaks(p)).toHaveLength(2 * 2 * 4)
+    // The spine (a = 0, across `right`) is the same column the narrow, single-cell layout would dig.
+    expect(keys(breaks(p))).toEqual(
+      expect.arrayContaining(['0,60,0', '0,61,0', '0,62,0', '0,63,0', '1,59,0', '1,60,0']),
+    )
+    // The second, widened column is one cell further along `right` (east faces +z), same y and x per step.
+    expect(keys(breaks(p))).toEqual(
+      expect.arrayContaining(['0,60,1', '0,61,1', '0,62,1', '0,63,1', '1,59,1', '1,60,1']),
+    )
+  })
+
   it('lights it, and checks for caves in front', () => {
     const p = make({ depth: 12 })
 
@@ -616,6 +630,63 @@ describe('StaircaseDownProvider', () => {
     expect(p.cavityCheck).toBe(true)
     // The ceiling near the entrance is the open sky, so the way up is not checked for caves.
     expect(breaks(p)[0]?.probe?.some((o) => o.y === 1)).toBe(false)
+  })
+
+  it('converts a target level (to_y) into a step count, the same way a quarry does', () => {
+    const p = make({ to_y: 55, stair_width: 1, stair_height: 3 }) // origin y = 60, so 6 steps reach y = 55
+
+    expect(breaks(p).filter((s) => s.at.x === 5)).toHaveLength(3) // the last step: 5 forward, 5 down
+    expect(p.name).toBe('staircase to y=55 east')
+  })
+
+  it('converts above_bedrock into a target level, defaulting to 9 when nothing is given', () => {
+    const withDefault = asPlan(
+      stairs.generate(
+        stairs.params.parse({ direction: 'east', stair_width: 1, stair_height: 3 }),
+        context(at(0, 0, 0), -64),
+      ),
+    )
+    const withExplicit = asPlan(
+      stairs.generate(
+        stairs.params.parse({
+          direction: 'east',
+          above_bedrock: 9,
+          stair_width: 1,
+          stair_height: 3,
+        }),
+        context(at(0, 0, 0), -64),
+      ),
+    )
+
+    expect(withDefault).toEqual(withExplicit) // -64 + 9 = -55; origin.y (0) - (-55) + 1 = 56 steps
+    expect(withDefault.name).toBe('staircase to y=-55 east')
+  })
+
+  it('refuses a target below the bedrock, above the start, or too deep, without digging anything', () => {
+    const belowBedrock = stairs.generate(
+      stairs.params.parse({ direction: 'east', to_y: -64 }),
+      context(at(0, 0, 0), -64),
+    )
+    expect(belowBedrock).toMatchObject({ error: expect.stringContaining('bedrock') })
+
+    const aboveStart = stairs.generate(
+      stairs.params.parse({ direction: 'east', to_y: 65 }),
+      context(at(0, 60, 0), -64),
+    )
+    expect(aboveStart).toMatchObject({
+      error: expect.stringContaining('above where the dig starts'),
+    })
+
+    const tooDeep = stairs.generate(
+      stairs.params.parse({ direction: 'east', to_y: -63 }),
+      context(at(0, 300, 0), -64),
+    )
+    expect(tooDeep).toMatchObject({ error: expect.stringContaining('steps deep') })
+  })
+
+  it('rejects giving a target level and a raw depth together, or both kinds of target level', () => {
+    expect(() => stairs.params.parse({ direction: 'east', depth: 3, to_y: 55 })).toThrow()
+    expect(() => stairs.params.parse({ direction: 'east', to_y: 55, above_bedrock: 9 })).toThrow()
   })
 })
 
