@@ -72,7 +72,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`), cave sealing (`feature/excavation-cave-sealing`), and staircase target/width (`feature/excavation-staircase-target`) done; all merged into `development` |
 | 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
-| 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms done (`feature/dug-rooms`); door opening not started |
+| 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms done (`feature/dug-rooms`), merged into `development`; door opening done (`feature/door-opening`) |
 | 17 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
 | 18 Railways | not started (added) |
 | 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
@@ -471,7 +471,7 @@ Preparing a plot for building: "get me a clean field for building, 20x10, on the
   - e2e: a solid stone hill built over RCON, the owner bot made to look at its wall (`world.face`): a 5x5x4 room with a 1x2 entrance and an oak door (and a 2x2 entrance with two doors), torches placed in the dark, and every cell checked through RCON; `entrance: player` waits, then continues after the entrance is cut by hand; water or lava behind the wall stops the dig one block short
 - **Exit criteria:** after "follow me" to a hill and "dig a room 5x5x4 behind this wall", the bot digs a 1x2 entrance into the wall the player is looking at and a lit 5x5x4 room behind it, and with "put a door here on finish" ends by hanging a door in the entrance; "I will dig you an entrance" makes it wait for the player instead of digging one.
 
-#### Opening ordinary doors (`feature/door-opening`)
+#### Opening ordinary doors (`feature/door-opening`, done)
 
 Today a closed door is a wall for the bot: the movement library's door option is off (its own comment says it "causes issues", probably on servers other than Paper), so `goto` into a house with a closed wooden door fails as unreachable or stuck, and the bot cannot leave a room whose door it (or the player) closed. This makes ordinary doors work; **iron doors and buttons are the next phase.**
 

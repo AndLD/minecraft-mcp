@@ -168,7 +168,10 @@ describe('GoToTool', () => {
   it('rejects an invalid target at execution time as well', () => {
     const { goto } = setup()
 
-    const result = goto.execute({ x: 1, max_distance: 32, within: 2, replace: false }, context())
+    const result = goto.execute(
+      { x: 1, max_distance: 32, within: 2, close_doors: true, replace: false },
+      context(),
+    )
 
     expect(result).toEqual({
       ok: false,
@@ -230,7 +233,7 @@ describe('resume descriptors', () => {
 
     expect(tasks.current()?.resume).toEqual({
       tool: 'goto',
-      arguments: { x: 10, y: 64, z: 5, within: 3, max_distance: 32 },
+      arguments: { x: 10, y: 64, z: 5, within: 3, max_distance: 32, close_doors: true },
     })
   })
 

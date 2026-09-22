@@ -2,7 +2,16 @@ import type { Position } from './position.types.js'
 import type { Result } from './result.js'
 
 export type NavigationFailureReason =
-  'unreachable' | 'stuck' | 'timeout' | 'aborted' | 'target_not_found' | 'not_connected'
+  | 'unreachable'
+  | 'stuck'
+  | 'timeout'
+  | 'aborted'
+  | 'target_not_found'
+  | 'not_connected'
+  /** A closed door, gate, or trapdoor would not open after two tries. */
+  | 'door_stuck'
+  /** An iron door or trapdoor blocks the way; it needs a switch (a later phase). */
+  | 'needs_switch'
 
 export interface NavigationFailure {
   readonly reason: NavigationFailureReason
@@ -19,6 +28,8 @@ export interface NavigationOptions {
   /** Aborting stops the bot immediately. */
   readonly signal: AbortSignal
   readonly onProgress?: (progress: NavigationProgress) => void
+  /** Close a door or gate behind the bot once it has passed through it. Default true. */
+  readonly closeDoors?: boolean
 }
 
 export interface Navigator {

@@ -14,6 +14,8 @@ export interface GoToInput {
   readonly target: GoToTarget
   /** Stop when within this many blocks of the target. */
   readonly within: number
+  /** Close a door or gate behind the bot once it has passed through it. Default true. */
+  readonly closeDoors?: boolean
 }
 
 export interface GoToOutput {
@@ -38,6 +40,7 @@ export class GoToSkill implements Skill<GoToInput, GoToOutput> {
           context.progress(`${String(Math.round(progress.distanceRemaining))} blocks to go`)
         }
       },
+      closeDoors: input.closeDoors,
     }
     const target = input.target
 

@@ -36,6 +36,12 @@ const schema = z
       .max(20)
       .default(2)
       .describe('Stop when within this many blocks of the target.'),
+    close_doors: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Close a wooden door, fence gate, or trapdoor behind the bot once it has walked through it (default true).',
+      ),
     ...taskOptionsShape,
   })
   .refine(
@@ -57,9 +63,12 @@ export class GoToTool implements ToolDefinition<typeof schema> {
   readonly name = 'goto'
   readonly description =
     'Walks the bot to a target: coordinates (x, y, z), a player, or the nearest block of a type. It never digs or builds ' +
-    'to get there and avoids lava. Long trips continue in the background: if the wait_seconds budget runs out the reply ' +
-    'has status "running" and you poll get_task_status. Fails with a reason such as unreachable, stuck, timeout, ' +
-    'target_not_found, or block_not_found. Only one task runs at a time; pass replace=true to interrupt the current one.'
+    'to get there and avoids lava. A closed wooden door, fence gate, or trapdoor in the way is opened, walked through, ' +
+    'and (by default, see close_doors) closed again once behind the bot. An iron door or trapdoor is not opened (fails ' +
+    'with needs_switch: a later phase presses buttons and levers); a wooden one that will not open after two tries fails ' +
+    'with door_stuck. Long trips continue in the background: if the wait_seconds budget runs out the reply has status ' +
+    '"running" and you poll get_task_status. Fails with a reason such as unreachable, stuck, timeout, target_not_found, ' +
+    'block_not_found, door_stuck, or needs_switch. Only one task runs at a time; pass replace=true to interrupt the current one.'
   readonly inputSchema = schema
 
   constructor(
@@ -88,7 +97,8 @@ export class GoToTool implements ToolDefinition<typeof schema> {
         name: this.skill.name,
         description,
         resume: { tool: this.name, arguments: resumeArguments(input) },
-        run: (ctx) => this.skill.run({ target, within: input.within }, ctx),
+        run: (ctx) =>
+          this.skill.run({ target, within: input.within, closeDoors: input.close_doors }, ctx),
       },
       {
         replace: input.replace,

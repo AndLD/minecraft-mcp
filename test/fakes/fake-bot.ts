@@ -356,6 +356,7 @@ export class FakeBot implements BotLike {
       throw new TypeError('pos.floored is not a function')
     const name = this.blocks.get(key(position))
     if (name === undefined) return null
+    const cellKey = key(position)
     return {
       name,
       light: this.lights.get(key(position)),
@@ -365,7 +366,23 @@ export class FakeBot implements BotLike {
         y: Math.floor(position.y),
         z: Math.floor(position.z),
       },
+      getProperties: () => ({ open: this.doorsOpen.get(cellKey) ?? false }),
     }
+  }
+
+  /** Doors, gates, and trapdoors: closed unless set open here or toggled via `activateBlock`. */
+  private readonly doorsOpen = new Map<string, boolean>()
+  setDoorOpen(position: Position, open: boolean): void {
+    this.doorsOpen.set(key(position), open)
+  }
+
+  readonly activateBlockCalls: Position[] = []
+  activateBlock(block: BlockLike): Promise<void> {
+    const position = (block as FakeBlock).position
+    this.activateBlockCalls.push(position)
+    const cellKey = key(position)
+    this.doorsOpen.set(cellKey, !(this.doorsOpen.get(cellKey) ?? false))
+    return Promise.resolve()
   }
 
   private readonly lights = new Map<string, number>()
