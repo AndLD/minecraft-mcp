@@ -232,7 +232,9 @@ describe('ExcavateSkill.preview', () => {
       blocks: 100,
       estimatedMinutes: 1,
       missing: [{ name: 'ladder', count: 3 }],
-      bounds: { from: { x: 2, y: 60, z: 0 }, to: { x: 6, y: 63, z: 4 } },
+      // x = 1, one west of the footprint: the wall the ladder hangs against gets a seal step by default (already
+      // solid ground here, so it counts as done and adds nothing to missing).
+      bounds: { from: { x: 1, y: 60, z: 0 }, to: { x: 6, y: 63, z: 4 } },
     })
     expect(s.world.log).toEqual([])
   })

@@ -33,6 +33,28 @@ const lightParams = {
     .describe('Torches go where the light is below this (default 7).'),
 }
 
+/** Whether, and with what, a cave the dig finds is closed instead of left open. */
+const sealParams = {
+  seal_caves: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Seal a cave the dig meets with a placed block instead of leaving it open (default true): the tunnel stays fully enclosed, and a chain that met the cave carries on past it to its planned extent instead of stopping there for good. Set to false to break into a found cave on purpose and leave it open.',
+    ),
+  seal_block: z
+    .string()
+    .default('cobblestone')
+    .describe(
+      'The block placed to close a cave, falling back to dirt when none of it is carried. Only used when seal_caves is true.',
+    ),
+}
+
+const sealFor = (p: {
+  readonly seal_caves: boolean
+  readonly seal_block: string
+}): { readonly block: string; readonly fallback: string } | undefined =>
+  p.seal_caves ? { block: p.seal_block, fallback: 'dirt' } : undefined
+
 const UP: Position = { x: 0, y: 1, z: 0 }
 
 /** The tunnel's cells and lights: `length` sections of `width` x `height`, starting at the origin. */
@@ -96,6 +118,7 @@ const tunnelParams = z.object({
     .default(2)
     .describe('Height in blocks (2 to 8, default 2).'),
   ...lightParams,
+  ...sealParams,
 })
 
 export class TunnelProvider implements ExcavationProvider<z.output<typeof tunnelParams>> {
@@ -129,6 +152,7 @@ export class TunnelProvider implements ExcavationProvider<z.output<typeof tunnel
       hazards: 'end_branch',
       cavityCheck: true,
       veins: { maxSize: 64 },
+      seal: sealFor(p),
     }
   }
 }
@@ -162,6 +186,7 @@ const branchMineParams = z.object({
     .default('both')
     .describe('Which sides get branches (default both).'),
   ...lightParams,
+  ...sealParams,
 })
 
 export class BranchMineProvider implements ExcavationProvider<z.output<typeof branchMineParams>> {
@@ -236,6 +261,7 @@ export class BranchMineProvider implements ExcavationProvider<z.output<typeof br
       hazards: 'end_branch',
       cavityCheck: true,
       veins: { maxSize: 64 },
+      seal: sealFor(p),
     }
   }
 }
@@ -251,6 +277,7 @@ const stairParams = z.object({
       `How many steps down (each step goes one block forward and one down; 1 to ${String(MAX_LENGTH)}).`,
     ),
   ...lightParams,
+  ...sealParams,
 })
 
 export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof stairParams>> {
@@ -269,10 +296,15 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
     const { forward } = HEADINGS[p.direction]
     // Not upwards: near the entrance the ceiling is the open sky, which is no cave.
     const probe = probeAllBut(negate(forward), UP)
+    const seal = sealFor(p)
     const steps: WorkStep[] = []
     for (let i = 0; i < p.depth; i += 1) {
       const foot = add(add(context.origin, forward, i), UP, -i)
       const previousFoot = add(add(context.origin, forward, i - 1), UP, -(i - 1))
+      // The tread (one below foot) is never dug or built by this plan and is assumed solid; seal it when a cave
+      // may have hollowed it out, so every step has something underfoot.
+      if (seal !== undefined)
+        steps.push({ kind: 'seal', at: add(foot, UP, -1), block: seal.block, branch: 'stairs' })
       for (let b = 0; b < 3; b += 1)
         steps.push({
           kind: 'break',
@@ -298,6 +330,7 @@ export class StaircaseDownProvider implements ExcavationProvider<z.output<typeof
       hazards: 'end_branch',
       cavityCheck: true,
       veins: { maxSize: 64 },
+      seal,
     }
   }
 }

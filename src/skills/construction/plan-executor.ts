@@ -181,6 +181,14 @@ export class PlanExecutor {
         else toBreak += 1
         continue
       }
+      if (step.kind === 'seal') {
+        // Any solid block satisfies a seal step; it is not counted as blocked when something else already fills it.
+        // Like a torch, the material is never counted as missing: sealing is a best-effort backfill, not a hard
+        // requirement, and an otherwise-fine dig must not be refused up front for want of a spare block.
+        if (!isOpenAir(found)) done += 1
+        else toPlace += 1
+        continue
+      }
       if (isPlanned(step.block, found)) {
         done += 1
         continue
@@ -378,9 +386,14 @@ export class PlanExecutor {
         },
       )
     }
-    // Lighting is a courtesy (no torches, no torch), so it is not part of what must hold.
+    // Lighting and sealing are a courtesy (no torches, no torch; nothing to backfill with, left open), so neither
+    // is part of what must hold.
     const stillOpen = plan.steps.filter(
-      (step) => step.kind !== 'light' && !skipped.has(keyOf(step)) && !this.satisfied(step),
+      (step) =>
+        step.kind !== 'light' &&
+        step.kind !== 'seal' &&
+        !skipped.has(keyOf(step)) &&
+        !this.satisfied(step),
     ).length
     if (stillOpen > 0)
       return failure(
@@ -438,6 +451,7 @@ export class PlanExecutor {
       case 'break':
         return step.needs === undefined || this.isOpening(this.deps.blocks.blockAt(step.needs))
       case 'light':
+      case 'seal':
         return true
     }
   }
@@ -663,6 +677,8 @@ export class PlanExecutor {
         return this.isOpening(found)
       case 'light':
         return !this.deps.safety.needsTorch(step.at, step.minLight, step.spacing)
+      case 'seal':
+        return !isOpenAir(found)
     }
   }
 
@@ -719,7 +735,49 @@ export class PlanExecutor {
         index: this.order.get(cellKey(step.at)) ?? Infinity,
         dug: this.dug,
       })
-      if (hazard !== undefined) return { kind: 'end', hazard }
+      if (hazard !== undefined) {
+        if (
+          hazard.reason === 'cave_breakthrough' &&
+          plan.seal !== undefined &&
+          this.canSeal(plan.seal)
+        ) {
+          // Close the cave instead of stopping here, then carry on as if it had never been open. With nothing to
+          // seal it with, fall back to ending the chain as usual, rather than getting stuck trying.
+          const moved = await this.standNear(plan, step, pending, options, context)
+          if (moved !== undefined) return moved
+          const sealed = await this.place(
+            hazard.at,
+            this.sealBlockFor(plan.seal),
+            options,
+            progress,
+            context,
+          )
+          if (sealed.kind !== 'done') return sealed
+          // The sealed cell may itself be a cell the plan means to dig: it was counted done before sealing (its
+          // own target happened to be the cave), so a later round would be the only thing to notice it needs
+          // digging again. Do it now instead, in the same pass, so the chain is not left waiting a round behind.
+          const coincidesAt = this.order.get(cellKey(hazard.at))
+          const coincides = coincidesAt === undefined ? undefined : plan.steps[coincidesAt]
+          if (
+            coincides !== undefined &&
+            coincides.kind === 'break' &&
+            !this.dug.has(cellKey(hazard.at))
+          ) {
+            const dug = await this.perform(
+              plan,
+              coincides,
+              pending,
+              options,
+              fullSession,
+              progress,
+              context,
+            )
+            if (dug.kind !== 'done') return dug
+          }
+          return this.perform(plan, step, pending, options, fullSession, progress, context)
+        }
+        return { kind: 'end', hazard }
+      }
     }
     if (step.kind === 'light') {
       // A torch goes into an open cell: never dig one out for it (the tunnel that would have made it ended early).
@@ -752,7 +810,28 @@ export class PlanExecutor {
         if (placed.kind === 'done') progress.lights += 1
         return placed
       }
+      case 'seal': {
+        // Already solid (the ordinary case): nothing to do, no material spent.
+        if (!isOpenAir(deps.blocks.blockAt(step.at))) return { kind: 'done' }
+        // A cave really did hollow it out, and there is nothing to backfill it with: leave it open rather than
+        // failing the whole plan for a step that was never the point of the dig.
+        if (plan.seal !== undefined && !this.canSeal(plan.seal)) return { kind: 'done' }
+        const block = plan.seal !== undefined ? this.sealBlockFor(plan.seal) : step.block
+        return this.place(step.at, block, options, progress, context)
+      }
     }
+  }
+
+  /** Whether the bot carries either the preferred seal block or its fallback. */
+  private canSeal(seal: { readonly block: string; readonly fallback: string }): boolean {
+    const carried = countItems(this.deps.inventory.snapshot())
+    return (carried.get(seal.block) ?? 0) > 0 || (carried.get(seal.fallback) ?? 0) > 0
+  }
+
+  /** The seal block to use: the preferred one, or the fallback when none of it is carried. */
+  private sealBlockFor(seal: { readonly block: string; readonly fallback: string }): string {
+    const carried = countItems(this.deps.inventory.snapshot()).get(seal.block) ?? 0
+    return carried > 0 ? seal.block : seal.fallback
   }
 
   private async standNear(

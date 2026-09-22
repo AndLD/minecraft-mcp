@@ -186,12 +186,12 @@ describe('hazards end a tunnel one block short', () => {
     expect(s.world.nameAt(at(1, 51, -4))).toBe('water')
   })
 
-  it('stops at a cave ahead (a breakthrough), and at a chest', async () => {
+  it('stops at a cave ahead (a breakthrough), and at a chest, with sealing off', async () => {
     const cave = mine()
     cave.world.give('torch', 5)
     cave.world.setBlock(at(0, 50, -7), 'air') // an open cavity
     const caved = await cave.executor.run(
-      tunnelPlan({ length: 12 }),
+      tunnelPlan({ length: 12, seal_caves: false }),
       options,
       skillContext().context,
     )
@@ -242,6 +242,72 @@ describe('hazards end a tunnel one block short', () => {
     const result = await s.executor.run(tunnelPlan({ length: 6 }), options, skillContext().context)
 
     expect(result.ok).toBe(true) // the lava is not next to any cell of the tunnel
+  })
+})
+
+describe('cave sealing', () => {
+  it('seals a cave breakthrough with a placed block and carries on to the planned length', async () => {
+    const s = mine()
+    s.world.give('torch', 5)
+    s.world.give('cobblestone', 10)
+    s.world.setBlock(at(0, 50, -7), 'air') // an open cavity, right in the tunnel's own path
+
+    const result = await s.executor.run(tunnelPlan({ length: 12 }), options, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { ended: [] } })
+    expect(result.ok && result.value.used).toEqual(
+      expect.arrayContaining([{ name: 'cobblestone', count: 1 }]),
+    )
+    expect(isAir(s.world, 0, 50, -11)).toBe(true) // it reached the full planned length, past the cave
+  })
+
+  it('falls back to dirt when no cobblestone is carried (dirt is what digging the tunnel itself yields)', async () => {
+    const s = mine()
+    s.world.give('torch', 5)
+    s.world.setBlock(at(0, 50, -7), 'air')
+
+    const result = await s.executor.run(tunnelPlan({ length: 12 }), options, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { ended: [] } })
+    expect(result.ok && result.value.used).toEqual(
+      expect.arrayContaining([{ name: 'dirt', count: 1 }]),
+    )
+  })
+
+  it('ends the chain as usual when there is nothing at all to seal a cave with', async () => {
+    const s = mine()
+    // A cave to the side of the very first real cell (i = 0 is the already-open start pocket, so this is the
+    // first hazard check that ever runs): the bot has dug nothing yet, so it carries no dirt either.
+    s.world.setBlock(at(1, 50, -1), 'air')
+
+    const result = await s.executor.run(
+      tunnelPlan({ length: 12, torch_spacing: 0 }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { ended: [{ reason: 'cave_breakthrough' }] } })
+    expect(result.ok && result.value.broken).toBe(0)
+  })
+
+  it('leaves the cave open when seal_caves is off', async () => {
+    const s = mine()
+    s.world.give('torch', 5)
+    s.world.give('cobblestone', 10)
+    s.world.setBlock(at(0, 50, -7), 'air')
+
+    const result = await s.executor.run(
+      tunnelPlan({ length: 12, seal_caves: false }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { ended: [{ reason: 'cave_breakthrough' }] } })
+    // A torch was placed along the way, but never the seal material: the cave itself was left untouched.
+    expect(result.ok && result.value.used).not.toEqual(
+      expect.arrayContaining([{ name: 'cobblestone', count: expect.any(Number) }]),
+    )
+    expect(s.world.nameAt(at(0, 50, -7))).toBe('air')
   })
 })
 
@@ -562,6 +628,37 @@ describe('stairs and a water landing in a quarry', () => {
     expect(s.world.nameAt(at(12, 59, 9))).toBe('dirt') // its floor
     expect(s.world.nameAt(at(11, 60, 9))).toBe('dirt') // the step before is a block higher: solid below it
     expect(s.world.nameAt(at(11, 60, 10))).toBe('air') // the pit itself
+  })
+
+  it('backfills a stair tread a cave had already hollowed out', async () => {
+    const hollow = surface()
+    hollow.world.setBlock(at(9, 62, 9), 'air') // the tread under step 0, already an open cave
+
+    const result = await hollow.executor.run(
+      quarryPlan({ width: 3, length: 3, to_y: 60, exit: 'stairs' }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { ended: [] } })
+    expect(hollow.world.nameAt(at(9, 62, 9))).not.toBe('air') // backfilled: something to stand on again
+    expect(hollow.world.nameAt(at(9, 63, 9))).toBe('air') // step 0's headroom is still open
+  })
+
+  it('a lone seal step leaves an open cell as found when there is nothing to backfill it with', async () => {
+    const s = surface()
+    s.world.setBlock(at(0, 63, 0), 'air') // a cave, standing in for a tread or a wall the plan needs solid
+    const plan: WorkPlan = {
+      name: 'a single seal step',
+      steps: [{ kind: 'seal', at: at(0, 63, 0), block: 'cobblestone' }],
+      hazards: 'end_branch',
+      seal: { block: 'cobblestone', fallback: 'dirt' },
+    }
+
+    const result = await s.executor.run(plan, options, skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { placed: 0 } })
+    expect(s.world.nameAt(at(0, 63, 0))).toBe('air') // nothing was carried to seal it with, so it is left as found
   })
 
   it('fills a 2x2x2 pit in the far corner with water from two buckets', async () => {

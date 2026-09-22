@@ -247,6 +247,31 @@ describe('excavating through the MCP server', () => {
     expect(nameAt(h, 13, 59, 6)).toBe('dirt')
   })
 
+  it('seals a cave beside a quarry column and still reaches the target depth', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'iron_pickaxe', count: 1 },
+        { name: 'ladder', count: 10 },
+        { name: 'cobblestone', count: 5 },
+      ]
+      // A cave one block east of the column at (14, *, 7), outside the footprint and clear of the west-wall
+      // ladder (at x = 12).
+      bot.setBlock(at(15, 62, 7), 'air')
+    })
+
+    const result = await call(h, 'excavate', {
+      shape: 'quarry',
+      params: { width: 3, length: 3, to_y: 61 },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { ended: [] } })
+    // The column reached its target depth, right past the cave.
+    expect(nameAt(h, 14, 61, 7)).toBe('air')
+    // The cave itself is sealed (cobblestone was carried), not left open into the quarry.
+    expect(nameAt(h, 15, 62, 7)).toBe('cobblestone')
+  })
+
   it('digs a staircase down', async () => {
     const h = await start((bot) => {
       bot.inventoryItems = [
