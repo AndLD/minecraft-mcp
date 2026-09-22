@@ -25,6 +25,8 @@ interface DigDown {
   readonly stairWidth?: number
   /** How many cells tall each `exit: 'stairs'` step is. Default 4. */
   readonly stairHeight?: number
+  /** Seal a cave the dig finds instead of leaving it open; see `WorkPlan.seal`. Off (undefined) by default. */
+  readonly seal?: { readonly block: string; readonly fallback: string } | undefined
 }
 
 /** A cell of the ring around a footprint, with the unit step back towards the footprint (used to widen the ring). */
@@ -63,7 +65,9 @@ export function ringAround(
  * high, `stairWidth` cells wide (widening inward from the outer ring, towards the footprint), one block lower than the
  * step before, in the next cell of the ring. It opens into the pit beside it, so at every level the way up starts at
  * the level the bot works on. Each cell needs the one before it to be open; a widened cell needs the spine cell (the
- * single-wide column the original, unwidened staircase would have used) at the same height.
+ * single-wide column the original, unwidened staircase would have used) at the same height. The tread (one cell
+ * below the headroom) is never dug or built by this plan and is assumed solid; with `seal` it gets a `seal` step,
+ * so a cave that had already hollowed it out is backfilled rather than leaving a step with nothing underfoot.
  */
 function stairStep(
   y0: number,
@@ -71,6 +75,7 @@ function stairStep(
   ring: readonly RingCell[],
   stairWidth: number,
   stairHeight: number,
+  seal: { readonly block: string; readonly fallback: string } | undefined,
 ): WorkStep[] {
   const at = ring[layer % ring.length]
   const previous = ring[(layer - 1 + ring.length) % ring.length]
@@ -80,6 +85,8 @@ function stairStep(
   for (let d = 0; d < stairWidth; d += 1) {
     const x = at.x + at.dx * d
     const z = at.z + at.dz * d
+    if (seal !== undefined)
+      steps.push({ kind: 'seal', at: { x, y: foot - 1, z }, block: seal.block, branch: 'stairs' })
     for (let j = 0; j < stairHeight; j += 1) {
       const needs: Position | undefined =
         j > 0
@@ -151,16 +158,28 @@ export function digDown(spec: DigDown): WorkPlan {
       }
     }
     if (spec.exit === 'stairs')
-      steps.push(...stairStep(spec.y0, layer, ring, stairWidth, stairHeight))
-    if (spec.exit === 'ladder')
+      steps.push(...stairStep(spec.y0, layer, ring, stairWidth, stairHeight, spec.seal))
+    if (spec.exit === 'ladder') {
+      const ladderColumn = `column-0-${String(Math.floor(spec.length / 2))}`
+      const reference = { x: spec.x0 - 1, y, z: ladderZ }
+      // The ladder needs a solid block to hang on; with seal, that wall cell is backfilled first if a cave hollowed
+      // it out, so the ladder never fails to place for want of something to hang against.
+      if (spec.seal !== undefined)
+        steps.push({
+          kind: 'seal',
+          at: reference,
+          block: spec.seal.block,
+          branch: ladderColumn,
+        })
       steps.push({
         kind: 'place',
         at: { x: spec.x0, y, z: ladderZ },
         block: 'ladder',
         against: { x: -1, y: 0, z: 0 },
         // The ladder belongs to its column: when a hazard ends the column, no ladder goes further down.
-        branch: `column-0-${String(Math.floor(spec.length / 2))}`,
+        branch: ladderColumn,
       })
+    }
   }
   if (spec.waterLanding === true) steps.push(...waterLanding(spec))
   return {
@@ -170,6 +189,7 @@ export function digDown(spec: DigDown): WorkPlan {
     hazards: 'end_branch',
     cavityCheck: spec.cavities,
     veins: { maxSize: 64 },
+    seal: spec.seal,
   }
 }
 
@@ -203,6 +223,28 @@ const stairSizeParams = {
     .describe('Only with exit: stairs. How many cells tall each step is. Default 4.'),
 }
 
+/** Whether, and with what, a cave the dig finds is closed instead of left open. */
+const sealParams = {
+  seal_caves: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Seal a cave the dig meets with a placed block instead of leaving it open (default true): the excavation stays fully enclosed, and a chain that met the cave carries on past it to its planned extent instead of stopping there for good. Set to false to break into a found cave on purpose and leave it open.',
+    ),
+  seal_block: z
+    .string()
+    .default('cobblestone')
+    .describe(
+      'The block placed to close a cave, falling back to dirt when none of it is carried. Only used when seal_caves is true.',
+    ),
+}
+
+const sealFor = (p: {
+  readonly seal_caves: boolean
+  readonly seal_block: string
+}): { readonly block: string; readonly fallback: string } | undefined =>
+  p.seal_caves ? { block: p.seal_block, fallback: 'dirt' } : undefined
+
 /** Default: the ground block two blocks east of the bot, so the first layer is the one the bot stands on. */
 const surfaceOrigin = (feet: Position): Position => {
   const cell = feetCell(feet)
@@ -220,6 +262,7 @@ const pitParams = z.object({
     .describe(`How many layers deep (1 to ${String(MAX_DEPTH)}).`),
   exit: exitParam,
   ...stairSizeParams,
+  ...sealParams,
 })
 
 export class PitProvider implements ExcavationProvider<z.output<typeof pitParams>> {
@@ -245,9 +288,10 @@ export class PitProvider implements ExcavationProvider<z.output<typeof pitParams
       length: p.length,
       depth: p.depth,
       exit: p.exit === 'ladder' && p.depth < 2 ? 'none' : p.exit,
-      cavities: false,
+      cavities: true,
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
+      seal: sealFor(p),
     })
   }
 }
@@ -263,6 +307,7 @@ const shaftParams = z.object({
   length: side('Size along z').default(1),
   exit: exitParam,
   ...stairSizeParams,
+  ...sealParams,
 })
 
 export class ShaftProvider implements ExcavationProvider<z.output<typeof shaftParams>> {
@@ -291,6 +336,7 @@ export class ShaftProvider implements ExcavationProvider<z.output<typeof shaftPa
       cavities: true,
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
+      seal: sealFor(p),
     })
   }
 }
@@ -321,6 +367,7 @@ const quarryParams = z
         'Off by default. When true: a 2×2×2 pit is dug in the far (south-east) corner below the quarry floor and filled with water from two water buckets, so you can jump in from the top and land unhurt (the exit ladder or stairs is on the other side). Needs 2 water_bucket and a footprint of at least 2×2.',
       ),
     ...stairSizeParams,
+    ...sealParams,
   })
   .refine((p) => p.to_y === undefined || p.above_bedrock === undefined, {
     message: 'Give either to_y or above_bedrock, not both.',
@@ -373,9 +420,10 @@ export class QuarryProvider implements ExcavationProvider<z.output<typeof quarry
       depth,
       exit: p.exit === 'ladder' && depth < 2 ? 'none' : p.exit,
       waterLanding: p.water_landing,
-      cavities: false,
+      cavities: true,
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
+      seal: sealFor(p),
     })
   }
 }

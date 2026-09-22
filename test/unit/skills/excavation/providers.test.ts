@@ -54,16 +54,27 @@ describe('PitProvider', () => {
     expect([...chains.values()].every((n) => n === 3)).toBe(true)
   })
 
-  it('puts a ladder in the west wall column after every layer', () => {
+  it('puts a ladder in the west wall column after every layer, sealing its wall by default first', () => {
     const p = plan({ width: 3, length: 5, depth: 3 })
 
     const ls = ladders(p)
     expect(ls).toHaveLength(3)
     expect(ls.map((s) => s.at)).toEqual([at(10, 63, 22), at(10, 62, 22), at(10, 61, 22)])
     expect(ls[0]).toMatchObject({ block: 'ladder', against: { x: -1, y: 0, z: 0 } })
-    // Each ladder comes right after the layer it belongs to.
+    // Each ladder comes right after the layer it belongs to, after a seal step for the wall it hangs on
+    // (seal_caves defaults to true): the ladder never fails to place for want of something to hang against.
     const order = p.steps.map((s) => s.kind)
-    expect(order.indexOf('place')).toBe(15) // after the first 15 breaks
+    expect(order.indexOf('seal')).toBe(15)
+    expect(order.indexOf('place')).toBe(16) // after the first 15 breaks and the seal step
+    const seals = p.steps.filter((s) => s.kind === 'seal')
+    expect(seals[0]).toMatchObject({ at: at(9, 63, 22), block: 'cobblestone' }) // one west of the ladder
+  })
+
+  it('skips the ladder-wall seal step when seal_caves is off', () => {
+    const p = plan({ width: 3, length: 5, depth: 1, seal_caves: false })
+
+    expect(p.steps.some((s) => s.kind === 'seal')).toBe(false)
+    expect(p.seal).toBeUndefined()
   })
 
   it('needs no ladder for one layer, or when told not to', () => {
@@ -71,12 +82,15 @@ describe('PitProvider', () => {
     expect(ladders(plan({ width: 3, length: 3, depth: 4, exit: 'none' }))).toEqual([])
   })
 
-  it('works from inside, ends chains at hazards, and mines veins; no cavity checks', () => {
+  it('works from inside, ends chains at hazards and cave breakthroughs, and mines veins', () => {
     const p = plan({ width: 2, length: 2, depth: 2 })
 
     expect(p).toMatchObject({ standing: 'inside', hazards: 'end_branch', veins: { maxSize: 64 } })
-    expect(p.cavityCheck).toBe(false)
-    expect(breaks(p).every((s) => s.probe === undefined)).toBe(true)
+    // A pit now checks for caves too (only fluids were checked before): a column stops at one rather than
+    // digging straight through it unnoticed.
+    expect(p.cavityCheck).toBe(true)
+    expect(breaks(p).every((s) => s.probe !== undefined)).toBe(true)
+    expect(p.seal).toEqual({ block: 'cobblestone', fallback: 'dirt' }) // seal_caves defaults to true
   })
 
   it('starts at the ground block two blocks east of the bot', () => {

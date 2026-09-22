@@ -51,6 +51,19 @@ export type WorkStep =
       /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
       readonly branch?: string
     }
+  /**
+   * Make sure the cell is solid: a wall, floor, ceiling, or a stair or ladder's own support that the plan never digs
+   * or places by itself, so it must already be there. Satisfied when it already is (the ordinary case); `block` (an
+   * item name) is placed only when the cell is unexpectedly open (a cave that hollowed it out before the dig got
+   * there). Unlike `place`, any solid block satisfies it, not only `block` itself.
+   */
+  | {
+      readonly kind: 'seal'
+      readonly at: Position
+      readonly block: string
+      /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
+      readonly branch?: string
+    }
 
 export interface WorkPlan {
   /** For messages, for example `box 5x4x3`. */
@@ -68,6 +81,13 @@ export interface WorkPlan {
   readonly cavityCheck?: boolean
   /** Mine any ore that touches a dug cell, vein by vein, up to this many blocks per vein. */
   readonly veins?: { readonly maxSize: number }
+  /**
+   * When set, a `cave_breakthrough` hazard is closed instead of ending the chain: the open cell is filled with
+   * `block` (falling back to `fallback` when none is carried) and the chain carries on past it to its planned
+   * extent. Also what `seal` steps place when they find their cell unexpectedly open. Undefined (the default) keeps
+   * the old behaviour: a cave breakthrough always ends the chain, and there are no `seal` steps.
+   */
+  readonly seal?: { readonly block: string; readonly fallback: string }
 }
 
 /** Makes a plan out of parameters. A new shape is a new provider (Open/Closed). */
