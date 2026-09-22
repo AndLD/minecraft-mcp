@@ -100,11 +100,20 @@ describe('stairs out of a pit', () => {
     const ring = ringAround(10, 20, 3, 3)
 
     expect(ring).toHaveLength(16)
-    expect(ring[0]).toEqual({ x: 9, z: 19 })
-    expect(ring[4]).toEqual({ x: 13, z: 19 }) // the north-east corner
-    expect(ring[8]).toEqual({ x: 13, z: 23 }) // the south-east corner
-    expect(ring[12]).toEqual({ x: 9, z: 23 }) // the south-west corner
+    expect(ring[0]).toMatchObject({ x: 9, z: 19 })
+    expect(ring[4]).toMatchObject({ x: 13, z: 19 }) // the north-east corner
+    expect(ring[8]).toMatchObject({ x: 13, z: 23 }) // the south-east corner
+    expect(ring[12]).toMatchObject({ x: 9, z: 23 }) // the south-west corner
     expect(ring.every((c) => c.x < 10 || c.x > 12 || c.z < 20 || c.z > 22)).toBe(true) // outside the footprint
+  })
+
+  it('carries the unit step back towards the footprint, one per side', () => {
+    const ring = ringAround(10, 20, 3, 3)
+
+    expect(ring[0]).toMatchObject({ dx: 0, dz: 1 }) // north row: inward is south
+    expect(ring[5]).toMatchObject({ dx: -1, dz: 0 }) // east column: inward is west
+    expect(ring[9]).toMatchObject({ dx: 0, dz: -1 }) // south row: inward is north
+    expect(ring[13]).toMatchObject({ dx: 1, dz: 0 }) // west column: inward is east
   })
 
   it('every cell of the ring touches the next, all the way round', () => {
@@ -124,8 +133,33 @@ describe('stairs out of a pit', () => {
     }
   })
 
-  it('cuts one step per layer: three cells high, one lower than the step before, in the next ring cell', () => {
+  it('widens the ring outward by the margin given, still outside the footprint by exactly that much', () => {
+    const ring = ringAround(10, 20, 3, 3, 2)
+
+    expect(ring).toHaveLength(2 * (3 + 3) - 4 + 8 * 2)
+    expect(ring[0]).toMatchObject({ x: 8, z: 18 }) // two cells out, not one
+  })
+
+  it('cuts one step per layer: four cells high by default, one lower than the step before, in the next ring cell', () => {
     const p = make({ width: 3, length: 3, depth: 4 })
+
+    const stairs = breaks(p).filter((s) => s.branch === 'stairs')
+    expect(stairs).toHaveLength(16) // 4 steps, 4 cells tall each, 1 wide
+    expect(keys(stairs).slice(0, 8)).toEqual([
+      '9,63,19',
+      '9,64,19',
+      '9,65,19',
+      '9,66,19',
+      '10,62,19',
+      '10,63,19',
+      '10,64,19',
+      '10,65,19',
+    ])
+    expect(ladders(p)).toEqual([])
+  })
+
+  it('the old three-cell height still works when asked for explicitly', () => {
+    const p = make({ width: 3, length: 3, depth: 4, stair_height: 3 })
 
     const stairs = breaks(p).filter((s) => s.branch === 'stairs')
     expect(stairs).toHaveLength(12)
@@ -137,19 +171,25 @@ describe('stairs out of a pit', () => {
       '10,63,19',
       '10,64,19',
     ])
-    expect(keys(stairs).slice(6)).toEqual([
-      '11,61,19',
-      '11,62,19',
-      '11,63,19',
-      '12,60,19',
-      '12,61,19',
-      '12,62,19',
-    ])
-    expect(ladders(p)).toEqual([])
   })
 
-  it('makes each cell need the one before it', () => {
-    const stairs = breaks(make({ width: 3, length: 3, depth: 3 })).filter(
+  it('widens each step inward from the ring by stair_width cells, never lengthening the staircase', () => {
+    const p = make({ width: 3, length: 3, depth: 2, stair_width: 3, stair_height: 2 })
+
+    const stairs = breaks(p).filter((s) => s.branch === 'stairs')
+    // Still 2 steps (one per layer), now 3 cells deep by 2 cells tall each: 12 cells, not 4.
+    expect(stairs).toHaveLength(12)
+    // Step 0 (north row, inward is +z): the outer cell (the ring sits 3 out: x7,z17) and two cells inward.
+    expect(new Set(keys(stairs).slice(0, 6))).toEqual(
+      new Set(['7,63,17', '7,64,17', '7,63,18', '7,64,18', '7,63,19', '7,64,19']),
+    )
+    // One cell further outward still (z16, one before the ring's own edge) is never touched: exactly stair_width deep.
+    expect(keys(stairs)).not.toContain('7,63,16')
+    expect(keys(stairs)).not.toContain('7,64,16')
+  })
+
+  it('makes each cell need the one before it, and a widened cell need the spine at the same height', () => {
+    const stairs = breaks(make({ width: 3, length: 3, depth: 3, stair_height: 3 })).filter(
       (s) => s.branch === 'stairs',
     )
 
@@ -157,6 +197,20 @@ describe('stairs out of a pit', () => {
     expect(stairs[1]?.needs).toEqual(at(9, 63, 19)) // the cell above it
     expect(stairs[3]?.needs).toEqual(at(9, 63, 19)) // the next step's foot needs the previous foot open... one up
     expect(stairs[3]?.at).toEqual(at(10, 62, 19))
+  })
+
+  it('a widened cell needs the spine cell at the same height, not the cell before it in the loop', () => {
+    const stairs = breaks(
+      make({ width: 3, length: 3, depth: 1, stair_width: 2, stair_height: 2 }),
+    ).filter((s) => s.branch === 'stairs')
+
+    // d=0 (the spine, the ring sits 2 out: x8,z18): foot needs nothing (layer 0), the cell above needs the foot.
+    expect(stairs[0]).toMatchObject({ at: { x: 8, y: 63, z: 18 } })
+    expect(stairs[0]?.needs).toBeUndefined()
+    expect(stairs[1]).toMatchObject({ at: { x: 8, y: 64, z: 18 }, needs: { x: 8, y: 63, z: 18 } })
+    // d=1 (one cell inward, x8,z19): both its cells need the spine's foot, not each other's column.
+    expect(stairs[2]).toMatchObject({ at: { x: 8, y: 63, z: 19 }, needs: { x: 8, y: 63, z: 18 } })
+    expect(stairs[3]).toMatchObject({ at: { x: 8, y: 64, z: 19 }, needs: { x: 8, y: 63, z: 19 } })
   })
 
   it('goes round again when the pit is deeper than the ring is long, one loop lower', () => {

@@ -190,10 +190,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       }
       const now = session.contents()
       const starved =
-        loaded >= job.toSmelt &&
-        now.input !== undefined &&
-        !now.burning &&
-        now.fuel === undefined
+        loaded >= job.toSmelt && now.input !== undefined && !now.burning && now.fuel === undefined
       if (starved) {
         starvedSince ??= clock.now()
         if (clock.now() - starvedSince >= POLL_MS)
