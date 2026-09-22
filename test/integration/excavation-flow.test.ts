@@ -125,6 +125,25 @@ describe('excavating through the MCP server', () => {
     expect(h.bot.count('ladder')).toBe(2)
   })
 
+  it("digs a wider, taller exit staircase without touching the pit's own reported size", async () => {
+    const h = await start()
+
+    const result = await call(h, 'excavate', {
+      shape: 'pit',
+      params: { width: 3, length: 3, depth: 1, exit: 'stairs', stair_width: 3, stair_height: 4 },
+      wait_seconds: 55,
+    })
+
+    // The pit's own name and size are unaffected by the stair size: still "pit 3x3x1".
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { shape: 'pit 3x3x1' } })
+    // The ring sits stair_width (3) cells out from the footprint (origin at x=12, z=5): west=9, north=2.
+    // Step 0 is a 3-cell-deep, 4-cell-tall band at x=9, z=2..4, y=63..66.
+    for (const z of [2, 3, 4])
+      for (const y of [63, 64, 65, 66]) expect(nameAt(h, 9, y, z)).toBe('air')
+    // One cell further outward (z=1, one before the ring's own edge) stays solid rock: exactly stair_width deep.
+    expect(nameAt(h, 9, 63, 1)).toBe('dirt')
+  })
+
   it('digs a tunnel with torches and stops one block before lava, saying where', async () => {
     const h = await start((bot) => {
       pocket(bot, 10, 50, 5)
