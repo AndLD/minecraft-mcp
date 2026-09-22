@@ -77,7 +77,15 @@ describe('excavating through the MCP server', () => {
     const listed = await h.call('list_excavations')
 
     const names = (listed.data as { shapes: { name: string }[] }).shapes.map((s) => s.name)
-    expect(names).toEqual(['branch_mine', 'pit', 'quarry', 'shaft', 'staircase_down', 'tunnel'])
+    expect(names).toEqual([
+      'branch_mine',
+      'pit',
+      'quarry',
+      'room',
+      'shaft',
+      'staircase_down',
+      'tunnel',
+    ])
   })
 
   it('previews a pit: the dimensions understood, the blocks, what is missing, and changes nothing', async () => {
@@ -323,6 +331,95 @@ describe('excavating through the MCP server', () => {
 
     expect(result.isError).toBe(true)
     expect(result.text).toContain('protected_area')
+  })
+
+  /** A solid stone hill at z = 10..14, x = 18..22, y = 64..67, standing on the default dirt ground. */
+  function hill(bot: FakeBot): void {
+    for (let x = 18; x <= 22; x += 1)
+      for (let y = 64; y <= 67; y += 1)
+        for (let z = 10; z <= 14; z += 1) bot.setBlock(at(x, y, z), 'stone')
+    bot.players['Andrey_Knight'] = {
+      username: 'Andrey_Knight',
+      entity: {
+        id: 900,
+        type: 'player',
+        name: 'Andrey_Knight',
+        position: at(20.5, 64, 8.5),
+        yaw: 0,
+        pitch: 0,
+      },
+    }
+    bot.entity = { position: at(20.5, 64, 8.5) }
+    // Looking south into the hill's north face (hit block at x=20, z=10): the room digs south.
+    bot.rayHit = { name: 'stone', position: at(20, 65, 10), face: 2 }
+  }
+
+  it("digs a room into the wall the player looks at, with an entrance, torches, and a door", async () => {
+    const h = await start((bot) => {
+      hill(bot)
+      darkness(bot, [17, 63, 9], [23, 68, 15])
+      bot.inventoryItems = [
+        { name: 'iron_pickaxe', count: 1 },
+        { name: 'torch', count: 4 },
+        { name: 'oak_door', count: 1 },
+      ]
+    })
+
+    const result = await call(h, 'excavate', {
+      shape: 'room',
+      params: { width: 3, length: 3, height: 3, door: 'oak_door' },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { shape: 'room 3x3x3' } })
+    // The entrance: one cell wide, two high, dug into the hill's own column (x = 20, z = 10).
+    expect(nameAt(h, 20, 64, 10)).toBe('oak_door') // the door, in the entrance floor
+    expect(nameAt(h, 20, 65, 10)).toBe('air')
+    // The room behind it: x = 19..21, z = 11..13, y = 64..66 (open, except the torches on the floor).
+    const torchCells = new Set(['21,64,11', '19,64,11'])
+    for (const x of [19, 20, 21])
+      for (const z of [11, 12, 13])
+        for (const y of [64, 65, 66]) {
+          const key = `${String(x)},${String(y)},${String(z)}`
+          expect(nameAt(h, x, y, z)).toBe(torchCells.has(key) ? 'torch' : 'air')
+        }
+    // Outside the room, the hill stays solid.
+    expect(nameAt(h, 18, 65, 12)).toBe('stone')
+    expect(nameAt(h, 22, 65, 12)).toBe('stone')
+    expect(nameAt(h, 20, 67, 12)).toBe('stone')
+    // Torches along the side walls, on the floor.
+    expect(nameAt(h, 21, 64, 11)).toBe('torch')
+    expect(nameAt(h, 19, 64, 11)).toBe('torch')
+  })
+
+  it('previews a room from the wall the player looks at, without digging', async () => {
+    const h = await start((bot) => {
+      hill(bot)
+    })
+
+    const preview = await h.call('preview_excavation', {
+      shape: 'room',
+      params: { width: 3, length: 3, height: 3 },
+    })
+
+    expect(preview.data).toMatchObject({
+      shape: 'room 3x3x3',
+      origin: { x: 20, y: 64, z: 10 },
+      interpreted: { direction: 'south', width: 3, length: 3, height: 3 },
+    })
+    expect(h.bot.dug).toEqual([])
+  })
+
+  it('refuses a room when the player looks at the floor, not a wall', async () => {
+    const h = await start((bot) => {
+      hill(bot)
+      bot.rayHit = { name: 'stone', position: at(20, 63, 9), face: 1 } // top
+    })
+
+    const result = await call(h, 'excavate', { shape: 'room', params: { width: 3, length: 3 } })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('not a wall')
   })
 
   it('reports unknown shapes and wrong numbers in words', async () => {

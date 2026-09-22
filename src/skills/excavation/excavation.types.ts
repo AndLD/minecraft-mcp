@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import type { Position } from '../../core/position.types.js'
+import type { DecisionPrompt } from '../../core/skill.types.js'
 import type { WorkPlan } from '../construction/work-plan.types.js'
 
 export interface ExcavationContext {
@@ -22,4 +23,9 @@ export interface ExcavationProvider<Params = unknown> {
   defaultOrigin(feet: Position, params: Params): Position
   /** The plan, or a message saying why the parameters cannot be dug. */
   generate(params: Params, context: ExcavationContext): WorkPlan | { readonly error: string }
+  /**
+   * A question to ask the player before digging (for example: "I will dig you an entrance" waits for it to be cut
+   * by hand first), or undefined when the shape needs no confirmation. Asked once, before the plan runs.
+   */
+  needsConfirmation?(params: Params): DecisionPrompt | undefined
 }

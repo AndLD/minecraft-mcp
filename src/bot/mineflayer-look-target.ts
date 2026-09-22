@@ -1,4 +1,4 @@
-import type { LookTarget } from '../core/container.port.js'
+import type { LookFace, LookTarget } from '../core/container.port.js'
 import type { Position } from '../core/position.types.js'
 import { EYE_HEIGHT } from '../core/reach.js'
 import type { BotHolder } from './bot-like.types.js'
@@ -7,12 +7,22 @@ import { toVec3 } from './vec3.js'
 /** How far the player's crosshair reaches. */
 const RANGE = 8
 
+/** Mineflayer's `BlockFace` enum (from `prismarine-world`), by its numeric value. */
+const FACES: Readonly<Record<number, LookFace>> = {
+  0: 'bottom',
+  1: 'top',
+  2: 'north',
+  3: 'south',
+  4: 'west',
+  5: 'east',
+}
+
 export class MineflayerLookTarget implements LookTarget {
   constructor(private readonly holder: BotHolder) {}
 
   blockLookedAt(
     player: string,
-  ): { readonly name: string; readonly position: Position } | undefined {
+  ): { readonly name: string; readonly position: Position; readonly face: LookFace } | undefined {
     const bot = this.holder.current()
     const wanted = player.toLowerCase()
     const entity = Object.values(bot?.players ?? {}).find(
@@ -33,6 +43,7 @@ export class MineflayerLookTarget implements LookTarget {
       : {
           name: hit.name,
           position: { x: hit.position.x, y: hit.position.y, z: hit.position.z },
+          face: FACES[hit.face] ?? 'top',
         }
   }
 }

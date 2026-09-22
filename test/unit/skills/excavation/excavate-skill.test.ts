@@ -14,6 +14,7 @@ import {
   PitProvider,
   QuarryProvider,
 } from '../../../../src/skills/excavation/providers/dig-down.js'
+import { RoomProvider } from '../../../../src/skills/excavation/providers/room.js'
 import { TunnelProvider } from '../../../../src/skills/excavation/providers/tunnels.js'
 import { DropCollector } from '../../../../src/skills/gathering/drop-collector.js'
 import { buildVitals } from '../../../fakes/fake-ports.js'
@@ -54,6 +55,7 @@ function setup(fetcher?: MaterialFetcher) {
     .register(new PitProvider())
     .register(new QuarryProvider())
     .register(new TunnelProvider())
+    .register(new RoomProvider())
   const skill = new ExcavateSkill({
     registry,
     executor,
@@ -120,7 +122,7 @@ describe('ExcavateSkill: refusing', () => {
     const result = await s.skill.run(request({ shape: 'moat' }), skillContext().context)
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_shape' } })
-    expect(!result.ok && result.error.message).toContain('pit, quarry, tunnel')
+    expect(!result.ok && result.error.message).toContain('pit, quarry, room, tunnel')
   })
 
   it('names the wrong parameters', async () => {
@@ -268,5 +270,84 @@ describe('ExcavateSkill.preview', () => {
     const preview = s.skill.preview(request())
 
     expect(preview.ok && preview.value.hazards).toEqual([])
+  })
+})
+
+describe('ExcavateSkill: asking before it starts (room, entrance: player)', () => {
+  /** A small solid block around a 2x2x2 room dug south from (5, 64, 5), with the entrance already open. */
+  function roomWorld() {
+    const s = setup()
+    for (let x = 4; x <= 7; x += 1)
+      for (let y = 64; y <= 66; y += 1)
+        for (let z = 5; z <= 8; z += 1) s.world.setBlock({ x, y, z }, 'stone')
+    s.world.setBlock({ x: 5, y: 64, z: 5 }, 'air') // the entrance, dug by hand
+    s.world.setBlock({ x: 5, y: 65, z: 5 }, 'air')
+    s.world.give('torch', 4)
+    return s
+  }
+
+  const roomRequest = (): ExcavateInput => ({
+    shape: 'room',
+    params: { width: 2, length: 2, height: 2, direction: 'south', entrance: 'player' },
+    origin: { x: 5, y: 64, z: 5 },
+    fetchFromStorage: false,
+  })
+
+  function askingContext(answer: string | undefined) {
+    const asked: unknown[] = []
+    const base = skillContext()
+    return {
+      ...base,
+      asked,
+      context: { ...base.context, ask: (prompt: unknown) => (asked.push(prompt), Promise.resolve(answer)) },
+    }
+  }
+
+  it('asks and waits before digging, and proceeds once the player says it is done', async () => {
+    const s = roomWorld()
+    const ctx = askingContext('done')
+
+    const result = await s.skill.run(roomRequest(), ctx.context)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(ctx.asked).toEqual([expect.objectContaining({ options: ['done'] }) as unknown])
+    expect(s.world.nameAt({ x: 5, y: 65, z: 6 })).toBe('air') // the room itself was dug
+  })
+
+  it('cancels without digging anything when the wait is cancelled (ask resolves with undefined)', async () => {
+    const s = roomWorld()
+    const ctx = askingContext(undefined)
+
+    const result = await s.skill.run(roomRequest(), ctx.context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    expect(s.world.log).toEqual([])
+  })
+
+  it('with nobody to ask, carries on rather than refusing the request', async () => {
+    const s = roomWorld()
+
+    const result = await s.skill.run(roomRequest(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true })
+  })
+
+  it('never asks for entrance: dig (the default), or for any other shape', async () => {
+    const s = setup()
+    s.world.give('ladder', 4)
+    const ctx = askingContext('done')
+
+    await s.skill.run(request(), ctx.context) // the pit request from above
+    await s.skill.run(
+      {
+        shape: 'room',
+        params: { width: 2, length: 2, direction: 'south', entrance: 'dig' },
+        origin: { x: 5, y: 64, z: 5 },
+        fetchFromStorage: false,
+      },
+      ctx.context,
+    )
+
+    expect(ctx.asked).toEqual([])
   })
 })

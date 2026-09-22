@@ -109,11 +109,29 @@ describe('MineflayerLookTarget', () => {
 
     const hit = new MineflayerLookTarget(holderOf(bot)).blockLookedAt('andrey_knight')
 
-    expect(hit).toEqual({ name: 'chest', position: { x: 10, y: 65, z: 8 } })
+    expect(hit).toEqual({ name: 'chest', position: { x: 10, y: 65, z: 8 }, face: 'north' })
     expect(bot.rays[0]?.from).toMatchObject({ x: 10, y: 65.62, z: 10 })
     expect(bot.rays[0]?.direction.x).toBeCloseTo(-0) // yaw 0 faces -z
     expect(bot.rays[0]?.direction.z).toBeCloseTo(-1)
     expect(bot.rays[0]?.range).toBe(8)
+  })
+
+  it('reports the face the ray hit, for every side', () => {
+    const bot = withPlayer()
+    const faces: [number, string][] = [
+      [0, 'bottom'],
+      [1, 'top'],
+      [2, 'north'],
+      [3, 'south'],
+      [4, 'west'],
+      [5, 'east'],
+    ]
+    for (const [face, name] of faces) {
+      bot.rayHit = { name: 'stone', position: { x: 1, y: 2, z: 3 }, face }
+      expect(new MineflayerLookTarget(holderOf(bot)).blockLookedAt('Andrey_Knight')?.face).toBe(
+        name,
+      )
+    }
   })
 
   it('follows yaw and pitch', () => {

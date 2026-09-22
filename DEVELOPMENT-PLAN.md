@@ -72,7 +72,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`), cave sealing (`feature/excavation-cave-sealing`), and staircase target/width (`feature/excavation-staircase-target`) done; all merged into `development` |
 | 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
-| 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms and door opening not started |
+| 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms done (`feature/dug-rooms`); door opening not started |
 | 17 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
 | 18 Railways | not started (added) |
 | 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
@@ -455,7 +455,7 @@ Preparing a plot for building: "get me a clean field for building, 20x10, on the
   - e2e: uneven ground prepared over RCON (a hill, a hole, a tree, flowers, a shallow pond): `flatten_area` 20x10 at the bot's level leaves every top block at the level and air above it up to the clear height, and a strip outside the rectangle is untouched (checked through RCON); the owner bot faces each direction in turn and the rectangle follows; two dirt stacks placed at opposite corners define a plot with no size given, and they are gone afterwards; a player-placed wall inside is not removed; lava beside the area refuses; `preview_flatten` changes no block
 - **Exit criteria:** "get me a clean field for building, 20x10, on the level I am standing on" leaves a flat, cleared 20x10 plot starting where the player stands and running the way they face, at that level; "level the plot between my two markers" does the same for the marked rectangle; neither touches anything outside the plot or anything else a player built, and the reply says the bounds and level to build on.
 
-#### Dug rooms (`feature/dug-rooms`)
+#### Dug rooms (`feature/dug-rooms`, done)
 
 "Dig a room 5x5x4 behind this wall": the player and the bot walk to a hill, a mountain wall, or a cave wall, and the player looks at the wall and asks for a room. This is a new **shape in the excavation registry** (`room`, a new `ExcavationProvider`; no engine changes), used through `excavate` and `preview_excavation`. What is new is reading the wall the player looks at, the entrance, and the door.
 

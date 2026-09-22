@@ -13,6 +13,7 @@ import type {
 } from '../construction/plan-executor.js'
 import type { WorkPlan } from '../construction/work-plan.types.js'
 import type { ExcavationRegistry } from './excavation-registry.js'
+import type { ExcavationProvider } from './excavation.types.js'
 
 /** A rough figure for the preview: breaking a block, picking up the drop, and moving on. */
 const SECONDS_PER_BLOCK = 0.7
@@ -106,12 +107,20 @@ export class ExcavateSkill implements Skill<ExcavateInput, ExcavateOutput> {
   async run(input: ExcavateInput, context: SkillContext): Promise<SkillResult<ExcavateOutput>> {
     const prepared = this.prepare(input)
     if (!prepared.ok) return prepared
-    const { plan, origin } = prepared.value
+    const { plan, origin, provider, params } = prepared.value
     const options = this.optionsFor(input)
     const { executor, fetcher } = this.deps
 
+    const confirm = provider.needsConfirmation?.(params)
+    if (confirm !== undefined && context.ask !== undefined) {
+      const answer = await context.ask(confirm)
+      if (answer === undefined)
+        return err({ reason: 'aborted', message: 'Cancelled while waiting for an answer.' })
+    }
+
     const fetched: ItemCount[] = []
-    const needed = executor.preview(plan, options).missing
+    const preview0 = executor.preview(plan, options)
+    const needed = [...preview0.missing, ...preview0.optionalMissing]
     if (needed.length > 0 && input.fetchFromStorage && fetcher !== undefined) {
       await fetcher.fetch(needed, context)
       fetched.push(...needed)
@@ -147,6 +156,8 @@ export class ExcavateSkill implements Skill<ExcavateInput, ExcavateOutput> {
     origin: Position
     defaultOrigin: boolean
     interpreted: unknown
+    provider: ExcavationProvider
+    params: unknown
   }> {
     const provider = this.deps.registry.get(input.shape)
     if (provider === undefined)
@@ -170,6 +181,6 @@ export class ExcavateSkill implements Skill<ExcavateInput, ExcavateOutput> {
     const origin = input.origin ?? provider.defaultOrigin(vitals.position, parsed.data)
     const plan = provider.generate(parsed.data, { origin, minY: lowestLayer(vitals.dimension) })
     if ('error' in plan) return err({ reason: 'invalid_shape', message: plan.error })
-    return ok({ plan, origin, defaultOrigin, interpreted: parsed.data })
+    return ok({ plan, origin, defaultOrigin, interpreted: parsed.data, provider, params: parsed.data })
   }
 }

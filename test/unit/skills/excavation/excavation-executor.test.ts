@@ -580,6 +580,32 @@ describe('branches that depend on a cell', () => {
     expect(result).toMatchObject({ ok: true, value: { broken: 2, ended: [] } })
     expect(isAir(s.world, 1, 50, 0)).toBe(true)
   })
+
+  it('a needs cell outside the plan (the player digs it by hand) is given a moment to catch up, not given up on at once', async () => {
+    const s = mine()
+    // The only step's needs cell is not part of the plan at all (a room's entrance, dug by the player): still
+    // solid at first read, opened externally after a moment.
+    const steps: WorkStep[] = [{ kind: 'break', at: at(1, 50, 0), needs: at(2, 50, 0), branch: 'room' }]
+    s.world.setBlock(at(2, 50, 0), 'dirt')
+    let reads = 0
+    const realBlockAt = s.world.blockAt.bind(s.world)
+    s.world.blockAt = (position) => {
+      if (position.x === 2 && position.y === 50 && position.z === 0) {
+        reads += 1
+        if (reads >= 2) s.world.setBlock(at(2, 50, 0), 'air') // "opened by the player" a moment later
+      }
+      return realBlockAt(position)
+    }
+
+    const result = await s.executor.run(
+      { name: 'p', steps, hazards: 'end_branch' },
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { broken: 1, ended: [] } })
+    expect(reads).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe('stairs and a water landing in a quarry', () => {

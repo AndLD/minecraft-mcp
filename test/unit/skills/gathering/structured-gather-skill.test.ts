@@ -27,6 +27,7 @@ function excavateOutput(overrides: Partial<ExcavateOutput> = {}): ExcavateOutput
     alreadyDone: 0,
     used: [],
     ended: [],
+    missingOptional: [],
     shape: 'quarry 4x4 to y=61',
     origin: { x: 12, y: 63, z: 5 },
     bounds: { from: { x: 12, y: 61, z: 5 }, to: { x: 15, y: 63, z: 8 } },

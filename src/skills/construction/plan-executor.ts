@@ -30,6 +30,9 @@ const MAX_ATTEMPTS = 3
 const MAX_FAILURES_IN_A_ROW = 5
 const CONFIRM_POLL_MS = 100
 const CONFIRM_POLLS = 15
+/** How long, and how often, to wait for a `needs` cell outside the plan (dug by the player) to catch up. */
+const SETTLE_POLL_MS = 300
+const SETTLE_POLLS = 3
 const TORCH = 'torch'
 /** How many torches to make at once when they run out. */
 const TORCH_BATCH = 8
@@ -39,6 +42,14 @@ const CRAFTABLE_TIERS = ['wooden', 'stone', 'iron', 'diamond']
 const ROUNDS = 2
 /** Blocks that stay in a dug opening (a ladder, a torch): the cell still counts as dug. */
 const PLACED_IN_OPENINGS = new Set(['ladder', 'torch', 'wall_torch'])
+
+/**
+ * The block names this plan itself places (a door in an entrance cell that is also a `break` step's own target,
+ * for example): a `break` step whose cell already holds one of them is done, not still to dig, so a later
+ * verification pass does not mistake the placement for solid rock and dig it back out.
+ */
+const placedBlocksOf = (plan: WorkPlan): ReadonlySet<string> =>
+  new Set(plan.steps.filter((step) => step.kind === 'place').map((step) => step.block))
 const ORE = /(_ore|ancient_debris)$/
 /** From the ground the bot reaches about this far above the cell it stands in (eye height plus reach, at arm's length). */
 const GROUND_REACH = 4.8
@@ -73,6 +84,10 @@ export interface PlanPreview {
   /** The protected area the plan touches, if any. */
   readonly protectedArea: string | undefined
   readonly hazards: readonly string[]
+  /** Best-effort placements (see `WorkStep.place.optional`) that are wanted but not carried; never blocks the run. */
+  readonly optionalMissing: readonly ItemCount[]
+  /** Informational notes from the plan (see `WorkPlan.warnings`). */
+  readonly warnings: readonly string[]
   /**
    * Steps that are too high to reach from the ground, and the tower height (in scaffold blocks, already counted in
    * `needs`) an estimate says they take. Undefined when nothing is too high or scaffolding is off.
@@ -100,6 +115,8 @@ export interface PlanOutcome {
   readonly used: readonly ItemCount[]
   /** Chains that ended early, with why and where. */
   readonly ended: readonly EndedBranch[]
+  /** Best-effort placements that were never had, so were left undone (see `WorkStep.place.optional`). */
+  readonly missingOptional: readonly ItemCount[]
 }
 
 export interface PlanExecutorDeps {
@@ -158,6 +175,7 @@ export class PlanExecutor {
   preview(plan: WorkPlan, options: PlanOptions): PlanPreview {
     const { deps } = this
     const needs = new Map<string, number>()
+    const optionalItems = new Set<string>()
     const blocked: Position[] = []
     let toPlace = 0
     let toBreak = 0
@@ -168,6 +186,7 @@ export class PlanExecutor {
     const dugBySteps = new Set(
       plan.steps.filter((step) => step.kind === 'break').map((step) => cellKey(step.at)),
     )
+    const placedBlocks = placedBlocksOf(plan)
     for (const step of plan.steps) {
       protectedArea ??= deps.guard.protectedAt(step.at)?.label
       const found = deps.blocks.blockAt(step.at)
@@ -177,7 +196,7 @@ export class PlanExecutor {
         continue
       }
       if (step.kind === 'break') {
-        if (isOpenAir(found)) done += 1
+        if (isOpenAir(found) || (found !== undefined && placedBlocks.has(found))) done += 1
         else toBreak += 1
         continue
       }
@@ -195,6 +214,7 @@ export class PlanExecutor {
       }
       toPlace += 1
       needs.set(step.block, (needs.get(step.block) ?? 0) + 1)
+      if (step.optional === true) optionalItems.add(step.block)
       if (found !== undefined && !isReplaceable(found) && !dugBySteps.has(cellKey(step.at))) {
         if (options.clearObstacles) toBreak += 1
         else blocked.push(step.at)
@@ -206,9 +226,12 @@ export class PlanExecutor {
       needs.set(scaffold.block, (needs.get(scaffold.block) ?? 0) + scaffold.height)
     const have = countItems(deps.inventory.snapshot())
     const missing: ItemCount[] = []
+    const optionalMissing: ItemCount[] = []
     for (const [name, count] of needs) {
       const short = count - (have.get(name) ?? 0)
-      if (short > 0) missing.push({ name, count: short })
+      if (short <= 0) continue
+      if (optionalItems.has(name)) optionalMissing.push({ name, count: short })
+      else missing.push({ name, count: short })
     }
     return {
       steps: plan.steps.length,
@@ -217,6 +240,8 @@ export class PlanExecutor {
       alreadyDone: done,
       needs: [...needs].map(([name, count]) => ({ name, count })),
       missing,
+      optionalMissing,
+      warnings: plan.warnings ?? [],
       torchesWanted: torches,
       blocked: blocked.slice(0, SAMPLE),
       blockedCount: blocked.length,
@@ -271,6 +296,7 @@ export class PlanExecutor {
     this.planCells = new Set(plan.steps.map((step) => cellKey(step.at)))
     this.order = new Map(plan.steps.map((step, index) => [cellKey(step.at), index]))
     this.dug = new Set()
+    this.placedBlocks = placedBlocksOf(plan)
 
     for (let round = 0; round < ROUNDS; round += 1) {
       const pending = plan.steps.filter(
@@ -287,6 +313,10 @@ export class PlanExecutor {
           step === undefined &&
           pending.every((s) => s.kind === 'break' && s.needs !== undefined)
         ) {
+          // A step whose `needs` cell depends on something outside this plan (an entrance the player digs by
+          // hand) can briefly read as still blocked right after it was actually opened: give the world a moment
+          // to catch up before giving up on the whole chain.
+          if (await this.settling(pending, context)) continue
           // What is left starts from a cell that never got dug (the tunnel it leaves ended early).
           for (const s of pending) {
             this.recordEnded(
@@ -339,7 +369,11 @@ export class PlanExecutor {
           const tried = (attempts.get(keyOf(step)) ?? 0) + 1
           attempts.set(keyOf(step), tried)
           if (tried < MAX_ATTEMPTS) pending.push(step)
-          else if (step.kind === 'break' && step.optional === true) skipped.add(keyOf(step))
+          else if (
+            (step.kind === 'break' || step.kind === 'place') &&
+            step.optional === true
+          )
+            skipped.add(keyOf(step))
           else {
             failed.set(keyOf(step), outcome.why)
             inARow += 1
@@ -386,12 +420,15 @@ export class PlanExecutor {
         },
       )
     }
-    // Lighting and sealing are a courtesy (no torches, no torch; nothing to backfill with, left open), so neither
-    // is part of what must hold.
+    // Lighting, sealing, and a best-effort placement (a door with nothing to place) are a courtesy (nothing to
+    // backfill or place with, left as is), so none of them is part of what must hold.
+    const isOptionalPlace = (step: WorkStep): boolean =>
+      step.kind === 'place' && step.optional === true
     const stillOpen = plan.steps.filter(
       (step) =>
         step.kind !== 'light' &&
         step.kind !== 'seal' &&
+        !isOptionalPlace(step) &&
         !skipped.has(keyOf(step)) &&
         !this.satisfied(step),
     ).length
@@ -402,6 +439,10 @@ export class PlanExecutor {
         progress,
         { stillOpen },
       )
+    const missingOptional = new Map<string, number>()
+    for (const step of plan.steps)
+      if (step.kind === 'place' && step.optional === true && !this.satisfied(step))
+        missingOptional.set(step.block, (missingOptional.get(step.block) ?? 0) + 1)
     return ok({
       steps: plan.steps.length,
       placed: progress.placed,
@@ -410,6 +451,7 @@ export class PlanExecutor {
       alreadyDone: preview.alreadyDone,
       used: [...progress.used].map(([name, count]) => ({ name, count })),
       ended: [...ended.values()],
+      missingOptional: [...missingOptional].map(([name, count]) => ({ name, count })),
     })
   }
 
@@ -442,6 +484,8 @@ export class PlanExecutor {
   private order: ReadonlyMap<string, number> = new Map()
   /** Cells broken during this run. */
   private dug = new Set<string>()
+  /** Blocks this plan itself places (see `placedBlocksOf`). */
+  private placedBlocks: ReadonlySet<string> = new Set()
 
   /** Whether a step can be done right now. */
   private available(step: WorkStep): boolean {
@@ -456,9 +500,26 @@ export class PlanExecutor {
     }
   }
 
-  /** A dug cell: open air, or one with a torch or ladder standing in it. */
+  /**
+   * Polls a few times, a short wait apart, for any step to become available: a step whose `needs` cell is not the
+   * plan's own to dig (the entrance of a room the player cuts by hand) can read as still blocked for a moment
+   * right after it was actually opened. True when something opened up meanwhile.
+   */
+  private async settling(pending: readonly WorkStep[], context: SkillContext): Promise<boolean> {
+    for (let poll = 0; poll < SETTLE_POLLS; poll += 1) {
+      if (context.signal.aborted) return false
+      await sleep(this.deps.scheduler, SETTLE_POLL_MS, context.signal)
+      if (pending.some((step) => this.available(step))) return true
+    }
+    return false
+  }
+
+  /** A dug cell: open air, one with a torch or ladder standing in it, or something this plan itself placed there. */
   private isOpening(name: string | undefined): boolean {
-    return isOpenAir(name) || (name !== undefined && PLACED_IN_OPENINGS.has(name))
+    return (
+      isOpenAir(name) ||
+      (name !== undefined && (PLACED_IN_OPENINGS.has(name) || this.placedBlocks.has(name)))
+    )
   }
 
   /** Notes that a chain stopped early, once per chain and reason, counting the cells it left. */
@@ -655,7 +716,15 @@ export class PlanExecutor {
       }
       const outcome =
         step.kind === 'place'
-          ? await this.place(step.at, step.block, options, progress, context, step.against)
+          ? await this.place(
+              step.at,
+              step.block,
+              options,
+              progress,
+              context,
+              step.against,
+              step.optional,
+            )
           : step.kind === 'break'
             ? await this.breakCell(step.at, undefined, progress, context, options)
             : ({ kind: 'done' } as Outcome)
@@ -802,7 +871,15 @@ export class PlanExecutor {
 
     switch (step.kind) {
       case 'place':
-        return this.place(step.at, step.block, options, progress, context, step.against)
+        return this.place(
+          step.at,
+          step.block,
+          options,
+          progress,
+          context,
+          step.against,
+          step.optional,
+        )
       case 'break':
         return this.breakCell(step.at, fullSession, progress, context, options)
       case 'light': {
@@ -876,6 +953,7 @@ export class PlanExecutor {
     progress: Progress,
     context: SkillContext,
     against?: Position,
+    optional?: boolean,
   ): Promise<Outcome> {
     const { deps } = this
     const found = deps.blocks.blockAt(at)
@@ -891,12 +969,19 @@ export class PlanExecutor {
 
     const placed = await deps.placer.placeAgainst(block, support.reference, support.face)
     if (!placed.ok) {
-      if (placed.error.reason === 'no_item')
+      if (placed.error.reason === 'no_item') {
+        // A best-effort placement (a door): try crafting one from what is carried, but never block the plan for it.
+        if (optional === true) {
+          if ((await deps.supplies?.craft(block, 1, context)) === true)
+            return { kind: 'retry', why: `crafted ${block}` }
+          return { kind: 'retry', why: `there is no ${block} to place` }
+        }
         return stop(
           failure('missing_materials', `Ran out of ${block}.`, progress, {
             missing: [{ name: block, count: 1 }],
           }),
         )
+      }
       return { kind: 'retry', why: placed.error.message }
     }
     for (let poll = 0; poll < CONFIRM_POLLS; poll += 1) {
