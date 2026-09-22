@@ -71,16 +71,17 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 12 Server commands and teleport | done, merged into `development` |
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`) and cave sealing (`feature/excavation-cave-sealing`) done; all merged into `development` |
-| 15 Site preparation: leveling, dug rooms, and opening doors | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
-| 16 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
-| 17 Railways | not started (added) |
-| 18 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
-| 19 Sleeping and respawn point | not started (added; small, can go right after teleport) |
-| 20 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
-| 21 World discovery, including caves and canyons | not started (cave flow added) |
-| 22 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
-| 23 Autonomy: the bot's own will | not started (added; switchable, off by default; needs the earlier skills to have something to choose from) |
-| 24 Hardening and polish | not started (was 14, then 19 to 23) |
+| 15 Structured gathering: pits and quarries instead of scattered holes | not started (added, found live; builds only on excavation) |
+| 16 Site preparation: leveling, dug rooms, and opening doors | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
+| 17 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
+| 18 Railways | not started (added) |
+| 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
+| 20 Sleeping and respawn point | not started (added; small, can go right after teleport) |
+| 21 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
+| 22 World discovery, including caves and canyons | not started (cave flow added) |
+| 23 Leading a player | not started (added; standalone, small; works with any target and pairs with discovery) |
+| 24 Autonomy: the bot's own will | not started (added; switchable, off by default; needs the earlier skills to have something to choose from) |
+| 25 Hardening and polish | not started (was 14, then 19 to 23) |
 
 ## Phases
 
@@ -346,8 +347,8 @@ The bot can walk to you, but sometimes you want it next to you at once (it is fa
   1. `pit` and `quarry` dig with `cavityCheck: false` (unlike `shaft`, which already checks): the reasoning was "open to the sky, no cave to break into," which only covers the open top, not a cave crossing the sides or the floor at depth. Fixed by giving them `cavityCheck: true` too, so every shape stops one cell short of a cave the same way (`cave_breakthrough`), instead of a quarry or pit digging straight through into one unnoticed.
   2. Even where the dig correctly stops short of a cave, nothing repairs a boundary, or a designed stair or ladder step, that a cave has **already** hollowed out before the dig gets there: the existing rule only ever avoids breaking further rock, it never places rock back. A **new seal pass** covers this: wherever a plan needs a cell to stay solid (a wall, floor, or ceiling cell at the boundary of `hazards: 'end_branch'`, and every ring cell of `exit: stairs` or the ladder column of `exit: ladder`) and that cell is already open and not the dig's own (the same `isOurOwn` test the hazard rule already uses, so mined cells and ore veins are never mistaken for a cave), a block is **placed** there (`seal_block`, default `cobblestone`, falling back to `dirt` when none is carried) instead of the opening being left as it is. This is what closes the holes the player found: a quarry wall or floor a cave had already opened, and a stair step with no material underfoot.
   3. **A sealed breach can be worked past, instead of ending the branch for good.** Where a column, tunnel, or branch meets a cave (`cave_breakthrough`), sealing the opening lets it carry on past the cave to its full planned extent (a quarry column still reaches its target depth, with the cave wall closed behind it), rather than stopping there permanently, which is the "affects the result" the player saw (a column or branch left too shallow because a cave happened to cross it).
-  - Applies to every shape that excavates, not only quarry: pit, shaft, tunnel, branch_mine, staircase_down, and Phase 15's `room`.
-  - Off with `seal_caves: false` (default true) for a player who wants to break into a found cave on purpose and explore it (`explore_caves`, Phase 17, is the tool for that); excavation defaults to closing what it finds, since a dig was not asked to open a cave.
+  - Applies to every shape that excavates, not only quarry: pit, shaft, tunnel, branch_mine, staircase_down, and Phase 16's `room`.
+  - Off with `seal_caves: false` (default true) for a player who wants to break into a found cave on purpose and explore it (`explore_caves`, Phase 22, is the tool for that); excavation defaults to closing what it finds, since a dig was not asked to open a cave.
   - The previously dropped `seal_hazards` idea (`feature/excavation-extras`) only ever covered fluids, which never needed it, since the hazard rule already stops one block short of lava and water and no face is ever exposed there; this is the missing dry-cave case, and it is the reason `seal_hazards` is revived here under the clearer name `seal_caves`.
   - **Tests:**
     - unit: `pit` and `quarry` stop one cell short of a synthetic cave the same way `shaft` already does; the seal pass places a block on a boundary cell, a ring cell, and a ladder cell that are already open and not the dig's own (mined cells and ore veins are not sealed); a sealed breach lets the column/branch continue to its planned extent; `seal_block` falls back to dirt when no cobblestone is carried; `seal_caves: false` leaves the opening as found; a genuine ore vein or the dig's own earlier cells are never sealed
@@ -384,7 +385,25 @@ The bot can walk to you, but sometimes you want it next to you at once (it is fa
   - e2e: a 3×3×2 pit dug and verified through RCON; a small quarry (5×5, a few levels) with stair walls and a water pit: every step block exists, the bot walks out and in again, the pit holds water; a tunnel that stops one block before lava and before water placed by RCON, with the fluid untouched; a branch mine whose branch positions match the spacing; torches present where the rule says
 - **Exit criteria:** "dig a 3×3×2 pit" works; "dig a 5×5 quarry down to 9 above the bedrock with stair walls and a water landing, then a 50-block tunnel with side branches every 3 blocks, torches all the way" runs to the end (or stops for a stated reason such as lava, no torches, or no tools) and reports what it found.
 
-### Phase 15: Site preparation: leveling, dug rooms, and opening doors (2 sessions)
+### Phase 15: Structured gathering: pits and quarries instead of scattered holes (1 session)
+
+Found live: gathering a bulk terrain block (dirt, stone, cobblestone, sand, gravel, netherrack) through `collect_block` digs the nearest matching block wherever one happens to be, one at a time. For a big request this leaves a scatter of small, uneven single-block holes across the area instead of one clean dig, and looks like vandalism rather than mining. Builds directly on excavation (Phase 14) and needs nothing else, which is why it comes right after it, before site preparation and the rest.
+
+- Branch: `feature/structured-gathering`. A client of the excavation providers and the construction engine; no change to the shapes themselves.
+- **What counts as "bulk."** A new small group in `block-aliases.ts` (alongside `logs`, `ores`, `leaves`): `terrain`, the plain, common blocks that come back one-for-one from a single break and need no searching to find, because they are simply the ground: `dirt`, `stone` (which drops `cobblestone`), `cobblestone`, `sand`, `gravel`, `netherrack`. Ore is deliberately excluded: a quarry does not help you "find" ore, since you dig it wherever it happens to be, so ore keeps the scattered nearest-first hunt.
+- **When it switches.** `collect_block` gains `layout` (`auto` default, `scattered`, `structured`) and `structured_threshold` (an item count, default 32, about two stacks; also settable as a standing instruction). `auto` uses a structured dig only for a `terrain` block requested at or above the threshold; anything else (ore, wood, a small request) keeps today's scattered behaviour unchanged. The player can force either way regardless of block or count: `layout: structured` for a small, tidy hole on purpose, `layout: scattered` to keep the ground undisturbed for a big one (no new pit wanted right now).
+- **Sizing the dig.** For a one-for-one block, the skill picks a `quarry` footprint and depth whose total cell count is close to the requested count, biased toward a small, roughly square footprint (never wider than about 5 by 5) over a deep, narrow shaft, and capped by the same size limits `excavate` already enforces. A count that does not divide evenly rounds up to a whole layer and reports the surplus, the same way an overshoot is already described in `collect_block`'s result.
+- **Where it digs.** Beside the bot, on the flattest, most open ground nearby: the same "is the site safe and clear" check the excavation shapes already do before starting (no lava in or next to it, no obstruction, not a protected area, not inside a player-made structure) decides whether the spot works. When nothing suitable is close by (a cliff edge, water, builds on every side), it falls back to the scattered dig and says why in the result, rather than refusing the request outright.
+- **What it reuses, unchanged.** The dig is a real `excavate` quarry under the hood: the hazard rule, cave sealing, an exit ladder by default so neither the bot nor a player who follows gets stuck at the bottom, and the same spoil and inventory-full policies that already apply to every dig.
+- **Reporting.** The result names what it did (`layout: structured`, the shape, and its origin) so the player knows where the hole is and can reuse or fill it later, alongside `gained`, exactly as `collect_block` already reports it.
+- **Tools:** no new tool; `collect_block` gains `layout` and `structured_threshold`. The excavation preview (`preview_excavation`) already exists for a player who wants to check a shape by hand first.
+- **Tests:**
+  - unit: the `terrain` group (membership, `stone` mapped to its `cobblestone` drop, ore excluded), the `auto`/`scattered`/`structured` decision at and around the default and a per-call threshold, the sizing function (count to footprint and depth, the square bias, the size cap, the rounded-up overshoot and how it is reported), the site check (a flat, open spot found near the bot; refused near a cliff, water, or a protected area, with the scattered fallback and its reason)
+  - integration: `collect_block` with a bulk request over the threshold on a stateful fake world produces a quarry-shaped dig (checked by the shape of the hole, not by scattered positions) and reports `gained`; a small or named-ore request still digs scattered, unchanged; no flat ground nearby falls back to scattered and says why
+  - e2e: "get me 40 dirt" on open ground digs one small, contained quarry (checked through RCON: a solid rectangular footprint, not scattered single-block holes) and the inventory gains at least 40 dirt; "get me 3 dirt" still digs a few scattered blocks, unchanged; started at a cliff edge, it falls back to scattered and says why
+- **Exit criteria:** "get me 40 dirt" (or cobblestone, sand, gravel, or netherrack) leaves one small, contained pit or quarry near the bot instead of a field of scattered single-block holes, with an exit ladder, and the reply says where it dug; a small or specific request behaves exactly as it does today.
+
+### Phase 16: Site preparation: leveling, dug rooms, and opening doors (2 sessions)
 
 Three features that prepare a place for building or living, each on its own branch: `feature/site-leveling` (about 1 session), `feature/dug-rooms` (about 0.75), and `feature/door-opening` (about 0.25). The first two are clients of the excavation machinery and the construction engine; the third belongs to movement.
 
@@ -447,11 +466,11 @@ Today a closed door is a wall for the bot: the movement library's door option is
   - e2e: a small house with a closed oak door: `goto` inside and back out, the door is closed after each pass (checked through RCON); a fence-gate pen: the bot passes and the gate is closed again; an iron door built over RCON: `goto` reports `needs_switch`
 - **Exit criteria:** "go inside the house" through a closed wooden door works and leaves the door closed; an iron door is reported, not attempted.
 
-### Phase 16: Iron doors and switches (¾ session)
+### Phase 17: Iron doors and switches (¾ session)
 
 An iron door cannot be opened by hand. It opens while something powers it: a button, a lever, or a pressure plate, usually beside the door. The bot cannot see the redstone behind them, so this phase recognises switches by where they are and checks by trying. It follows Phase 15's ordinary door opening.
 
-- Branch: `feature/switches`. Reuses the door handling and `NavigationRunner` of Phase 15, and `LookTarget` for "the button I am looking at".
+- Branch: `feature/switches`. Reuses the door handling and `NavigationRunner` of Phase 16, and `LookTarget` for "the button I am looking at".
 - **Tools:**
   - `press_switch`: press a button, toggle a lever, or step onto a plate at `at`, or the one the player looks at; the result says what happened to the door beside it, if any.
   - `open_door`: open a door, ordinary or iron, by position or the one the player looks at, optionally walking through (`walk_through`) and closing or restoring things behind (`restore`, default true). For an iron door it finds and tries the switches itself (below).
@@ -466,7 +485,7 @@ An iron door cannot be opened by hand. It opens while something powers it: a but
   - e2e: an iron door with a stone button on the frame block beside it (over RCON): `open_door` with `walk_through` gets the bot in before the door closes; a lever door is left as it was found; a door with a decoy button that does nothing tries the next candidate; `find_switches` lists them; with policy `ask` `goto` reports `iron_door_blocked`
 - **Exit criteria:** "get into the house" through an iron door with a button beside it asks (or, with the standing instruction `auto`, simply does it), presses the button, walks in, and leaves the house as it was (a lever put back); a door that does not react is reported with what was tried.
 
-### Phase 17: Railways (2 sessions)
+### Phase 18: Railways (2 sessions)
 
 - Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
 - **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
@@ -484,7 +503,7 @@ An iron door cannot be opened by hand. It opens while something powers it: a but
   - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
 - **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
 
-### Phase 18: Farming, crops, animals, and trees (3.25 sessions)
+### Phase 19: Farming, crops, animals, and trees (3.25 sessions)
 
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
@@ -525,7 +544,7 @@ Hunting takes animals from the world and never adds any, and food stops when the
   - e2e: a small farm with a cow pen, a chicken pen, and a wheat field: `discover_farm` proposes all three; after registering them as one group, `inspect_farm` reports the ripe and growing counts and the animal counts without changing a block, and `tend_farm` on the group harvests and replants the field, collects the eggs, and returns one summary with three parts; a gap cut into a fence shows up as a problem in `inspect_farm`; eggs summoned as items in a fenced pen with chickens: `collect_eggs` picks them all up, stores exactly 10% (rounded up) in a chest and throws the rest (the chest count is exact; with 64 eggs at least one chick appears, the chance of none being under 0.03%); `store_fraction: 1` stores everything; a full pen throws nothing; `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size; saplings planted around a point with the right spacing and grown with bone meal
 - **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair; "go check our farm near home" answers with one report over every pen and field of the group without changing anything, and "run the farm" tends all of them with one summary; "collect the eggs" stores a tenth in a chest and throws the rest into the pen for chicks (unless told otherwise or the pen is full); "plant a forest of 10 trees around the house" places 10 saplings with room to grow, and felling them later replants.
 
-### Phase 19: Sleeping and respawn point (1 session)
+### Phase 20: Sleeping and respawn point (1 session)
 
 Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes up at home instead of at the far-away world spawn, which also makes drop recovery quicker and safer), and sleeping skips the night.
 
@@ -550,11 +569,11 @@ Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes
   - e2e: at night the bot sleeps in a bed and the night is skipped when the server's sleeping percentage lets it; by day the respawn point is set and, after the bot is killed, it wakes up at the bed (position check); a destroyed bed makes it respawn at the spawn and report it; a zombie near the bed makes sleeping fail with the reason; in the Nether-guard case the tool refuses without touching the bed (unit and integration only: the e2e server has no Nether)
 - **Exit criteria:** "set your spawn at this bed" makes the bot respawn there after a death; at night "go to sleep" puts the bot to bed, and it tells you exactly what else is needed for the night to pass; it never uses a bed in the Nether or the End.
 
-### Phase 20: Signs (½ session)
+### Phase 21: Signs (½ session)
 
 Place a sign with text where the player says, and take one down again. Signs are how a player labels a chest, marks a farm, or names a room, and the bot only ever labels things in its own memory (`label_container`, `set_landmark`) with nothing visible in the world.
 
-- Branch: `feature/signs`. Standing-sign and wall-sign placement is a client of `Placer.placeAgainst`; the target uses the `LookTarget` port with the hit face added in Phase 15 (dug rooms).
+- Branch: `feature/signs`. Standing-sign and wall-sign placement is a client of `Placer.placeAgainst`; the target uses the `LookTarget` port with the hit face added in Phase 16 (dug rooms).
 - **Tools:**
   - `place_sign`: `text` (a string that is wrapped into lines, or `lines` with up to 4) and a target: **the block the player is looking at** (the default, on the face they look at), or `at` and `face`, or `beside` a registered container by its label (the sign goes on a free side of the chest with the label as the default text). Options: `wood` (default: the sign type the bot carries, else oak), `side` (`front`, `back`), and `facing` for a standing sign (default: towards the player).
   - `edit_sign`: replace the text of a sign that is not waxed (target as above); a waxed sign is refused with the reason.
@@ -572,7 +591,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: a sign placed on a wall and a sign on the ground (blocks and text checked through RCON `data get block`), `edit_sign` changes the text, `remove_sign` removes the sign and the item ends in the inventory, a waxed sign (made over RCON) refuses editing but can be removed on request, a protected area refuses, and `read_signs` returns what the owner bot wrote
 - **Exit criteria:** "put a sign 'Iron' on this chest" (looking at the chest) hangs a wall sign with that text; "change it to 'Ores'" edits it; "take that sign down" removes exactly that sign and picks it up; "what do the signs here say?" lists their text.
 
-### Phase 21: World discovery, including caves and canyons (2 sessions)
+### Phase 22: World discovery, including caves and canyons (2 sessions)
 
 - `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
 - `StructureSignature` implementations detected from loaded chunks and entities:
@@ -600,7 +619,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: on a fixed-seed world (seed chosen so a village is within reach of spawn, ground truth confirmed with `/locate`), `explore_for_structure` finds the village within a bounded time and the coordinates are close to the truth; a pre-built signature structure placed via RCON is detected
 - **Exit criteria:** "find a village" makes the bot explore and report village coordinates in chat, and that structure remains listed after restart.
 
-### Phase 22: Leading a player (½ session)
+### Phase 23: Leading a player (½ session)
 
 "Come to me and lead me to the village." A standalone feature, not part of discovery: the target can be a structure the bot found, a landmark (`home`), a registered container or farm, or plain coordinates, so it is useful with or without exploration. It builds on `Navigator`, the player lookup, `Gaze`, and chat.
 
@@ -623,7 +642,7 @@ Place a sign with text where the player says, and take one down again. Signs are
   - e2e: on flat ground the owner bot follows the bot to a target 40 blocks away (both end near it, and the chat calls stayed within the limit); when the owner walks perpendicular the bot stays within `lead_distance` of the owner and does not reach the target; a `stop` ends the task
 - **Exit criteria:** "come to me and lead me to the village" brings the bot to the player and then to the village, waiting and calling whenever the player falls behind, following the player if they wander, and saying when they have arrived.
 
-### Phase 23: Autonomy, the bot's own will (2.5 sessions)
+### Phase 24: Autonomy, the bot's own will (2.5 sessions)
 
 A switch that turns the bot from a helper that waits for orders into something closer to a real player: it decides for itself what to do next (gather, craft, build, dig, farm, look after and extend the home) and keeps going, while the player can still talk to it and stop it at any moment. **The agent is the brain that writes the intentions; the bot's own code is the body that carries them out.** The agent generates a *will* and attaches it to the bot; the autonomy engine then works through it with no agent round trip per step, like `LowFoodResponder` already does for food, so it also costs no model usage while it runs.
 
@@ -650,7 +669,7 @@ A switch that turns the bot from a helper that waits for orders into something c
   - e2e: in the Docker server, a will "keep 20 oak logs in the chest" with autonomy on: the bot gathers, deposits, and stops at 20 (checked through RCON); the owner bot's chat message pauses it and `autonomy off` stops it; a boundary radius is respected; two deaths switch it off
 - **Exit criteria:** with a will written by the agent ("keep the chest stocked with logs and food, tend the farm every day, and build these rooms next to the house"), turning autonomy on makes the bot work through it on its own, without waiting for approval unless `require_approval` is switched on, talking a little like a player, pausing whenever the owner speaks, stopping at once on `stop` or `autonomy off`, and telling the agent when it runs out of things to do; the log shows why it did each thing.
 
-### Phase 24: Hardening and polish (1 session)
+### Phase 25: Hardening and polish (1 session)
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
