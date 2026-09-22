@@ -71,7 +71,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 12 Server commands and teleport | done, merged into `development` |
 | 13 Construction engine and building | done: engine merged (`feature/construction-engine`); house, shelter, custom shapes, and pillaring up in `feature/building`; all merged into `development` |
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`), cave sealing (`feature/excavation-cave-sealing`), and staircase target/width (`feature/excavation-staircase-target`) done; all merged into `development` |
-| 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), pending merge into `development` |
+| 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
 | 16 Site preparation: leveling, dug rooms, and opening doors | not started (added; builds on excavation and the construction engine; moved up to come right after excavation) |
 | 17 Iron doors and switches | not started (added; follows the ordinary door opening of Phase 15) |
 | 18 Railways | not started (added) |
