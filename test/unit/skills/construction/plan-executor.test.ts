@@ -205,6 +205,76 @@ describe('PlanExecutor: doors and shelters', () => {
   })
 })
 
+describe('PlanExecutor: optional placements (a door with nothing to place)', () => {
+  it('finishes the plan and reports the missing item, instead of refusing or failing', async () => {
+    const s = setup()
+    // Nothing to place around it, and no oak_door carried.
+
+    const result = await s.executor.run(
+      plan({ kind: 'place', at: at(3, 64, 5), block: 'oak_door', optional: true }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { placed: 0, missingOptional: [{ name: 'oak_door', count: 1 }] },
+    })
+  })
+
+  it('is counted in needs but never in missing, so it never blocks the plan from starting', () => {
+    const s = setup()
+
+    const preview = s.executor.preview(
+      plan({ kind: 'place', at: at(3, 64, 5), block: 'oak_door', optional: true }),
+      options,
+    )
+
+    expect(preview.needs).toEqual([{ name: 'oak_door', count: 1 }])
+    expect(preview.missing).toEqual([])
+    expect(preview.optionalMissing).toEqual([{ name: 'oak_door', count: 1 }])
+  })
+
+  it('crafts one from what is carried when it can, through the supplies crafter', async () => {
+    const s = setup()
+    s.world.give('oak_planks', 6)
+    const crafted: string[] = []
+    const executor = new PlanExecutor({
+      blocks: s.world,
+      placer: s.world,
+      digger: s.world,
+      navigator: s.world,
+      inventory: s.world,
+      vitals: s.world,
+      guard: s.world,
+      drops: new DropCollector({
+        drops: new FakeDroppedItems(),
+        navigator: s.world,
+        scheduler: new AutoScheduler(new FakeClock(0)),
+      }),
+      spots: new StandingSpotChooser(s.world),
+      safety: new SiteSafety(s.world, s.world),
+      scheduler: new AutoScheduler(new FakeClock(0)),
+      supplies: {
+        craft: (item, count) => {
+          crafted.push(item)
+          if (item === 'oak_door') s.world.give('oak_door', count)
+          return Promise.resolve(true)
+        },
+      },
+    })
+
+    const result = await executor.run(
+      plan({ kind: 'place', at: at(3, 64, 5), block: 'oak_door', optional: true }),
+      options,
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { placed: 1, missingOptional: [] } })
+    expect(crafted).toEqual(['oak_door'])
+  })
+})
+
 describe('PlanExecutor: before it starts', () => {
   it('refuses when materials are short, and changes nothing', async () => {
     const s = setup()

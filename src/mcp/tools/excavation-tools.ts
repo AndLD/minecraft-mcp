@@ -1,6 +1,9 @@
 import { z } from 'zod'
+import { err, ok, type Result } from '../../core/result.js'
+import { DIRECTIONS } from '../../skills/excavation/providers/geometry.js'
 import type { ExcavationRegistry } from '../../skills/excavation/excavation-registry.js'
 import type { ExcavateInput, ExcavateSkill } from '../../skills/excavation/excavate-skill.js'
+import type { WallResolver } from '../../skills/excavation/wall-target.js'
 import { INVENTORY_FULL_KINDS } from '../../state/storage-policy.js'
 import type { TaskLauncher } from '../task-launcher.js'
 import { toolFail, toolOk } from '../tool-result.js'
@@ -10,26 +13,29 @@ import { taskOptionsShape } from './task-schema.js'
 const DEFAULT_WAIT_SECONDS = 50
 
 const coordinate = (what: string) => z.number().int().describe(`${what} block coordinate.`)
+const positionSchema = z.object({ x: coordinate('x'), y: coordinate('y'), z: coordinate('z') })
+const directionSchema = z.enum(DIRECTIONS)
 
 const shape = {
   shape: z
     .string()
     .min(1)
     .describe(
-      'A shape from list_excavations: "pit", "shaft", "quarry", "tunnel", "branch_mine", or "staircase_down".',
+      'A shape from list_excavations: "pit", "shaft", "quarry", "tunnel", "branch_mine", "staircase_down", or "room" ' +
+        '(dug into the wall the player looks at).',
     ),
   params: z
     .record(z.string(), z.unknown())
     .default({})
     .describe(
       "The shape's parameters as separate numbers (width, length, depth, height, direction, spacing, ...), as list_excavations describes them. " +
-        'Work the numbers out from the player\'s words yourself ("1 wide, 5 high, 50 deep" is width 1, height 5, length 50); when it is unclear which number is which, ask the player. preview_excavation echoes what was understood.',
+        'Work the numbers out from the player\'s words yourself ("1 wide, 5 high, 50 deep" is width 1, height 5, length 50); when it is unclear which number is which, ask the player. preview_excavation echoes what was understood. ' +
+        'For "room": at and direction (both, or neither) override reading the wall from the player\'s own look, and for_player says whose look and standing level to use (defaults to the owner).',
     ),
-  origin: z
-    .object({ x: coordinate('x'), y: coordinate('y'), z: coordinate('z') })
+  origin: positionSchema
     .optional()
     .describe(
-      'Where the dig starts (what that cell is depends on the shape: see list_excavations). Omit to start at the bot; preview_excavation shows the result.',
+      'Where the dig starts (what that cell is depends on the shape: see list_excavations). Omit to start at the bot; for "room", omit it too (the entrance floor is found from the wall). preview_excavation shows the result.',
     ),
 }
 
@@ -48,6 +54,42 @@ const toInput = (input: {
   spoilPolicy: input.spoil_policy,
   onInventoryFull: input.on_inventory_full,
 })
+
+/**
+ * For "room": resolves the wall to dig into, unless the request already gives both an origin and a direction. Reads
+ * `at`/`direction`/`for_player` out of the raw params bag (the room shape's own optional fields) and replaces them
+ * with the resolved origin and a `direction` every RoomProvider can rely on being there.
+ */
+function resolveRoomTarget(
+  input: {
+    shape: string
+    params: Record<string, unknown>
+    origin?: { x: number; y: number; z: number } | undefined
+  },
+  wallTarget: WallResolver,
+  defaultPlayer: string | undefined,
+): Result<{ origin: { x: number; y: number; z: number } | undefined; params: Record<string, unknown> }> {
+  if (input.shape !== 'room') return ok({ origin: input.origin, params: input.params })
+  const atParsed = positionSchema.safeParse(input.params['at'])
+  const directionParsed = directionSchema.safeParse(input.params['direction'])
+  const originParsed = positionSchema.safeParse(input.origin)
+  if (originParsed.success && directionParsed.success)
+    return ok({ origin: originParsed.data, params: input.params })
+  const forPlayerParsed = z.string().min(1).safeParse(input.params['for_player'])
+  const player = (forPlayerParsed.success ? forPlayerParsed.data : undefined) ?? defaultPlayer
+  if (player === undefined)
+    return err('Say which player: no owner is configured, and none was given as for_player.')
+  const resolved = wallTarget.resolve({
+    player,
+    at: atParsed.success ? atParsed.data : originParsed.success ? originParsed.data : undefined,
+    direction: directionParsed.success ? directionParsed.data : undefined,
+  })
+  if (!resolved.ok) return err(resolved.message)
+  return ok({
+    origin: resolved.origin,
+    params: { ...input.params, direction: resolved.direction },
+  })
+}
 
 const excavateSchema = z.object({
   ...shape,
@@ -90,9 +132,15 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
   constructor(
     private readonly skill: ExcavateSkill,
     private readonly launcher: TaskLauncher,
+    private readonly wallTarget: WallResolver,
+    private readonly defaultPlayer: string | undefined,
   ) {}
 
   execute(input: z.output<typeof excavateSchema>, context: ToolContext) {
+    const resolved = resolveRoomTarget(input, this.wallTarget, this.defaultPlayer)
+    if (!resolved.ok) return toolFail(resolved.error)
+    const { origin, params } = resolved.value
+
     return this.launcher.launch(
       {
         name: this.skill.name,
@@ -101,13 +149,13 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
           tool: this.name,
           arguments: {
             shape: input.shape,
-            params: input.params,
-            ...(input.origin === undefined ? {} : { origin: input.origin }),
+            params,
+            ...(origin === undefined ? {} : { origin }),
             fetch_from_storage: input.fetch_from_storage,
             spoil_policy: input.spoil_policy,
           },
         },
-        run: (ctx) => this.skill.run(toInput(input), ctx),
+        run: (ctx) => this.skill.run(toInput({ ...input, origin, params }), ctx),
       },
       {
         replace: input.replace,
@@ -128,10 +176,16 @@ export class PreviewExcavationTool implements ToolDefinition<typeof previewSchem
     'time, the materials needed and what is missing (ladders, torches), and a protected area it would touch.'
   readonly inputSchema = previewSchema
 
-  constructor(private readonly skill: ExcavateSkill) {}
+  constructor(
+    private readonly skill: ExcavateSkill,
+    private readonly wallTarget: WallResolver,
+    private readonly defaultPlayer: string | undefined,
+  ) {}
 
   execute(input: z.output<typeof previewSchema>) {
-    const preview = this.skill.preview(toInput(input))
+    const resolved = resolveRoomTarget(input, this.wallTarget, this.defaultPlayer)
+    if (!resolved.ok) return toolFail(resolved.error)
+    const preview = this.skill.preview(toInput({ ...input, ...resolved.value }))
     return preview.ok
       ? toolOk(preview.value)
       : toolFail(`${preview.error.message} (reason: ${preview.error.reason})`)

@@ -126,7 +126,12 @@ export interface BotLike {
       from: Position,
       direction: Position,
       range: number,
-    ): { readonly name: string; readonly position: Position } | null
+    ): {
+      readonly name: string
+      readonly position: Position
+      /** The face the ray entered by (Mineflayer's `BlockFace`: 0 bottom, 1 top, 2 north, 3 south, 4 west, 5 east). */
+      readonly face: number
+    } | null
   }
   readonly registry: {
     readonly blocksByName: Readonly<

@@ -190,11 +190,13 @@ import {
   QuarryProvider,
   ShaftProvider,
 } from './skills/excavation/providers/dig-down.js'
+import { RoomProvider } from './skills/excavation/providers/room.js'
 import {
   BranchMineProvider,
   StaircaseDownProvider,
   TunnelProvider,
 } from './skills/excavation/providers/tunnels.js'
+import { WallTarget } from './skills/excavation/wall-target.js'
 import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
@@ -703,6 +705,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     withdrawer: withdrawItems,
     scanner: scanContainers,
   })
+  const lookTarget = new MineflayerLookTarget(connection)
+  const wallTarget = new WallTarget(lookTarget, blocks, entities)
   const excavations = new ExcavationRegistry()
     .register(new PitProvider())
     .register(new ShaftProvider())
@@ -710,6 +714,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new TunnelProvider())
     .register(new BranchMineProvider())
     .register(new StaircaseDownProvider())
+    .register(new RoomProvider())
   const excavateSkill = new ExcavateSkill({
     registry: excavations,
     executor: planExecutor,
@@ -812,7 +817,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
         containerIndex,
         storageRules,
         blocks,
-        new MineflayerLookTarget(connection),
+        lookTarget,
         config.owner,
       ),
     )
@@ -835,8 +840,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PreviewBuildTool(buildSkill))
     .register(new ListBlueprintsTool(blueprints))
     .register(new PlaceBlockTool(buildSkill, launcher))
-    .register(new ExcavateTool(excavateSkill, launcher))
-    .register(new PreviewExcavationTool(excavateSkill))
+    .register(new ExcavateTool(excavateSkill, launcher, wallTarget, config.owner))
+    .register(new PreviewExcavationTool(excavateSkill, wallTarget, config.owner))
     .register(new ListExcavationsTool(excavations))
     .register(new FlattenAreaTool(flattenArea, launcher, config.owner))
     .register(new PreviewFlattenTool(flattenArea, config.owner))

@@ -24,8 +24,13 @@ export interface ContainerAccess {
   open(position: Position): Promise<Result<ContainerSession>>
 }
 
-/** Where the player is looking, for "the chest I am looking at". */
+/** Which face of a block a look ray hit: the side facing whoever looked at it. */
+export type LookFace = 'top' | 'bottom' | 'north' | 'south' | 'east' | 'west'
+
+/** Where the player is looking, for "the chest I am looking at" and "dig a room behind this wall". */
 export interface LookTarget {
   /** The block the player's crosshair points at (within a few blocks), or undefined. */
-  blockLookedAt(player: string): { readonly name: string; readonly position: Position } | undefined
+  blockLookedAt(
+    player: string,
+  ): { readonly name: string; readonly position: Position; readonly face: LookFace } | undefined
 }

@@ -237,17 +237,17 @@ export class FakeBot implements BotLike {
   worldSeed: string | undefined = 'a1b2c3d4e5f60718'
   entities: Record<string, EntityLike> = {}
   players: Record<string, PlayerLike> = {}
-  /** What a ray hits; tests set it (or leave null for "nothing"). */
-  rayHit: { name: string; position: Position } | null = null
+  /** What a ray hits; tests set it (or leave null for "nothing"). Face defaults to north (2, an ordinary wall). */
+  rayHit: { name: string; position: Position; face?: number } | null = null
   readonly rays: { from: Position; direction: Position; range: number }[] = []
   world = {
     raycast: (
       from: Position,
       direction: Position,
       range: number,
-    ): { name: string; position: Position } | null => {
+    ): { name: string; position: Position; face: number } | null => {
       this.rays.push({ from, direction, range })
-      return this.rayHit
+      return this.rayHit === null ? null : { face: 2, ...this.rayHit }
     },
   }
   registry = {

@@ -22,6 +22,12 @@ export type WorkStep =
       readonly against?: Position
       /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
       readonly branch?: string
+      /**
+       * A best-effort placement (a door): counted in `needs`, fetched from storage and crafted from what the bot
+       * carries when possible, but never blocks the plan from running or finishing when it cannot be had — unlike an
+       * ordinary `place` step, whose material is required.
+       */
+      readonly optional?: boolean
     }
   /** Break whatever is in the cell. */
   | {
@@ -88,6 +94,8 @@ export interface WorkPlan {
    * the old behaviour: a cave breakthrough always ends the chain, and there are no `seal` steps.
    */
   readonly seal?: { readonly block: string; readonly fallback: string }
+  /** Informational notes for the preview (for example: a door leaves a gap above it). Never affects execution. */
+  readonly warnings?: readonly string[]
 }
 
 /** Makes a plan out of parameters. A new shape is a new provider (Open/Closed). */

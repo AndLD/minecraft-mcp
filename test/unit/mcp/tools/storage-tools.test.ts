@@ -71,7 +71,9 @@ describe('container tools', () => {
     const blocks = new FakeBlockScanner()
     blocks.names = ['chest', 'barrel', 'furnace', 'stone', 'red_shulker_box']
     const look: {
-      hit: { name: string; position: { x: number; y: number; z: number } } | undefined
+      hit:
+        | { name: string; position: { x: number; y: number; z: number }; face: 'north' }
+        | undefined
     } = { hit: undefined }
     const lookTarget: LookTarget = { blockLookedAt: () => look.hit }
     return {
@@ -136,7 +138,7 @@ describe('container tools', () => {
 
   it('registers the container the owner is looking at', async () => {
     const t = await tools()
-    t.look.hit = { name: 'chest', position: at(6) }
+    t.look.hit = { name: 'chest', position: at(6), face: 'north' }
 
     const result = t.register.execute(
       t.register.inputSchema.parse({ looking_at: true, label: 'wood' }),
