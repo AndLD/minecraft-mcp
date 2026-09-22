@@ -153,6 +153,31 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'raw_iron')).toBe(0)
   })
 
+  it('smelts twice in a row in the same furnace without losing the fuel (regression)', async () => {
+    // Bug found in a live session: a single log used as fuel for a single item is consumed into the burn queue
+    // the instant it starts burning, which can empty the fuel slot a moment before the server's burning-progress
+    // update reaches the bot. A too-eager "out of fuel" check mistook that gap for real starvation, gave up with
+    // nothing smelted, and lost the log (already burning, so it could not be taken back). One item per call and
+    // exactly one log's worth of fuel (`oak_log` covers 1.5 items) reproduce the race most reliably.
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'porkchop', 2)
+    await world.give(bot(), 'oak_log', 4)
+    await untilBotCarries('furnace')
+    await untilBotCarries('porkchop')
+    await untilBotCarries('oak_log')
+
+    const first = await runToTheEnd('smelt', { item: 'porkchop', count: 1, fuel: 'oak_log' })
+    expectSucceeded(first)
+    expect(first.task?.result).toMatchObject({ smelted: 1, produced: 'cooked_porkchop' })
+
+    const second = await runToTheEnd('smelt', { item: 'porkchop', count: 1, fuel: 'oak_log' })
+    expectSucceeded(second)
+    expect(second.task?.result).toMatchObject({ smelted: 1, produced: 'cooked_porkchop' })
+
+    expect(await world.countItem(bot(), 'cooked_porkchop')).toBe(2)
+    expect(await world.countItem(bot(), 'porkchop')).toBe(0)
+  })
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)
