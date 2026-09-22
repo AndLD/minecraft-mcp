@@ -164,6 +164,12 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     await session.putFuel(job.fuel.item, job.fuel.amount)
     let loaded = 0
     let smelted = 0
+    // The furnace consumes a fuel item into its burn queue the instant it starts burning, which can empty the
+    // fuel slot a moment before the server's burning-progress update reaches us (the same kind of stale-window
+    // read that crafting and chests have). A single starved reading right after loading is not believed; only a
+    // reading that survives a full poll counts as truly out of fuel, so a log that has just started burning is
+    // never mistaken for one that never arrived (and then lost, since a burning fuel item cannot be taken back).
+    let starvedSince: number | undefined
 
     while (smelted < job.toSmelt) {
       if (context.signal.aborted)
@@ -183,13 +189,18 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         loaded += batch
       }
       const now = session.contents()
-      if (
+      const starved =
         loaded >= job.toSmelt &&
         now.input !== undefined &&
         !now.burning &&
         now.fuel === undefined
-      )
-        return { smelted, failure: { reason: 'out_of_fuel', message: 'The fuel ran out.' } }
+      if (starved) {
+        starvedSince ??= clock.now()
+        if (clock.now() - starvedSince >= POLL_MS)
+          return { smelted, failure: { reason: 'out_of_fuel', message: 'The fuel ran out.' } }
+      } else {
+        starvedSince = undefined
+      }
 
       context.progress(`Smelted ${String(smelted)} of ${String(job.toSmelt)} ${job.produced}`)
       await sleep(scheduler, POLL_MS, context.signal)

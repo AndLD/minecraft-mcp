@@ -262,6 +262,29 @@ describe('SmeltItemsSkill', () => {
       expect(result).toMatchObject({ ok: false, error: { reason: 'out_of_fuel' } })
     })
 
+    it('does not mistake fuel that has just started burning for out_of_fuel (regression)', async () => {
+      // The furnace consumes a fuel item into its burn queue the instant it starts burning, which can empty the
+      // fuel slot a moment before the "burning" flag catches up. A single starved reading right after the input
+      // is loaded must not be believed, or a log that has just started burning is declared missing and lost.
+      const { skill, furnaces } = setup({ raw_iron: 1, coal: 1 })
+      const smeltsOnceLooked = furnaces.session.onLook
+      let starvedOnce = false
+      furnaces.session.onLook = () => {
+        if (!starvedOnce && furnaces.session.input !== undefined) {
+          starvedOnce = true
+          furnaces.session.fuel = undefined
+          furnaces.session.burning = false
+          return
+        }
+        furnaces.session.burning = true
+        smeltsOnceLooked()
+      }
+
+      const result = await skill.run(smelt('raw_iron', 1), skillContext().context)
+
+      expect(result).toMatchObject({ ok: true, value: { smelted: 1 } })
+    })
+
     it('does not use a furnace that is busy with something else', async () => {
       const { skill, furnaces } = setup({ raw_iron: 3, coal: 1 })
       furnaces.session.input = { name: 'sand', count: 4 }
