@@ -70,6 +70,13 @@ export type WorkStep =
       /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
       readonly branch?: string
     }
+  /** Hoe the cell (dirt or grass) into farmland. Satisfied once the cell reads back as `farmland`. */
+  | {
+      readonly kind: 'till'
+      readonly at: Position
+      /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
+      readonly branch?: string
+    }
 
 export interface WorkPlan {
   /** For messages, for example `box 5x4x3`. */

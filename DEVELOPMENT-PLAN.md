@@ -73,8 +73,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 14 Excavation and mining | shapes, hazard rule, torches, and ore veins done (`feature/excavation` and `feature/excavation-extras`: stair exit, water landing, spoil policy, torch and spare-tool crafting); stair sizing (`feature/excavation-stair-sizing`), cave sealing (`feature/excavation-cave-sealing`), and staircase target/width (`feature/excavation-staircase-target`) done; all merged into `development` |
 | 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
 | 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms done (`feature/dug-rooms`), merged into `development`; door opening done (`feature/door-opening`), merged into `development` |
-| 17 Iron doors and switches | done (`feature/switches`) |
-| 18 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms; moved ahead of railways, which nothing here depends on) |
+| 17 Iron doors and switches | done (`feature/switches`), merged into `development` |
+| 18 Farming, crops, animals, and trees | crop farming done (`feature/crop-farming`: `build_farm` field layout, `plant_crops`, `harvest_crops`, `tend_farm`, `inspect_farm`, `list_farms`, `register_farm`); animal farming (pens, luring, breeding, eggs) and tree farming not started; moved ahead of railways, which nothing here depends on |
 | 19 Railways | not started (added) |
 | 20 Sleeping and respawn point | not started (added; small, can go right after teleport) |
 | 21 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |

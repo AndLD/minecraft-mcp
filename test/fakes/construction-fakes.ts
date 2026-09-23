@@ -23,6 +23,14 @@ import { buildVitals } from './fake-ports.js'
 const key = (p: Position): string =>
   `${String(Math.floor(p.x))},${String(Math.floor(p.y))},${String(Math.floor(p.z))}`
 
+/** Planting a seed item grows the crop block, not a block of the seed's own name (mirrors FakeBot). */
+const SEED_TO_CROP: Readonly<Record<string, string>> = {
+  wheat_seeds: 'wheat',
+  carrot: 'carrots',
+  potato: 'potatoes',
+  beetroot_seeds: 'beetroots',
+}
+
 const NOT_SOLID = new Set([
   'air',
   'cave_air',
@@ -171,8 +179,8 @@ export class ConstructionWorld
   }
 
   // Placer
-  placeAt(): Promise<Result<void, PlaceFailure>> {
-    return Promise.resolve(err({ reason: 'failed', message: 'not used' }))
+  placeAt(item: string, target: Position): Promise<Result<void, PlaceFailure>> {
+    return this.placeAgainst(item, { x: target.x, y: target.y - 1, z: target.z }, { x: 0, y: 1, z: 0 })
   }
   placeAgainst(
     item: string,
@@ -198,9 +206,9 @@ export class ConstructionWorld
       return Promise.resolve(err({ reason: 'failed', message: 'The bot is in the way.' }))
     this.log.push(`place ${item} ${key(at)}`)
     if (failure === 'ignored') return Promise.resolve(ok(undefined))
-    // A bucket makes the fluid, and comes back empty.
+    // A bucket makes the fluid, and comes back empty; a seed grows the crop block, not a block of its own name.
     const fluid = item === 'water_bucket' ? 'water' : item === 'lava_bucket' ? 'lava' : undefined
-    this.setBlock(at, fluid ?? item)
+    this.setBlock(at, fluid ?? SEED_TO_CROP[item] ?? item)
     this.carried.set(item, (this.carried.get(item) ?? 0) - 1)
     if (fluid !== undefined) this.give('bucket', 1)
     this.settle()

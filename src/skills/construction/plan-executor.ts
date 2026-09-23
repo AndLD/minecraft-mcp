@@ -11,6 +11,7 @@ import { err, ok } from '../../core/result.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { SkillContext, SkillResult } from '../../core/skill.types.js'
 import { sleep } from '../../core/sleep.js'
+import type { Tiller } from '../../core/tiller.port.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
@@ -141,6 +142,8 @@ export interface PlanExecutorDeps {
   readonly discarder?: SpoilDiscarder
   /** Crafts torches and a spare pickaxe when they run out. */
   readonly supplies?: SupplyCrafter
+  /** Hoes dirt and grass into farmland for `till` steps; without it, such a plan cannot finish. */
+  readonly tiller?: Tiller
 }
 
 const failure = (
@@ -205,6 +208,11 @@ export class PlanExecutor {
         // Like a torch, the material is never counted as missing: sealing is a best-effort backfill, not a hard
         // requirement, and an otherwise-fine dig must not be refused up front for want of a spare block.
         if (!isOpenAir(found)) done += 1
+        else toPlace += 1
+        continue
+      }
+      if (step.kind === 'till') {
+        if (found === 'farmland') done += 1
         else toPlace += 1
         continue
       }
@@ -496,6 +504,7 @@ export class PlanExecutor {
         return step.needs === undefined || this.isOpening(this.deps.blocks.blockAt(step.needs))
       case 'light':
       case 'seal':
+      case 'till':
         return true
     }
   }
@@ -748,6 +757,8 @@ export class PlanExecutor {
         return !this.deps.safety.needsTorch(step.at, step.minLight, step.spacing)
       case 'seal':
         return !isOpenAir(found)
+      case 'till':
+        return found === 'farmland'
     }
   }
 
@@ -896,7 +907,35 @@ export class PlanExecutor {
         const block = plan.seal !== undefined ? this.sealBlockFor(plan.seal) : step.block
         return this.place(step.at, block, options, progress, context)
       }
+      case 'till':
+        return this.till(step.at, progress, context)
     }
+  }
+
+  private async till(at: Position, progress: Progress, context: SkillContext): Promise<Outcome> {
+    const { deps } = this
+    if (deps.tiller === undefined)
+      return stop(failure('missing_materials', 'Tilling is not available.', progress))
+    const tilled = await deps.tiller.till(at, context.signal)
+    if (!tilled.ok) {
+      if (context.signal.aborted) return stop(err({ reason: 'aborted', message: 'Cancelled.' }))
+      if (tilled.error.reason === 'no_hoe')
+        return stop(
+          failure('missing_materials', 'There is no hoe to till with.', progress, {
+            missing: [{ name: 'hoe', count: 1 }],
+          }),
+        )
+      return { kind: 'retry', why: tilled.error.message }
+    }
+    for (let poll = 0; poll < CONFIRM_POLLS; poll += 1) {
+      if (deps.blocks.blockAt(at) === 'farmland') {
+        progress.placed += 1
+        return { kind: 'done' }
+      }
+      if (context.signal.aborted) return { kind: 'retry', why: 'cancelled' }
+      await sleep(deps.scheduler, CONFIRM_POLL_MS, context.signal)
+    }
+    return { kind: 'retry', why: `the server did not confirm farmland at ${this.where(at)}` }
   }
 
   /** Whether the bot carries either the preferred seal block or its fallback. */
