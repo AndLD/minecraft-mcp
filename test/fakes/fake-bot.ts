@@ -16,6 +16,7 @@ import type {
   RecipeLike,
 } from '../../src/bot/bot-like.types.js'
 import type { Position } from '../../src/core/position.types.js'
+import { classifyCrop } from '../../src/skills/farming/crop-table.js'
 import { classifyDoor } from '../../src/skills/movement/door-table.js'
 import { classifySwitch } from '../../src/skills/movement/switch-table.js'
 
@@ -276,6 +277,14 @@ export class FakeBot implements BotLike {
       leather_helmet: { id: 122 },
       diamond_boots: { id: 123 },
       shield: { id: 130 },
+      wooden_hoe: { id: 140 },
+      wheat_seeds: { id: 141 },
+      carrot: { id: 142 },
+      potato: { id: 143 },
+      beetroot_seeds: { id: 144 },
+      water_bucket: { id: 145 },
+      oak_fence: { id: 146 },
+      oak_fence_gate: { id: 147 },
     },
     foodsByName: {
       cooked_beef: { foodPoints: 8, saturation: 12.8 },
@@ -350,6 +359,8 @@ export class FakeBot implements BotLike {
 
   setBlock(position: Position, name: string): void {
     this.blocks.set(key(position), name)
+    // Any change to the block starts a fresh growth stage (a freshly placed crop is not still the old one's age).
+    this.cropAges.delete(key(position))
   }
 
   blockAt(position: Position): FakeBlock | null {
@@ -372,6 +383,8 @@ export class FakeBot implements BotLike {
         const props: Record<string, unknown> = {}
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
         if (classifySwitch(name) !== undefined) props['powered'] = this.switchPowered.get(cellKey) ?? false
+        // The real server reports this one as a numeric string ("7"), not a number.
+        if (classifyCrop(name) !== undefined) props['age'] = String(this.cropAges.get(cellKey) ?? 0)
         return props
       },
     }
@@ -395,12 +408,23 @@ export class FakeBot implements BotLike {
     this.switchLinks.set(key(switchPosition), key(doorPosition))
   }
 
+  /** A crop block's growth stage. */
+  private readonly cropAges = new Map<string, number>()
+  setCropAge(position: Position, age: number): void {
+    this.cropAges.set(key(position), age)
+  }
+
+  /** Blocks a hoe turns into farmland when right-clicked. */
+  private static readonly TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
+
   readonly activateBlockCalls: Position[] = []
   activateBlock(block: BlockLike): Promise<void> {
     const position = (block as FakeBlock).position
     this.activateBlockCalls.push(position)
     const cellKey = key(position)
-    if (classifySwitch(block.name) !== undefined) {
+    if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
+      this.setBlock(position, 'farmland')
+    } else if (classifySwitch(block.name) !== undefined) {
       const nowPowered = !(this.switchPowered.get(cellKey) ?? false)
       this.switchPowered.set(cellKey, nowPowered)
       const linkedDoor = this.switchLinks.get(cellKey)
@@ -610,6 +634,14 @@ export class FakeBot implements BotLike {
     this.heldDig = undefined
   }
 
+  /** Planting a seed item grows the crop block, not a block of the seed's own name. */
+  private static readonly SEED_TO_CROP: Record<string, string> = {
+    wheat_seeds: 'wheat',
+    carrot: 'carrots',
+    potato: 'potatoes',
+    beetroot_seeds: 'beetroots',
+  }
+
   placeBlock(reference: BlockLike, face: Position): Promise<void> {
     const base = (reference as FakeBlock).position
     const target = { x: base.x + face.x, y: base.y + face.y, z: base.z + face.z }
@@ -617,7 +649,7 @@ export class FakeBot implements BotLike {
     if (name === undefined) return Promise.reject(new Error('Nothing in hand'))
     this.removeItems(name, 1)
     this.heldItem = this.count(name) > 0 ? { name, count: this.count(name) } : null
-    this.setBlock(target, name)
+    this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
     this.placed.push({ name, position: target })
     this.settle()
     return Promise.resolve()

@@ -99,6 +99,13 @@ describe('MCP server over an in-memory transport', () => {
         'open_door',
         'find_switches',
         'set_switch_policy',
+        'build_farm',
+        'plant_crops',
+        'harvest_crops',
+        'tend_farm',
+        'inspect_farm',
+        'list_farms',
+        'register_farm',
       ].sort(),
     )
     for (const tool of tools) {

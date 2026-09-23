@@ -28,6 +28,8 @@ import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
 import { MineflayerDoorAccess } from './bot/mineflayer-door-access.js'
 import { MineflayerSwitchAccess } from './bot/mineflayer-switch-access.js'
+import { MineflayerCropAccess } from './bot/mineflayer-crop-access.js'
+import { MineflayerTiller } from './bot/mineflayer-tiller.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
@@ -127,6 +129,15 @@ import {
   PreviewExcavationTool,
 } from './mcp/tools/excavation-tools.js'
 import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-tools.js'
+import {
+  BuildFarmTool,
+  HarvestCropsTool,
+  InspectFarmTool,
+  ListFarmsTool,
+  PlantCropsTool,
+  RegisterFarmTool,
+  TendFarmTool,
+} from './mcp/tools/farming-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -157,6 +168,7 @@ import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
 import { ContainerIndex } from './state/container-index.js'
+import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
@@ -206,6 +218,13 @@ import {
 import { WallTarget } from './skills/excavation/wall-target.js'
 import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
+import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
+import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
+import { HarvestCropsSkill } from './skills/farming/harvest-crops-skill.js'
+import { InspectFarmSkill } from './skills/farming/inspect-farm-skill.js'
+import { PlantCropsSkill } from './skills/farming/plant-crops-skill.js'
+import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
+import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
 import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
@@ -322,6 +341,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
   const doors = new MineflayerDoorAccess(connection)
   const switches = new MineflayerSwitchAccess(connection)
+  const cropAccess = new MineflayerCropAccess(connection)
+  const tiller = new MineflayerTiller(connection)
   const switchFinder = new SwitchFinder(blocks)
   const switchPolicy = new SwitchPolicy()
   // Walks to a candidate switch with the raw navigator, never the wrapped one below: DoorOpeningNavigator
@@ -346,6 +367,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const protectedAreas = new ProtectedAreas()
   const foodPolicy = new FoodPolicy()
   const containerIndex = new ContainerIndex(clock)
+  const farmRegistry = new FarmRegistry(clock)
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
   const dropRecords = new DropRecords(clock)
@@ -367,6 +389,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       foodPolicy,
       switchPolicy,
       containerIndex,
+      farmRegistry,
       storageRules,
       storagePolicy,
       dropRecords,
@@ -698,6 +721,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     hazard: new HazardRule(blocks),
     discarder: new SpoilDiscarder({ inventory, thrower, vitals, ignore: dropIgnore }),
     supplies: new CraftingSupplies(craftItem),
+    tiller,
     scaffolder: new Scaffolder({
       blocks,
       placer: constructionPlacer,
@@ -767,6 +791,38 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     markers: new MarkerFinder(blocks),
     fetcher: materialFetcher,
   })
+  // Farming: build_farm lays out a field as a plan (an engine client, like excavate) and then plants it; tending it
+  // afterwards (planting, harvesting) is plain skills, with no engine dependency, so they also work on a
+  // player-built field.
+  const farmLayouts = new FarmLayoutRegistry().register(new CropFieldProvider())
+  const plantCrops = new PlantCropsSkill({
+    blocks,
+    navigator,
+    tiller,
+    placer: constructionPlacer,
+    farms: farmRegistry,
+  })
+  const harvestCrops = new HarvestCropsSkill({
+    blocks,
+    crops: cropAccess,
+    navigator,
+    digger: constructionDigger,
+    placer: constructionPlacer,
+    drops: dropCollector,
+    inventory,
+    farms: farmRegistry,
+  })
+  const buildFarmSkill = new BuildFarmSkill({
+    registry: farmLayouts,
+    executor: planExecutor,
+    vitals,
+    farms: farmRegistry,
+    protectedAreas,
+    fetcher: materialFetcher,
+    plant: plantCrops,
+  })
+  const tendFarm = new TendFarmSkill({ farms: farmRegistry, harvest: harvestCrops, plant: plantCrops })
+  const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, farms: farmRegistry })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -880,6 +936,13 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ListExcavationsTool(excavations))
     .register(new FlattenAreaTool(flattenArea, launcher, config.owner))
     .register(new PreviewFlattenTool(flattenArea, config.owner))
+    .register(new BuildFarmTool(buildFarmSkill, launcher))
+    .register(new PlantCropsTool(plantCrops, launcher))
+    .register(new HarvestCropsTool(harvestCrops, launcher))
+    .register(new TendFarmTool(tendFarm, launcher))
+    .register(new InspectFarmTool(inspectFarm))
+    .register(new ListFarmsTool(farmRegistry))
+    .register(new RegisterFarmTool(farmRegistry))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))

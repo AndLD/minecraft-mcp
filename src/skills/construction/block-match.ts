@@ -29,10 +29,19 @@ const BUCKET_BLOCKS: Readonly<Record<string, string>> = {
   lava_bucket: 'lava',
 }
 
+/** Seeds do not place a block of their own name either: planting one grows the crop block instead. */
+const SEED_BLOCKS: Readonly<Record<string, string>> = {
+  wheat_seeds: 'wheat',
+  carrot: 'carrots',
+  potato: 'potatoes',
+  beetroot_seeds: 'beetroots',
+}
+
 export function isPlanned(planned: string, found: string | undefined): boolean {
   if (found === undefined) return false
   if (found === planned) return true
   if (BUCKET_BLOCKS[planned] === found) return true
+  if (SEED_BLOCKS[planned] === found) return true
   if (planned.endsWith('torch')) return found === planned.replace('torch', 'wall_torch')
   return false
 }
