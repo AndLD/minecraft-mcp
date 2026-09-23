@@ -150,11 +150,12 @@ describe('iron doors and switches on a real Minecraft server', () => {
     expect(result.status).toBe('succeeded')
   })
 
-  it('reports iron_door_blocked with the switch found, when the policy is ask (the default)', async () => {
+  it('reports iron_door_blocked with the switch found, when the policy is ask', async () => {
     const { doorAt, switchAt } = await ironHouse(30, 0, 'lever')
     await world.teleport(session.bot.username, { x: 31.5, y: GROUND_Y, z: -3.5 })
     await untilBotSeesAt('iron_door', doorAt)
     await untilBotSeesAt('lever', switchAt)
+    await session.bot.call('set_switch_policy', { policy: 'ask' })
 
     const result = await session.bot.call('goto', {
       x: 31,

@@ -202,7 +202,7 @@ describe('movement through the MCP server', () => {
       expect(h.bot.activateBlockCalls).toEqual([]) // never tried to open it
     })
 
-    it('reports iron_door_blocked with the switches found, when the policy is ask (the default) and one is nearby', async () => {
+    it('reports iron_door_blocked with the switches found, when the policy is ask and one is nearby', async () => {
       const h = await connected()
       h.bot.registry = {
         ...h.bot.registry,
@@ -212,6 +212,7 @@ describe('movement through the MCP server', () => {
       const leverAt = { x: 6, y: 64, z: 5 }
       h.bot.setBlock(doorAt, 'iron_door')
       h.bot.setBlock(leverAt, 'lever')
+      await h.call('set_switch_policy', { policy: 'ask' })
 
       const pending = h.call('goto', { x: 10, y: 64, z: 10, wait_seconds: 10 })
       await h.settle()

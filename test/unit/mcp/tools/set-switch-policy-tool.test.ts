@@ -17,28 +17,28 @@ describe('SetSwitchPolicyTool', () => {
   it('saves the policy and mirrors it as a standing instruction the briefing shows', async () => {
     const { policy, standing, tool: t } = await tool()
 
-    const result = t.execute(t.inputSchema.parse({ policy: 'auto' }))
+    const result = t.execute(t.inputSchema.parse({ policy: 'ask' }))
 
-    expect(result).toEqual({ ok: true, data: { policy: 'auto' } })
-    expect(policy.get()).toBe('auto')
-    expect(standing.all().switch_policy).toContain('itself')
+    expect(result).toEqual({ ok: true, data: { policy: 'ask' } })
+    expect(policy.get()).toBe('ask')
+    expect(standing.all().switch_policy).toContain('waits')
   })
 
-  it('removes the standing instruction when going back to asking', async () => {
+  it('removes the standing instruction when going back to auto', async () => {
     const { policy, standing, tool: t } = await tool()
     t.execute(t.inputSchema.parse({ policy: 'never' }))
     expect(standing.all().switch_policy).toContain('never')
 
-    t.execute(t.inputSchema.parse({ policy: 'ask' }))
+    t.execute(t.inputSchema.parse({ policy: 'auto' }))
 
-    expect(policy.get()).toBe('ask')
+    expect(policy.get()).toBe('auto')
     expect(standing.all()).not.toHaveProperty('switch_policy')
   })
 
   it('fails without an active world', () => {
     const t = new SetSwitchPolicyTool(new SwitchPolicy(), new StandingInstructions())
 
-    expect(t.execute(t.inputSchema.parse({ policy: 'auto' })).ok).toBe(false)
+    expect(t.execute(t.inputSchema.parse({ policy: 'ask' })).ok).toBe(false)
     expect(t.inputSchema.safeParse({ policy: 'sometimes' }).success).toBe(false)
   })
 })

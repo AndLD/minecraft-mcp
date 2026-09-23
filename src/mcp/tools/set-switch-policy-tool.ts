@@ -8,13 +8,14 @@ const schema = z.object({
   policy: z
     .enum(SWITCH_OPEN_POLICIES)
     .describe(
-      '"ask" (default): report the switches found near an iron door and wait for the player before trying them. ' +
-        '"auto": the bot finds and presses one itself. "never": always report the door as needing a switch, untried.',
+      '"auto" (default): the bot finds and presses a nearby switch itself. "ask": report the switches found near ' +
+        'an iron door and wait for the player before trying them. "never": always report the door as needing a ' +
+        'switch, untried.',
     ),
 })
 
-const STANDING_TEXT: Record<'auto' | 'never', string> = {
-  auto: 'When a walk meets an iron door, the bot finds and presses a nearby switch itself.',
+const STANDING_TEXT: Record<'ask' | 'never', string> = {
+  ask: 'When a walk meets an iron door, the bot reports the switches found and waits before trying them.',
   never: 'When a walk meets an iron door, the bot never tries a switch; it reports the door and waits.',
 }
 
@@ -22,9 +23,9 @@ export class SetSwitchPolicyTool implements ToolDefinition<typeof schema> {
   readonly name = 'set_switch_policy'
   readonly description =
     'Saves what the bot does when a walk (goto, and anything else that navigates) meets a closed iron door, as a ' +
-    'standing rule for this world: "ask" (default), "auto", or "never". Set it when the player says something like ' +
-    '"just go through iron doors yourself" or "never press switches without asking me first". It survives restarts ' +
-    'and appears in the session briefing. Fails when no world is active.'
+    'standing rule for this world: "auto" (default), "ask", or "never". Set it when the player says something like ' +
+    '"ask me before going through iron doors" or "never press switches without asking me first". It survives ' +
+    'restarts and appears in the session briefing. Fails when no world is active.'
   readonly inputSchema = schema
 
   constructor(
@@ -36,7 +37,7 @@ export class SetSwitchPolicyTool implements ToolDefinition<typeof schema> {
     const saved = this.policy.set(input.policy)
     if (!saved.ok) return toolFail(saved.error)
     // Mirrored as a standing instruction so the session briefing shows it.
-    if (input.policy === 'ask') this.standing.remove('switch_policy')
+    if (input.policy === 'auto') this.standing.remove('switch_policy')
     else this.standing.set('switch_policy', STANDING_TEXT[input.policy])
     return toolOk({ policy: input.policy })
   }
