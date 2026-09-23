@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import { err, ok } from '../../../../src/core/result.js'
+import type { CollectEggsSkill } from '../../../../src/skills/farming/collect-eggs-skill.js'
 import type { HarvestCropsSkill } from '../../../../src/skills/farming/harvest-crops-skill.js'
 import type { HerdManager } from '../../../../src/skills/farming/herd-manager.js'
 import type { PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
@@ -42,19 +43,35 @@ class FakeHerd implements Pick<HerdManager, 'run'> {
   }
 }
 
-async function setup() {
+class FakeCollectEggs implements Pick<CollectEggsSkill, 'run'> {
+  readonly calls: unknown[] = []
+  result: Awaited<ReturnType<CollectEggsSkill['run']>> = ok({
+    pickedUp: 10,
+    stored: 1,
+    released: 9,
+    penFull: false,
+  })
+  run(input: unknown) {
+    this.calls.push(input)
+    return Promise.resolve(this.result)
+  }
+}
+
+async function setup(withCollectEggs = false) {
   const farms = new FarmRegistry(new FakeClock(0))
   await farms.attach(new InMemoryStateStore())
   const harvest = new FakeHarvest()
   const plant = new FakePlant()
   const herd = new FakeHerd()
+  const collectEggs = new FakeCollectEggs()
   const skill = new TendFarmSkill({
     farms,
     harvest: harvest as unknown as HarvestCropsSkill,
     plant: plant as unknown as PlantCropsSkill,
     herd: herd as unknown as HerdManager,
+    collectEggs: withCollectEggs ? (collectEggs as unknown as CollectEggsSkill) : undefined,
   })
-  return { farms, harvest, plant, herd, skill }
+  return { farms, harvest, plant, herd, collectEggs, skill }
 }
 
 const bounds = { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 64, z: 2 } }
@@ -79,6 +96,9 @@ describe('TendFarmSkill', () => {
             planted: 1,
             herdSizeBefore: undefined,
             herdAction: undefined,
+            eggsPickedUp: undefined,
+            eggsStored: undefined,
+            eggsReleased: undefined,
             problem: undefined,
           },
         ],
@@ -109,12 +129,96 @@ describe('TendFarmSkill', () => {
             planted: 0,
             herdSizeBefore: 4,
             herdAction: 'bred',
+            eggsPickedUp: undefined,
+            eggsStored: undefined,
+            eggsReleased: undefined,
             problem: undefined,
           },
         ],
       },
     })
     expect(s.herd.calls).toEqual([{ species: 'cow', targetSize: 6, bounds }])
+  })
+
+  it('does not collect eggs for a cow pen, even when CollectEggsSkill is wired', async () => {
+    const s = await setup(true)
+    const entry = s.farms.register({ kind: 'pen', species: 'cow', herdTarget: 6, bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({
+      eggsPickedUp: undefined,
+      eggsStored: undefined,
+      eggsReleased: undefined,
+    })
+    expect(s.collectEggs.calls).toEqual([])
+  })
+
+  it('collects eggs for a chicken pen and merges the counts into the result', async () => {
+    const s = await setup(true)
+    const entry = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 6, bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({
+      herdAction: 'bred',
+      eggsPickedUp: 10,
+      eggsStored: 1,
+      eggsReleased: 9,
+      problem: undefined,
+    })
+    expect(s.collectEggs.calls).toEqual([
+      { farm: entry.value.id, area: undefined, storeFraction: undefined, release: undefined, maxChickens: 6 },
+    ])
+  })
+
+  it('does not collect eggs for a chicken pen when CollectEggsSkill is not wired', async () => {
+    const s = await setup(false)
+    const entry = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 6, bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({
+      eggsPickedUp: undefined,
+      eggsStored: undefined,
+      eggsReleased: undefined,
+    })
+  })
+
+  it('reports an egg-collection failure only when herding itself succeeded', async () => {
+    const s = await setup(true)
+    const entry = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 6, bounds })
+    if (!entry.ok) throw new Error(entry.error)
+    s.collectEggs.result = err({ reason: 'no_area', message: 'no eggs here' })
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({ problem: 'no eggs here' })
+  })
+
+  it("reports herding's own failure, not the egg-collection failure, when both fail", async () => {
+    const s = await setup(true)
+    const entry = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 6, bounds })
+    if (!entry.ok) throw new Error(entry.error)
+    s.herd.result = err({ reason: 'no_food', message: 'out of seeds' })
+    s.collectEggs.result = err({ reason: 'no_area', message: 'no eggs here' })
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({ problem: 'out of seeds' })
   })
 
   it('reports a pen with no species or herd target set, without calling HerdManager', async () => {

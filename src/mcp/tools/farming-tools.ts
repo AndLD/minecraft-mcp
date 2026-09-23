@@ -2,12 +2,15 @@ import { z } from 'zod'
 import { PENNABLE_SPECIES } from '../../skills/farming/animal-table.js'
 import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
+import type { CollectEggsSkill } from '../../skills/farming/collect-eggs-skill.js'
 import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill.js'
 import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.js'
 import type { LureAnimalsSkill } from '../../skills/farming/lure-animals-skill.js'
 import type { PlantCropsSkill } from '../../skills/farming/plant-crops-skill.js'
 import type { TendFarmSkill } from '../../skills/farming/tend-farm-skill.js'
+import { EGG_RELEASE_KINDS, type EggPolicy } from '../../state/egg-policy.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
+import type { StandingInstructions } from '../../state/standing-instructions.js'
 import { INVENTORY_FULL_KINDS } from '../../state/storage-policy.js'
 import type { TaskLauncher } from '../task-launcher.js'
 import { toolFail, toolOk } from '../tool-result.js'
@@ -287,6 +290,117 @@ export class BreedAnimalsTool implements ToolDefinition<typeof breedAnimalsSchem
         signal: context.signal,
       },
     )
+  }
+}
+
+const collectEggsSchema = z.object({
+  ...farmOrAreaShape,
+  store_fraction: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Share of what is picked up to store instead of releasing for chicks (0-1). Defaults to set_egg_policy (0.1).'),
+  release: z
+    .enum(EGG_RELEASE_KINDS)
+    .optional()
+    .describe(
+      '"hatch" (default): throw the rest into the pen, one at a time, for a chance at chicks. "store": keep everything.',
+    ),
+  max_chickens: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      "Stop releasing once the pen holds this many chickens (adults and babies together). Defaults to the pen's " +
+        'herd_target, or a rough figure from its size.',
+    ),
+  ...taskOptionsShape,
+})
+
+export class CollectEggsTool implements ToolDefinition<typeof collectEggsSchema> {
+  readonly name = 'collect_eggs'
+  readonly description =
+    'Picks up the egg items lying in a registered pen or an area (never by hitting or harming a chicken: this only ' +
+    'ever touches ground items), skipping a protected area unless it is the pen\'s own. Stores a share (through the ' +
+    'ordinary storage rules) and throws the rest into the pen one at a time for a chance at chicks, unless the pen ' +
+    'already holds its target chicken count (reported as penFull, a shortfall, not a failure). Runs in the ' +
+    'background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = collectEggsSchema
+
+  constructor(
+    private readonly skill: CollectEggsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof collectEggsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Collect eggs',
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            {
+              farm: input.farm,
+              area: input.area,
+              storeFraction: input.store_fraction,
+              release: input.release,
+              maxChickens: input.max_chickens,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const setEggPolicySchema = z.object({
+  store_fraction: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.1)
+    .describe('Share of collected eggs to store instead of releasing for chicks.'),
+  release: z
+    .enum(EGG_RELEASE_KINDS)
+    .default('hatch')
+    .describe('"hatch": throw the rest into the pen for a chance at chicks. "store": keep everything.'),
+})
+
+export class SetEggPolicyTool implements ToolDefinition<typeof setEggPolicySchema> {
+  readonly name = 'set_egg_policy'
+  readonly description =
+    'Saves how collect_eggs splits what it picks up, as a standing rule for this world: how much to store ' +
+    '(store_fraction, default 0.1) and whether to release the rest for chicks or store everything (release). ' +
+    'Set it when the player says something like "keep half the eggs" or "store them all". Survives restarts and ' +
+    'appears in the session briefing when it differs from the default. Fails when no world is active.'
+  readonly inputSchema = setEggPolicySchema
+
+  constructor(
+    private readonly policy: EggPolicy,
+    private readonly standing: StandingInstructions,
+  ) {}
+
+  execute(input: z.output<typeof setEggPolicySchema>) {
+    const saved = this.policy.set({ storeFraction: input.store_fraction, release: input.release })
+    if (!saved.ok) return toolFail(saved.error)
+    const isDefault = input.store_fraction === 0.1 && input.release === 'hatch'
+    if (isDefault) this.standing.remove('egg_policy')
+    else
+      this.standing.set(
+        'egg_policy',
+        `Eggs: store ${String(Math.round(input.store_fraction * 100))}%, ${
+          input.release === 'hatch' ? 'release the rest for chicks' : 'store everything'
+        }.`,
+      )
+    return toolOk({ storeFraction: input.store_fraction, release: input.release })
   }
 }
 

@@ -133,12 +133,14 @@ import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-t
 import {
   BreedAnimalsTool,
   BuildFarmTool,
+  CollectEggsTool,
   HarvestCropsTool,
   InspectFarmTool,
   ListFarmsTool,
   LureAnimalsTool,
   PlantCropsTool,
   RegisterFarmTool,
+  SetEggPolicyTool,
   TendFarmTool,
 } from './mcp/tools/farming-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
@@ -171,6 +173,7 @@ import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
 import { ContainerIndex } from './state/container-index.js'
+import { EggPolicy } from './state/egg-policy.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
@@ -223,6 +226,8 @@ import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
+import { CollectEggsSkill } from './skills/farming/collect-eggs-skill.js'
+import { EggThrower } from './skills/farming/egg-thrower.js'
 import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
 import { HarvestCropsSkill } from './skills/farming/harvest-crops-skill.js'
 import { HerdManager } from './skills/farming/herd-manager.js'
@@ -375,6 +380,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const foodPolicy = new FoodPolicy()
   const containerIndex = new ContainerIndex(clock)
   const farmRegistry = new FarmRegistry(clock)
+  const eggPolicy = new EggPolicy()
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
   const dropRecords = new DropRecords(clock)
@@ -397,6 +403,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       switchPolicy,
       containerIndex,
       farmRegistry,
+      eggPolicy,
       storageRules,
       storagePolicy,
       dropRecords,
@@ -874,11 +881,28 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     farms: farmRegistry,
   })
   const herdManager = new HerdManager({ animals, breed: breedAnimals, hunt: huntAnimals })
+  const eggThrower = new EggThrower({
+    gaze: new MineflayerGaze(connection),
+    writer: new MineflayerInventoryWriter(connection),
+    scheduler,
+  })
+  const collectEggs = new CollectEggsSkill({
+    drops: dropCollector,
+    inventory,
+    vitals,
+    animals,
+    guard: protectedAreas,
+    depositor: depositItems,
+    thrower: eggThrower,
+    policy: eggPolicy,
+    farms: farmRegistry,
+  })
   const tendFarm = new TendFarmSkill({
     farms: farmRegistry,
     harvest: harvestCrops,
     plant: plantCrops,
     herd: herdManager,
+    collectEggs,
   })
   const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })
   // Server commands (teleporting), which only work when the server lets the bot use them.
@@ -975,6 +999,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new HarvestCropsTool(harvestCrops, launcher))
     .register(new LureAnimalsTool(lureAnimals, launcher))
     .register(new BreedAnimalsTool(breedAnimals, launcher))
+    .register(new CollectEggsTool(collectEggs, launcher))
+    .register(new SetEggPolicyTool(eggPolicy, standing))
     .register(new TendFarmTool(tendFarm, launcher))
     .register(new InspectFarmTool(inspectFarm))
     .register(new ListFarmsTool(farmRegistry))
