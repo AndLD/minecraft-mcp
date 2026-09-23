@@ -74,8 +74,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | 15 Structured gathering: pits and quarries instead of scattered holes | done (`feature/structured-gathering`), merged into `development` |
 | 16 Site preparation: leveling, dug rooms, and opening doors | site leveling done (`feature/site-leveling`), merged into `development`; dug rooms done (`feature/dug-rooms`), merged into `development`; door opening done (`feature/door-opening`), merged into `development` |
 | 17 Iron doors and switches | done (`feature/switches`) |
-| 18 Railways | not started (added) |
-| 19 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms) |
+| 18 Farming: crops, animals, and trees | not started (added; needs the construction engine for laying out farms; moved ahead of railways, which nothing here depends on) |
+| 19 Railways | not started (added) |
 | 20 Sleeping and respawn point | not started (added; small, can go right after teleport) |
 | 21 Signs | not started (added; small, can go any time; uses the look target from Phase 15) |
 | 22 World discovery, including caves and canyons | not started (cave flow added) |
@@ -504,25 +504,7 @@ An iron door cannot be opened by hand. It opens while something powers it: a but
   - e2e: an iron door with a stone button on the frame block beside it (over RCON): `open_door` with `walk_through` gets the bot in before the door closes; a lever door is left as it was found; a door with a decoy button that does nothing tries the next candidate; `find_switches` lists them; with policy `ask` `goto` reports `iron_door_blocked`
 - **Exit criteria:** "get into the house" through an iron door with a button beside it asks (or, with the standing instruction `auto`, simply does it), presses the button, walks in, and leaves the house as it was (a lever put back); a door that does not react is reported with what was tried.
 
-### Phase 18: Railways (2 sessions)
-
-- Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
-- **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
-- **Two variants:**
-  - `economy`: plain rails, with a **powered rail every `spacing` blocks on level track (default 8; 7 to 10 allowed) and every 3 blocks on slopes**, each fed by its own redstone torch.
-  - `rich`: powered rails all the way, for the best speed. Power passes from one powered rail to the next up to 8 rails away, so a redstone torch is needed about every 9 rails, not one per rail.
-  - Both place a torch or redstone block for power next to each powered rail in a way that has to be verified in the game (the power layout is chosen by an e2e run: a minecart must actually accelerate along the test line).
-- **Materials** (worked out by the planner and the recipe book): rails (6 iron ingots and a stick make 16), powered rails (6 gold ingots, a stick, and redstone make 6), redstone torches (redstone and a stick), minecarts (5 iron ingots), support blocks. A shortage is reported per item, with the offer to gather, smelt, or fetch it.
-- **Trolley:** `place_minecart` puts a minecart on a rail (by default at the start of the line); riding it is up to you.
-- **Verification:** after laying, the bot walks the line and checks every rail's presence, orientation, and powered state, and re-lays what is wrong.
-- Tools: `plan_railway` (dry run), `build_railway`, `place_minecart`.
-- **Tests:**
-  - unit: route planning on synthetic terrain (slopes, turns, gaps, water, obstacles; `surface` versus `underground`), spacing rules for both variants (level and sloped runs), rail orientation at corners and slopes, material calculation, verification
-  - integration: `build_railway` through the tool layer on a grid-based fake world, including a tunnel section
-  - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
-- **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
-
-### Phase 19: Farming, crops, animals, and trees (3.25 sessions)
+### Phase 18: Farming, crops, animals, and trees (3.25 sessions)
 
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
@@ -562,6 +544,24 @@ Hunting takes animals from the world and never adds any, and food stops when the
   - integration: `build_farm` through the tool layer on a stateful fake world produces the expected block grid; plant, grow (fake time), harvest, and replant cycle; breed to a target herd size; plant a small grove around a spot and check the saplings' positions, replant after felling
   - e2e: a small farm with a cow pen, a chicken pen, and a wheat field: `discover_farm` proposes all three; after registering them as one group, `inspect_farm` reports the ripe and growing counts and the animal counts without changing a block, and `tend_farm` on the group harvests and replants the field, collects the eggs, and returns one summary with three parts; a gap cut into a fence shows up as a problem in `inspect_farm`; eggs summoned as items in a fenced pen with chickens: `collect_eggs` picks them all up, stores exactly 10% (rounded up) in a chest and throws the rest (the chest count is exact; with 64 eggs at least one chick appears, the chance of none being under 0.03%); `store_fraction: 1` stores everything; a full pen throws nothing; `build_farm` lays out a small field on flat ground and the block layout checks out through RCON; seeds planted, crops advanced with `/data merge` or bone meal, harvested and replanted; two cows fed wheat produce a calf; a pen is built and a herd bred up to its size; saplings planted around a point with the right spacing and grown with bone meal
 - **Exit criteria:** "make me a wheat farm here" builds a watered, fenced, lit field and plants it; "harvest the farm" harvests only what is ripe and replants; "breed the cows up to 8" feeds pairs until the herd has 8 adults, without ever touching pets or the last breeding pair; "go check our farm near home" answers with one report over every pen and field of the group without changing anything, and "run the farm" tends all of them with one summary; "collect the eggs" stores a tenth in a chest and throws the rest into the pen for chicks (unless told otherwise or the pen is full); "plant a forest of 10 trees around the house" places 10 saplings with room to grow, and felling them later replants.
+
+### Phase 19: Railways (2 sessions)
+
+- Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
+- **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
+- **Two variants:**
+  - `economy`: plain rails, with a **powered rail every `spacing` blocks on level track (default 8; 7 to 10 allowed) and every 3 blocks on slopes**, each fed by its own redstone torch.
+  - `rich`: powered rails all the way, for the best speed. Power passes from one powered rail to the next up to 8 rails away, so a redstone torch is needed about every 9 rails, not one per rail.
+  - Both place a torch or redstone block for power next to each powered rail in a way that has to be verified in the game (the power layout is chosen by an e2e run: a minecart must actually accelerate along the test line).
+- **Materials** (worked out by the planner and the recipe book): rails (6 iron ingots and a stick make 16), powered rails (6 gold ingots, a stick, and redstone make 6), redstone torches (redstone and a stick), minecarts (5 iron ingots), support blocks. A shortage is reported per item, with the offer to gather, smelt, or fetch it.
+- **Trolley:** `place_minecart` puts a minecart on a rail (by default at the start of the line); riding it is up to you.
+- **Verification:** after laying, the bot walks the line and checks every rail's presence, orientation, and powered state, and re-lays what is wrong.
+- Tools: `plan_railway` (dry run), `build_railway`, `place_minecart`.
+- **Tests:**
+  - unit: route planning on synthetic terrain (slopes, turns, gaps, water, obstacles; `surface` versus `underground`), spacing rules for both variants (level and sloped runs), rail orientation at corners and slopes, material calculation, verification
+  - integration: `build_railway` through the tool layer on a grid-based fake world, including a tunnel section
+  - e2e: a surface line on flat ground and one that climbs a hill, both variants, verified through RCON block by block; a minecart placed at the start and pushed goes the whole way (speed checked); an underground line through a tunnel with torches; missing-materials report
+- **Exit criteria:** "build a railway from here to the base, economy variant, and place a minecart" produces a working line (surface or underground) with the powered rails at the stated spacing, and the cart runs it.
 
 ### Phase 20: Sleeping and respawn point (1 session)
 
