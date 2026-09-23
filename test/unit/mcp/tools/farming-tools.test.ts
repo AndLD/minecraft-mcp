@@ -3,14 +3,21 @@ import { err, ok } from '../../../../src/core/result.js'
 import type { SkillResult } from '../../../../src/core/skill.types.js'
 import { TaskLauncher } from '../../../../src/mcp/task-launcher.js'
 import {
+  BreedAnimalsTool,
   BuildFarmTool,
   HarvestCropsTool,
   InspectFarmTool,
   ListFarmsTool,
+  LureAnimalsTool,
   PlantCropsTool,
   RegisterFarmTool,
   TendFarmTool,
 } from '../../../../src/mcp/tools/farming-tools.js'
+import type {
+  BreedAnimalsInput,
+  BreedAnimalsOutput,
+  BreedAnimalsSkill,
+} from '../../../../src/skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmOutput, BuildFarmSkill } from '../../../../src/skills/farming/build-farm-skill.js'
 import type {
   HarvestCropsInput,
@@ -18,6 +25,11 @@ import type {
   HarvestCropsSkill,
 } from '../../../../src/skills/farming/harvest-crops-skill.js'
 import type { InspectFarmSkill } from '../../../../src/skills/farming/inspect-farm-skill.js'
+import type {
+  LureAnimalsInput,
+  LureAnimalsOutput,
+  LureAnimalsSkill,
+} from '../../../../src/skills/farming/lure-animals-skill.js'
 import type { PlantCropsInput, PlantCropsOutput, PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
 import type { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
 import { FarmRegistry } from '../../../../src/state/farm-registry.js'
@@ -61,6 +73,8 @@ describe('BuildFarmTool', () => {
         id: 'farm-1',
         kind: 'field',
         crop: 'wheat',
+        species: null,
+        herdTarget: null,
         bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 66, z: 2 } },
         label: null,
         group: null,
@@ -132,6 +146,65 @@ describe('HarvestCropsTool', () => {
 
     expect(runs[0]).toEqual({ farm: 'wheat field', area: undefined, replant: true })
     expect(result).toMatchObject({ ok: true, data: { result: { harvested: 3 } } })
+  })
+})
+
+describe('LureAnimalsTool', () => {
+  it('translates input and runs the skill through the task launcher', async () => {
+    const { launcher } = launching()
+    const runs: LureAnimalsInput[] = []
+    const outcome: SkillResult<LureAnimalsOutput> = ok({ led: 1, requested: 2, abandoned: [], penFull: false })
+    const skill = {
+      name: 'lure_animals',
+      run: (input: LureAnimalsInput) => {
+        runs.push(input)
+        return Promise.resolve(outcome)
+      },
+    } as unknown as LureAnimalsSkill
+    const tool = new LureAnimalsTool(skill, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ species: 'cow', count: 2, farm: 'cow pen' }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({
+      species: 'cow',
+      count: 2,
+      farm: 'cow pen',
+      destination: undefined,
+      maxDistance: 32,
+    })
+    expect(result).toMatchObject({ ok: true, data: { result: { led: 1 } } })
+  })
+})
+
+describe('BreedAnimalsTool', () => {
+  it('translates input and runs the skill through the task launcher', async () => {
+    const { launcher } = launching()
+    const runs: BreedAnimalsInput[] = []
+    const outcome: SkillResult<BreedAnimalsOutput> = ok({
+      bred: 1,
+      pairsFed: 1,
+      herdSize: 5,
+      targetCount: 6,
+    })
+    const skill = {
+      name: 'breed_animals',
+      run: (input: BreedAnimalsInput) => {
+        runs.push(input)
+        return Promise.resolve(outcome)
+      },
+    } as unknown as BreedAnimalsSkill
+    const tool = new BreedAnimalsTool(skill, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ species: 'cow', target_count: 6, farm: 'cow pen' }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({ species: 'cow', farm: 'cow pen', area: undefined, targetCount: 6 })
+    expect(result).toMatchObject({ ok: true, data: { result: { bred: 1 } } })
   })
 })
 

@@ -121,4 +121,65 @@ describe('FarmRegistry', () => {
     expect(second.farms.all()).toHaveLength(1)
     expect(second.farms.byLabel('wheat')).toBeDefined()
   })
+
+  it('registers a pen with a species and a herd target', async () => {
+    const { farms } = await registry()
+
+    const entry = farms.register({
+      kind: 'pen',
+      species: 'cow',
+      herdTarget: 8,
+      bounds: bounds(0, 0, 4, 4),
+      label: 'cow pen',
+    })
+
+    expect(entry).toMatchObject({ ok: true, value: { species: 'cow', herdTarget: 8, crop: null } })
+  })
+
+  it('defaults species and herdTarget to null when not given', async () => {
+    const { farms } = await registry()
+
+    const entry = farms.register({ kind: 'field', bounds: bounds(0, 0, 2, 2) })
+
+    expect(entry).toMatchObject({ ok: true, value: { species: null, herdTarget: null } })
+  })
+
+  it('migrates a version-1 document (from before species/herdTarget existed)', async () => {
+    const store = new InMemoryStateStore()
+    store.files.set('farms', {
+      version: 1,
+      data: {
+        farms: [
+          {
+            id: 'farm-1',
+            kind: 'field',
+            crop: 'wheat',
+            bounds: bounds(0, 0, 2, 2),
+            label: 'old field',
+            group: null,
+            builtByBot: true,
+            registeredAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        nextId: 2,
+      },
+    })
+
+    const { farms } = await registry(store)
+
+    expect(farms.all()).toEqual([
+      {
+        id: 'farm-1',
+        kind: 'field',
+        crop: 'wheat',
+        species: null,
+        herdTarget: null,
+        bounds: bounds(0, 0, 2, 2),
+        label: 'old field',
+        group: null,
+        builtByBot: true,
+        registeredAt: '2026-01-01T00:00:00.000Z',
+      },
+    ])
+  })
 })

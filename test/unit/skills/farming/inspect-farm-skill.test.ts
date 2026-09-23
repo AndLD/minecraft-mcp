@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
+import type { AnimalInfo, AnimalScanner } from '../../../../src/core/animal-scanner.port.js'
 import type { CropAccess, CropState } from '../../../../src/core/crop.port.js'
 import type { Position } from '../../../../src/core/position.types.js'
 import { InspectFarmSkill } from '../../../../src/skills/farming/inspect-farm-skill.js'
@@ -21,13 +22,36 @@ class FakeCropAccess implements CropAccess {
   }
 }
 
+class FakeAnimalScanner implements AnimalScanner {
+  animals: AnimalInfo[] = []
+  nearby(): readonly AnimalInfo[] {
+    return this.animals
+  }
+  find(id: number): AnimalInfo | undefined {
+    return this.animals.find((a) => a.id === id)
+  }
+}
+
+const animal = (overrides: Partial<AnimalInfo> & { species: string; position: Position }): AnimalInfo => ({
+  id: overrides.id ?? Math.floor(Math.random() * 100_000),
+  distance: 1,
+  baby: false,
+  named: false,
+  owned: false,
+  saddled: false,
+  ridden: false,
+  dead: false,
+  ...overrides,
+})
+
 async function setup() {
   const blocks = new FakeBlockScanner()
   const crops = new FakeCropAccess()
+  const animals = new FakeAnimalScanner()
   const farms = new FarmRegistry(new FakeClock(0))
   await farms.attach(new InMemoryStateStore())
-  const skill = new InspectFarmSkill({ blocks, crops, farms })
-  return { blocks, crops, farms, skill }
+  const skill = new InspectFarmSkill({ blocks, crops, animals, farms })
+  return { blocks, crops, animals, farms, skill }
 }
 
 const bounds = { from: at(0, 64, 0), to: at(1, 64, 0) }
@@ -47,7 +71,20 @@ describe('InspectFarmSkill', () => {
     expect(result).toEqual({
       ok: true,
       value: {
-        components: [{ id: entry.value.id, kind: 'field', crop: 'wheat', ripe: 1, growing: 1, empty: 0 }],
+        components: [
+          {
+            id: entry.value.id,
+            kind: 'field',
+            crop: 'wheat',
+            species: null,
+            herdTarget: null,
+            ripe: 1,
+            growing: 1,
+            empty: 0,
+            adults: 0,
+            babies: 0,
+          },
+        ],
       },
     })
   })
@@ -60,9 +97,9 @@ describe('InspectFarmSkill', () => {
 
     const result = await s.skill.run({ farm: entry.value.id }, context())
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      value: { components: [{ id: entry.value.id, kind: 'field', crop: 'wheat', ripe: 0, growing: 0, empty: 1 }] },
+      value: { components: [{ ripe: 0, growing: 0, empty: 1 }] },
     })
   })
 
@@ -73,29 +110,63 @@ describe('InspectFarmSkill', () => {
 
     const result = await s.skill.run({ farm: entry.value.id }, context())
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      value: { components: [{ id: entry.value.id, kind: 'field', crop: null, ripe: 0, growing: 0, empty: 0 }] },
+      value: { components: [{ crop: null, ripe: 0, growing: 0, empty: 0 }] },
     })
   })
 
-  it('reports a non-field component with zero counts', async () => {
+  it('reports a pen its adults and babies of the right species inside its bounds', async () => {
     const s = await setup()
-    const entry = s.farms.register({ kind: 'pen', bounds })
+    const entry = s.farms.register({ kind: 'pen', species: 'cow', herdTarget: 6, bounds })
     if (!entry.ok) throw new Error(entry.error)
+    s.animals.animals = [
+      animal({ species: 'cow', position: at(0, 64, 0) }),
+      animal({ species: 'cow', position: at(1, 64, 0), baby: true }),
+      animal({ species: 'cow', position: at(50, 64, 0) }), // outside the pen's bounds
+      animal({ species: 'pig', position: at(0, 64, 0) }), // wrong species
+    ]
 
     const result = await s.skill.run({ farm: entry.value.id }, context())
 
     expect(result).toEqual({
       ok: true,
-      value: { components: [{ id: entry.value.id, kind: 'pen', crop: null, ripe: 0, growing: 0, empty: 0 }] },
+      value: {
+        components: [
+          {
+            id: entry.value.id,
+            kind: 'pen',
+            crop: null,
+            species: 'cow',
+            herdTarget: 6,
+            ripe: 0,
+            growing: 0,
+            empty: 0,
+            adults: 1,
+            babies: 1,
+          },
+        ],
+      },
+    })
+  })
+
+  it('reports a grove component with zero counts (not built yet)', async () => {
+    const s = await setup()
+    const entry = s.farms.register({ kind: 'grove', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { components: [{ kind: 'grove', ripe: 0, growing: 0, empty: 0, adults: 0, babies: 0 }] },
     })
   })
 
   it('reports every component of a group', async () => {
     const s = await setup()
     const a = s.farms.register({ kind: 'field', bounds, group: 'home' })
-    const b = s.farms.register({ kind: 'pen', bounds, group: 'home' })
+    const b = s.farms.register({ kind: 'pen', species: 'pig', bounds, group: 'home' })
     if (!a.ok || !b.ok) throw new Error('setup failed')
 
     const result = await s.skill.run({ farm: 'home' }, context())

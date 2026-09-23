@@ -7,6 +7,7 @@ import { err, ok, type Result } from '../../../../src/core/result.js'
 import { BuildFarmSkill } from '../../../../src/skills/farming/build-farm-skill.js'
 import { FarmLayoutRegistry } from '../../../../src/skills/farming/farm-layout-registry.js'
 import { PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
+import { AnimalPenProvider } from '../../../../src/skills/farming/providers/animal-pen.js'
 import { CropFieldProvider } from '../../../../src/skills/farming/providers/crop-field.js'
 import { DropCollector } from '../../../../src/skills/gathering/drop-collector.js'
 import { PlanExecutor } from '../../../../src/skills/construction/plan-executor.js'
@@ -77,7 +78,9 @@ async function setup() {
     scheduler,
     tiller: new FakeTiller(world),
   })
-  const registry = new FarmLayoutRegistry().register(new CropFieldProvider())
+  const registry = new FarmLayoutRegistry()
+    .register(new CropFieldProvider())
+    .register(new AnimalPenProvider())
   const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
   const protectedAreas = new ProtectedAreas()
@@ -150,11 +153,41 @@ describe('BuildFarmSkill', () => {
     const s = await setup()
 
     const result = await s.skill.run(
-      { kind: 'pen', params: {}, origin: undefined, fetchFromStorage: false },
+      { kind: 'grove', params: {}, origin: undefined, fetchFromStorage: false },
       skillContext().context,
     )
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_kind' } })
+  })
+
+  it('builds a pen, registering it under its own kind and species (not hardcoded to field)', async () => {
+    const s = await setup()
+    s.world.give('oak_fence', 20)
+    s.world.give('oak_fence_gate', 1)
+
+    const result = await s.skill.run(
+      {
+        kind: 'pen',
+        params: { width: 4, length: 4, species: 'cow', water: false, torches: false },
+        origin: { x: 0, y: 63, z: 0 },
+        label: 'cow pen',
+        herdTarget: 8,
+        fetchFromStorage: false,
+      },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) return
+    expect(result.value.farm).toMatchObject({
+      kind: 'pen',
+      crop: null,
+      species: 'cow',
+      herdTarget: 8,
+      label: 'cow pen',
+    })
+    expect(result.value.planted).toBe(0) // no crop, so no planting attempted
+    expect(s.farms.all()).toMatchObject([{ kind: 'pen', species: 'cow' }])
   })
 
   it('previews without changing anything', async () => {

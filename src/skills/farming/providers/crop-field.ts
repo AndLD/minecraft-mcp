@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Position } from '../../../core/position.types.js'
 import type { WorkPlan, WorkStep } from '../../construction/work-plan.types.js'
+import { fenceRingSteps } from '../fence-ring.js'
 import type { FarmLayoutContext, FarmLayoutProvider } from '../farm-layout.types.js'
 import { CROP_NAMES, classifyCrop } from '../crop-table.js'
 
@@ -11,8 +12,6 @@ const MIN_LENGTH = 3
 const MAX_LENGTH = 32
 /** How far apart the water sources are set into the channel; each hydrates farmland up to 4 blocks away along it too. */
 const CHANNEL_SPACING = 8
-/** How many fence posts apart a torch goes, so the field is lit against mob spawns without one on every post. */
-const TORCH_SPACING = 5
 
 const cropFieldParams = z.object({
   width: z
@@ -78,64 +77,14 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
         else steps.push({ kind: 'till', at: ground, branch: 'field' })
       }
     }
-    if (p.fence) steps.push(...fenceSteps(x0, y0, z0, p.width, p.length, p.torches))
+    if (p.fence)
+      steps.push(
+        ...fenceRingSteps({ x0, y0, z0, width: p.width, length: p.length, torches: p.torches }),
+      )
     return {
       name: `${p.crop} field ${String(p.width)}x${String(p.length)}`,
       steps,
       standing: 'inside',
     }
   }
-}
-
-/** A fence ring one cell outside the footprint, one gate in the middle of the south side, torches along the way. */
-function fenceSteps(
-  x0: number,
-  y0: number,
-  z0: number,
-  width: number,
-  length: number,
-  torches: boolean,
-): WorkStep[] {
-  const west = x0 - 1
-  const east = x0 + width
-  const north = z0 - 1
-  const south = z0 + length
-  const gateX = x0 + Math.floor((width - 1) / 2)
-  const perimeter: { readonly x: number; readonly z: number; readonly gate: boolean }[] = []
-  for (let x = west; x <= east; x += 1) perimeter.push({ x, z: north, gate: false })
-  for (let z = north + 1; z <= south; z += 1) perimeter.push({ x: east, z, gate: false })
-  for (let x = east - 1; x >= west; x -= 1)
-    perimeter.push({ x, z: south, gate: x === gateX })
-  for (let z = south - 1; z > north; z -= 1) perimeter.push({ x: west, z, gate: false })
-
-  const steps: WorkStep[] = []
-  let post = 0
-  for (const cell of perimeter) {
-    if (cell.gate) {
-      steps.push({
-        kind: 'place',
-        at: { x: cell.x, y: y0 + 1, z: cell.z },
-        block: 'oak_fence_gate',
-        alignAxis: 'x',
-        branch: 'fence',
-      })
-      continue
-    }
-    steps.push({
-      kind: 'place',
-      at: { x: cell.x, y: y0 + 1, z: cell.z },
-      block: 'oak_fence',
-      branch: 'fence',
-    })
-    if (torches && post % TORCH_SPACING === 0)
-      steps.push({
-        kind: 'light',
-        at: { x: cell.x, y: y0 + 2, z: cell.z },
-        minLight: 8,
-        spacing: TORCH_SPACING,
-        branch: 'fence',
-      })
-    post += 1
-  }
-  return steps
 }

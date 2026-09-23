@@ -149,7 +149,7 @@ describe('crop farming on a real Minecraft server', () => {
     const before = dataOf<{ components: { ripe: number; growing: number }[] }>(
       await session.bot.call('inspect_farm', { farm: 'test field' }),
     )
-    expect(before.components).toEqual([{ ripe: 1, growing: 1, empty: 0, id: expect.any(String), kind: 'field', crop: 'wheat' }])
+    expect(before.components).toMatchObject([{ ripe: 1, growing: 1, empty: 0, kind: 'field', crop: 'wheat' }])
 
     const harvested = await run('harvest_crops', { farm: 'test field' })
 

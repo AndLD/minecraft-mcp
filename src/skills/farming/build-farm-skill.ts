@@ -27,6 +27,8 @@ export interface BuildFarmInput {
   readonly origin: Position | undefined
   readonly label?: string | undefined
   readonly group?: string | undefined
+  /** The herd size `tend_farm` breeds up to and culls down to, for a pen. */
+  readonly herdTarget?: number | undefined
   readonly fetchFromStorage: boolean
   readonly onInventoryFull?: InventoryFullKind | undefined
 }
@@ -64,6 +66,10 @@ export interface BuildFarmDeps {
   readonly plant?: PlantCropsSkill
 }
 
+const FARM_KINDS = ['field', 'pen', 'grove'] as const
+const isFarmKind = (kind: string): kind is FarmEntry['kind'] =>
+  (FARM_KINDS as readonly string[]).includes(kind)
+
 const boundsOf = (plan: WorkPlan): Bounds => {
   const xs = plan.steps.map((s) => s.at.x)
   const ys = plan.steps.map((s) => s.at.y)
@@ -75,9 +81,9 @@ const boundsOf = (plan: WorkPlan): Bounds => {
 }
 
 /**
- * Lays out a farm component (currently only `field`) as a `WorkPlan` and hands it to the shared `PlanExecutor`, the
- * same way `excavate` and `build` do. On success the component is registered in the `FarmRegistry` and its footprint
- * is protected like any player build, so other tasks never dig or build over it by accident.
+ * Lays out a farm component (`field`, `pen`) as a `WorkPlan` and hands it to the shared `PlanExecutor`, the same way
+ * `excavate` and `build` do. On success the component is registered in the `FarmRegistry` and its footprint is
+ * protected like any player build, so other tasks never dig or build over it by accident.
  */
 export class BuildFarmSkill implements Skill<BuildFarmInput, BuildFarmOutput> {
   readonly name = 'build_farm'
@@ -118,11 +124,19 @@ export class BuildFarmSkill implements Skill<BuildFarmInput, BuildFarmOutput> {
     if (!done.ok)
       return err({ ...done.error, detail: { ...done.error.detail, origin } })
 
+    if (!isFarmKind(provider.kind))
+      return err({
+        reason: 'invalid_shape',
+        message: `The provider for "${provider.kind}" is registered with a kind FarmRegistry does not know.`,
+      })
     const bounds = boundsOf(plan)
     const crop = provider.cropOf?.(params)
+    const species = provider.speciesOf?.(params)
     const registered = this.deps.farms.register({
-      kind: 'field',
+      kind: provider.kind,
       crop,
+      species,
+      herdTarget: input.herdTarget,
       bounds,
       label: input.label,
       group: input.group,

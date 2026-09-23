@@ -8,7 +8,7 @@ export interface FarmLayoutContext {
 }
 
 /**
- * Builds a farm component (a field, later a pen or a grove) as a `WorkPlan`, executed by the shared `PlanExecutor`
+ * Builds a farm component (a field, a pen, later a grove) as a `WorkPlan`, executed by the shared `PlanExecutor`
  * exactly like a blueprint or an excavation shape. A new kind is a new provider (Open/Closed), registered in the
  * composition root.
  */
@@ -23,4 +23,6 @@ export interface FarmLayoutProvider<Params = unknown> {
   generate(params: Params, context: FarmLayoutContext): WorkPlan | { readonly error: string }
   /** The crop this component grows, for the `FarmRegistry` entry, when the kind plants one. */
   cropOf?(params: Params): string | undefined
+  /** The animal species this component keeps, for the `FarmRegistry` entry, when the kind is a pen. */
+  speciesOf?(params: Params): string | undefined
 }

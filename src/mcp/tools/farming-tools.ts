@@ -1,7 +1,10 @@
 import { z } from 'zod'
+import { PENNABLE_SPECIES } from '../../skills/farming/animal-table.js'
+import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
 import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill.js'
 import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.js'
+import type { LureAnimalsSkill } from '../../skills/farming/lure-animals-skill.js'
 import type { PlantCropsSkill } from '../../skills/farming/plant-crops-skill.js'
 import type { TendFarmSkill } from '../../skills/farming/tend-farm-skill.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
@@ -21,6 +24,8 @@ const farmView = (entry: FarmEntry) => ({
   id: entry.id,
   kind: entry.kind,
   crop: entry.crop,
+  species: entry.species,
+  herdTarget: entry.herdTarget,
   bounds: entry.bounds,
   label: entry.label,
   group: entry.group,
@@ -28,13 +33,13 @@ const farmView = (entry: FarmEntry) => ({
 })
 
 const buildFarmSchema = z.object({
-  kind: z.string().min(1).describe('A farm layout kind: "field" (the only one built so far).'),
+  kind: z.string().min(1).describe('A farm layout kind: "field" or "pen".'),
   params: z
     .record(z.string(), z.unknown())
     .default({})
     .describe(
-      'The kind\'s own parameters (for "field": width, length, crop, fence, torches). Work them out from the ' +
-        "player's words; when unclear, ask.",
+      'The kind\'s own parameters (for "field": width, length, crop, fence, torches; for "pen": width, length, ' +
+        "species, water, torches). Work them out from the player's words; when unclear, ask.",
     ),
   origin: positionSchema
     .optional()
@@ -46,6 +51,12 @@ const buildFarmSchema = z.object({
     .max(40)
     .optional()
     .describe('Ties this together with other farm components, for example "home".'),
+  herd_target: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('For a pen: the herd size tend_farm breeds up to and culls down to.'),
   fetch_from_storage: z
     .boolean()
     .default(true)
@@ -60,10 +71,11 @@ const buildFarmSchema = z.object({
 export class BuildFarmTool implements ToolDefinition<typeof buildFarmSchema> {
   readonly name = 'build_farm'
   readonly description =
-    'Lays out a farm component: a tilled, watered, fenced field planted with a crop (kind: "field"). Needs a hoe, ' +
-    'seeds (or carrots/potatoes/beetroot), water buckets, and fence; fetch_from_storage brings what is missing from ' +
-    'known containers. On success the field is remembered (list_farms) and its footprint is protected from other ' +
-    'tasks. Runs in the background: poll get_task_status when the reply has status "running".'
+    'Lays out a farm component: a tilled, watered, fenced field planted with a crop (kind: "field"), or a fenced ' +
+    'pen for one animal species (kind: "pen"). Needs a hoe, seeds (or carrots/potatoes/beetroot), water buckets, ' +
+    'and fence; fetch_from_storage brings what is missing from known containers. On success the component is ' +
+    'remembered (list_farms) and its footprint is protected from other tasks. Runs in the background: poll ' +
+    'get_task_status when the reply has status "running".'
   readonly inputSchema = buildFarmSchema
 
   constructor(
@@ -78,6 +90,7 @@ export class BuildFarmTool implements ToolDefinition<typeof buildFarmSchema> {
       origin: input.origin,
       label: input.label,
       group: input.group,
+      herdTarget: input.herd_target,
       fetchFromStorage: input.fetch_from_storage,
       onInventoryFull: input.on_inventory_full,
     }
@@ -183,6 +196,100 @@ export class HarvestCropsTool implements ToolDefinition<typeof harvestCropsSchem
   }
 }
 
+const lureAnimalsSchema = z.object({
+  species: z.enum(PENNABLE_SPECIES).describe(`Which wild animal to lead in: ${PENNABLE_SPECIES.join(', ')}.`),
+  count: z.number().int().min(1).describe('How many to lead in.'),
+  farm: z.string().min(1).optional().describe('The pen to lead them into (see list_farms). Give this or destination.'),
+  destination: positionSchema.optional().describe('A position to lead them to, when not using a registered pen.'),
+  max_distance: z.number().int().min(1).max(64).default(32).describe('How far away to look for wild animals.'),
+  ...taskOptionsShape,
+})
+
+export class LureAnimalsTool implements ToolDefinition<typeof lureAnimalsSchema> {
+  readonly name = 'lure_animals'
+  readonly description =
+    'Finds nearby wild animals of a species and leads them, one at a time, into a pen or to a position, holding ' +
+    'the food that species follows. Never tamed, named, saddled, or ridden animals. One that falls behind or ' +
+    'loses interest is abandoned (recorded, not chased) and the next nearest is tried. Fails no_animals_nearby ' +
+    'when nothing is found, or no_food when the bot runs out; reports penFull (a shortfall, not a failure) when ' +
+    'the destination pen is already at capacity. Runs in the background: poll get_task_status when the reply has ' +
+    'status "running".'
+  readonly inputSchema = lureAnimalsSchema
+
+  constructor(
+    private readonly skill: LureAnimalsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof lureAnimalsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Lead ${String(input.count)} ${input.species} in`,
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            {
+              species: input.species,
+              count: input.count,
+              farm: input.farm,
+              destination: input.destination,
+              maxDistance: input.max_distance,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const breedAnimalsSchema = z.object({
+  species: z.enum(PENNABLE_SPECIES).describe(`Which species to breed: ${PENNABLE_SPECIES.join(', ')}.`),
+  target_count: z.number().int().min(1).describe('Stop once the herd (adults and babies together) reaches this size.'),
+  ...farmOrAreaShape,
+  ...taskOptionsShape,
+})
+
+export class BreedAnimalsTool implements ToolDefinition<typeof breedAnimalsSchema> {
+  readonly name = 'breed_animals'
+  readonly description =
+    'Feeds pairs of eligible adults of a species (never tamed, named, saddled, or ridden) their breeding food and ' +
+    'waits to see whether a baby appears, until the herd reaches target_count or there are no more eligible pairs. ' +
+    'Fails no_food when the bot runs out. Runs in the background: poll get_task_status when the reply has status ' +
+    '"running".'
+  readonly inputSchema = breedAnimalsSchema
+
+  constructor(
+    private readonly skill: BreedAnimalsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof breedAnimalsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Breed ${input.species} up to ${String(input.target_count)}`,
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            { species: input.species, farm: input.farm, area: input.area, targetCount: input.target_count },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
 const tendFarmSchema = z.object({
   farm: z.string().min(1).describe('A farm id, label, or group name (see list_farms).'),
   ...taskOptionsShape,
@@ -191,9 +298,10 @@ const tendFarmSchema = z.object({
 export class TendFarmTool implements ToolDefinition<typeof tendFarmSchema> {
   readonly name = 'tend_farm'
   readonly description =
-    'One pass over a registered farm, or every component of a group: harvests what is ripe, replants, and fills ' +
-    'empty plots. A component that fails is reported and skipped; the others carry on. Runs in the background: ' +
-    'poll get_task_status when the reply has status "running".'
+    'One pass over a registered farm, or every component of a group: for a field, harvests what is ripe, ' +
+    'replants, and fills empty plots; for a pen with a species and herd_target set, breeds it up or culls the ' +
+    'surplus with hunt_animals. A component that fails is reported and skipped; the others carry on. Runs in the ' +
+    'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = tendFarmSchema
 
   constructor(
@@ -243,6 +351,13 @@ export class InspectFarmTool implements ToolDefinition<typeof inspectFarmSchema>
 const registerFarmSchema = z.object({
   kind: z.enum(['field', 'pen', 'grove']).default('field').describe('What kind of farm component this is.'),
   crop: z.string().min(1).optional().describe('The crop it grows, for a field.'),
+  species: z.string().min(1).optional().describe('The animal species it keeps, for a pen.'),
+  herd_target: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('For a pen: the herd size tend_farm breeds up to and culls down to.'),
   from: positionSchema.describe('One corner of the component.'),
   to: positionSchema.describe('The opposite corner.'),
   label: z.string().min(1).max(40).optional().describe('A name for it, for example "wheat field".'),
@@ -262,6 +377,8 @@ export class RegisterFarmTool implements ToolDefinition<typeof registerFarmSchem
     const registered = this.farms.register({
       kind: input.kind,
       crop: input.crop,
+      species: input.species,
+      herdTarget: input.herd_target,
       bounds: { from: input.from, to: input.to },
       label: input.label,
       group: input.group,
@@ -275,7 +392,8 @@ const listFarmsSchema = z.object({})
 
 export class ListFarmsTool implements ToolDefinition<typeof listFarmsSchema> {
   readonly name = 'list_farms'
-  readonly description = 'Lists the farm components the bot remembers: id, kind, crop, bounds, label, and group.'
+  readonly description =
+    'Lists the farm components the bot remembers: id, kind, crop or species, bounds, label, and group.'
   readonly inputSchema = listFarmsSchema
 
   constructor(private readonly farms: FarmRegistry) {}
