@@ -30,6 +30,7 @@ import { MineflayerDoorAccess } from './bot/mineflayer-door-access.js'
 import { MineflayerSwitchAccess } from './bot/mineflayer-switch-access.js'
 import { MineflayerCropAccess } from './bot/mineflayer-crop-access.js'
 import { MineflayerTiller } from './bot/mineflayer-tiller.js'
+import { MineflayerAnimalInteraction } from './bot/mineflayer-animal-interaction.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
@@ -130,10 +131,12 @@ import {
 } from './mcp/tools/excavation-tools.js'
 import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-tools.js'
 import {
+  BreedAnimalsTool,
   BuildFarmTool,
   HarvestCropsTool,
   InspectFarmTool,
   ListFarmsTool,
+  LureAnimalsTool,
   PlantCropsTool,
   RegisterFarmTool,
   TendFarmTool,
@@ -218,11 +221,15 @@ import {
 import { WallTarget } from './skills/excavation/wall-target.js'
 import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
+import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
 import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
 import { HarvestCropsSkill } from './skills/farming/harvest-crops-skill.js'
+import { HerdManager } from './skills/farming/herd-manager.js'
 import { InspectFarmSkill } from './skills/farming/inspect-farm-skill.js'
+import { LureAnimalsSkill } from './skills/farming/lure-animals-skill.js'
 import { PlantCropsSkill } from './skills/farming/plant-crops-skill.js'
+import { AnimalPenProvider } from './skills/farming/providers/animal-pen.js'
 import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
@@ -794,7 +801,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   // Farming: build_farm lays out a field as a plan (an engine client, like excavate) and then plants it; tending it
   // afterwards (planting, harvesting) is plain skills, with no engine dependency, so they also work on a
   // player-built field.
-  const farmLayouts = new FarmLayoutRegistry().register(new CropFieldProvider())
+  const farmLayouts = new FarmLayoutRegistry()
+    .register(new CropFieldProvider())
+    .register(new AnimalPenProvider())
   const plantCrops = new PlantCropsSkill({
     blocks,
     navigator,
@@ -821,8 +830,6 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     fetcher: materialFetcher,
     plant: plantCrops,
   })
-  const tendFarm = new TendFarmSkill({ farms: farmRegistry, harvest: harvestCrops, plant: plantCrops })
-  const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, farms: farmRegistry })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -847,6 +854,33 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     depositor: depositItems,
   })
   const attackEntity = new AttackEntitySkill({ animals, combatant, drops: dropCollector, clock })
+
+  // Animal farming: pens (build_farm kind: pen), luring wild animals in, and breeding. Tending a pen's herd
+  // (breeding up, culling down) is HerdManager, reused by tend_farm/inspect_farm above and TendFarmSkill's pen branch.
+  const animalInteraction = new MineflayerAnimalInteraction(connection)
+  const lureAnimals = new LureAnimalsSkill({
+    animals,
+    interaction: animalInteraction,
+    navigator,
+    vitals,
+    farms: farmRegistry,
+  })
+  const breedAnimals = new BreedAnimalsSkill({
+    animals,
+    interaction: animalInteraction,
+    navigator,
+    clock,
+    scheduler,
+    farms: farmRegistry,
+  })
+  const herdManager = new HerdManager({ animals, breed: breedAnimals, hunt: huntAnimals })
+  const tendFarm = new TendFarmSkill({
+    farms: farmRegistry,
+    harvest: harvestCrops,
+    plant: plantCrops,
+    herd: herdManager,
+  })
+  const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })
   // Server commands (teleporting), which only work when the server lets the bot use them.
   const serverCommands = new MineflayerServerCommands(connection, scheduler)
   const teleport = new TeleportSkill({
@@ -939,6 +973,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BuildFarmTool(buildFarmSkill, launcher))
     .register(new PlantCropsTool(plantCrops, launcher))
     .register(new HarvestCropsTool(harvestCrops, launcher))
+    .register(new LureAnimalsTool(lureAnimals, launcher))
+    .register(new BreedAnimalsTool(breedAnimals, launcher))
     .register(new TendFarmTool(tendFarm, launcher))
     .register(new InspectFarmTool(inspectFarm))
     .register(new ListFarmsTool(farmRegistry))

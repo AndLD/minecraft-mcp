@@ -12,6 +12,10 @@ const farmSchema = z.object({
   kind: z.enum(['field', 'pen', 'grove']),
   /** The crop this field grows, or null for anything else, or a field with none set. */
   crop: z.string().nullable(),
+  /** The animal species this pen keeps, or null for anything else, or a pen with none set. */
+  species: z.string().nullable(),
+  /** The herd size `tend_farm` breeds up to and culls down to, for a pen; null leaves the herd alone. */
+  herdTarget: z.number().int().min(1).nullable(),
   bounds: z.object({ from: pointSchema, to: pointSchema }),
   label: z.string().nullable(),
   /** Ties several components into one farm, for example "home". */
@@ -25,9 +29,18 @@ export type FarmEntry = z.infer<typeof farmSchema>
 
 const farmsDocument = defineDocument({
   key: 'farms',
-  version: 1,
+  version: 2,
   schema: z.object({ farms: z.array(farmSchema), nextId: z.number().int() }),
   initial: () => ({ farms: [] as FarmEntry[], nextId: 1 }),
+  migrations: {
+    1: (data) => {
+      const doc = data as { farms: readonly Record<string, unknown>[]; nextId: number }
+      return {
+        ...doc,
+        farms: doc.farms.map((entry) => ({ ...entry, species: null, herdTarget: null })),
+      }
+    },
+  },
 })
 
 export const MAX_FARMS = 100
@@ -37,6 +50,8 @@ const NOT_ACTIVE =
 export interface RegisterFarmOptions {
   readonly kind: FarmEntry['kind']
   readonly crop?: string | undefined
+  readonly species?: string | undefined
+  readonly herdTarget?: number | undefined
   readonly bounds: { readonly from: Position; readonly to: Position }
   readonly label?: string | undefined
   readonly group?: string | undefined
@@ -80,6 +95,8 @@ export class FarmRegistry implements ProfileScoped {
       id: `farm-${String(this.nextId)}`,
       kind: options.kind,
       crop: options.crop ?? null,
+      species: options.species ?? null,
+      herdTarget: options.herdTarget ?? null,
       bounds: options.bounds,
       label: label === undefined || label === '' ? null : label,
       group: group === undefined || group === '' ? null : group,

@@ -1,9 +1,13 @@
+import type { AnimalScanner } from '../../core/animal-scanner.port.js'
 import type { BlockScanner } from '../../core/block-scanner.port.js'
 import type { CropAccess } from '../../core/crop.port.js'
 import { err, ok } from '../../core/result.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
 import { classifyCrop } from './crop-table.js'
+import { insideBounds } from './farm-area.types.js'
+
+const SEARCH_RADIUS = 48
 
 export interface InspectFarmInput {
   readonly farm: string
@@ -13,9 +17,15 @@ export interface ComponentReport {
   readonly id: string
   readonly kind: FarmEntry['kind']
   readonly crop: string | null
+  /** Field: ripe, growing, and empty plots. */
   readonly ripe: number
   readonly growing: number
   readonly empty: number
+  /** Pen: the species it keeps, adult and baby counts, and the target herd size. */
+  readonly species: string | null
+  readonly adults: number
+  readonly babies: number
+  readonly herdTarget: number | null
 }
 
 export interface InspectFarmOutput {
@@ -25,10 +35,11 @@ export interface InspectFarmOutput {
 export interface InspectFarmDeps {
   readonly blocks: BlockScanner
   readonly crops: CropAccess
+  readonly animals: AnimalScanner
   readonly farms: FarmRegistry
 }
 
-/** Read-only: reports each field's ripe, growing, and empty plots without touching anything. */
+/** Read-only: reports each field's ripe/growing/empty plots and each pen's herd, without touching anything. */
 export class InspectFarmSkill implements Skill<InspectFarmInput, InspectFarmOutput> {
   readonly name = 'inspect_farm'
 
@@ -48,8 +59,28 @@ export class InspectFarmSkill implements Skill<InspectFarmInput, InspectFarmOutp
   }
 
   private reportOn(entry: FarmEntry): ComponentReport {
-    if (entry.kind !== 'field')
-      return { id: entry.id, kind: entry.kind, crop: entry.crop, ripe: 0, growing: 0, empty: 0 }
+    const base = {
+      id: entry.id,
+      kind: entry.kind,
+      crop: entry.crop,
+      species: entry.species,
+      herdTarget: entry.herdTarget,
+    }
+    if (entry.kind === 'pen') {
+      const herd = this.deps.animals
+        .nearby(SEARCH_RADIUS)
+        .filter((a) => a.species === entry.species && insideBounds(a.position, entry.bounds))
+      return {
+        ...base,
+        ripe: 0,
+        growing: 0,
+        empty: 0,
+        adults: herd.filter((a) => !a.baby).length,
+        babies: herd.filter((a) => a.baby).length,
+      }
+    }
+    if (entry.kind !== 'field') return { ...base, ripe: 0, growing: 0, empty: 0, adults: 0, babies: 0 }
+
     let ripe = 0
     let growing = 0
     let empty = 0
@@ -65,6 +96,6 @@ export class InspectFarmSkill implements Skill<InspectFarmInput, InspectFarmOutp
         else growing += 1
       }
     }
-    return { id: entry.id, kind: entry.kind, crop: entry.crop, ripe, growing, empty }
+    return { ...base, ripe, growing, empty, adults: 0, babies: 0 }
   }
 }

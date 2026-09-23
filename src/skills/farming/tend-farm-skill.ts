@@ -2,6 +2,7 @@ import { err, ok } from '../../core/result.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
 import type { HarvestCropsSkill } from './harvest-crops-skill.js'
+import type { HerdManager } from './herd-manager.js'
 import type { PlantCropsSkill } from './plant-crops-skill.js'
 
 export interface TendFarmInput {
@@ -11,9 +12,13 @@ export interface TendFarmInput {
 export interface TendComponentResult {
   readonly id: string
   readonly kind: FarmEntry['kind']
+  /** Field: crops harvested and replanted, plots planted. */
   readonly harvested: number
   readonly replanted: number
   readonly planted: number
+  /** Pen: the herd size found, and what was done about it. */
+  readonly herdSizeBefore: number | undefined
+  readonly herdAction: 'bred' | 'culled' | 'none' | undefined
   readonly problem: string | undefined
 }
 
@@ -25,6 +30,7 @@ export interface TendFarmDeps {
   readonly farms: FarmRegistry
   readonly harvest: HarvestCropsSkill
   readonly plant: PlantCropsSkill
+  readonly herd: HerdManager
 }
 
 /**
@@ -49,6 +55,10 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
     const components: TendComponentResult[] = []
     for (const entry of entries) {
       if (context.signal.aborted) return err({ reason: 'aborted', message: 'Cancelled.' })
+      if (entry.kind === 'pen') {
+        components.push(await this.tendPen(entry, context))
+        continue
+      }
       if (entry.kind !== 'field') {
         components.push({
           id: entry.id,
@@ -56,6 +66,8 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
           harvested: 0,
           replanted: 0,
           planted: 0,
+          herdSizeBefore: undefined,
+          herdAction: undefined,
           problem: `${entry.kind} is not tended yet.`,
         })
         continue
@@ -85,9 +97,39 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
         harvested,
         replanted,
         planted,
+        herdSizeBefore: undefined,
+        herdAction: undefined,
         problem: harvest.ok ? undefined : harvest.error.message,
       })
     }
     return ok({ components })
+  }
+
+  private async tendPen(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
+    if (entry.species === null || entry.herdTarget === null)
+      return {
+        id: entry.id,
+        kind: entry.kind,
+        harvested: 0,
+        replanted: 0,
+        planted: 0,
+        herdSizeBefore: undefined,
+        herdAction: undefined,
+        problem: 'no species or herd target set for this pen (see build_farm/register_farm).',
+      }
+    const herded = await this.deps.herd.run(
+      { species: entry.species, targetSize: entry.herdTarget, bounds: entry.bounds },
+      context,
+    )
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      harvested: 0,
+      replanted: 0,
+      planted: 0,
+      herdSizeBefore: herded.ok ? herded.value.herdSizeBefore : undefined,
+      herdAction: herded.ok ? herded.value.action : undefined,
+      problem: herded.ok ? undefined : herded.error.message,
+    }
   }
 }

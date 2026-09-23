@@ -200,6 +200,8 @@ export interface BotLike {
   activateItem(): void
   /** Right-clicks a block (a door, gate, or trapdoor toggles open/closed; a button or lever is used this way too). */
   activateBlock(block: BlockLike): Promise<void>
+  /** Right-clicks an entity with whatever is in hand (feeding or breeding an animal is done this way). */
+  activateEntity(entity: EntityLike): Promise<void>
   /** Turns to face a point. */
   lookAt(point: Position, force?: boolean): Promise<void>
   /** Waits for game ticks (50 ms each). */

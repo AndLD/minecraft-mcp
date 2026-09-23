@@ -285,6 +285,8 @@ export class FakeBot implements BotLike {
       water_bucket: { id: 145 },
       oak_fence: { id: 146 },
       oak_fence_gate: { id: 147 },
+      wheat: { id: 148 },
+      egg: { id: 149 },
     },
     foodsByName: {
       cooked_beef: { foodPoints: 8, saturation: 12.8 },
@@ -864,6 +866,16 @@ export class FakeBot implements BotLike {
   attack(entity: EntityLike): void {
     this.attacked.push(entity.id)
     this.onAttack(entity)
+  }
+
+  readonly activatedEntities: number[] = []
+  /** Runs on every activateEntity (feeding an animal), so a test can react (for example spawn a baby). */
+  onActivateEntity: (entity: EntityLike) => void = () => undefined
+
+  activateEntity(entity: EntityLike): Promise<void> {
+    this.activatedEntities.push(entity.id)
+    this.onActivateEntity(entity)
+    return Promise.resolve()
   }
 
   findBlocks(options: {
