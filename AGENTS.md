@@ -428,6 +428,7 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 - Conventional Commit messages: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`.
 - **Every branch is published to the remote** (`git push -u origin <branch>`) as soon as it is created; never leave a branch local-only. This includes `development`.
 - **Every merge goes through a pull request** on GitHub (`gh pr create --base <target>`, then `gh pr merge --merge` for a merge commit), never a local `git merge` into `development` or `main`. The user's approval is still required before merging.
+- **Do not delete a branch after its PR merges.** Merge with `gh pr merge --merge` (no `--delete-branch`) and leave the branch on the remote as history.
 - Do not merge into `main` or force-push without an explicit request from the user.
 
 ## Runtime protocol (for the agent playing through this server)
