@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
+import { EggPolicy } from '../../../src/state/egg-policy.js'
 import { FarmRegistry, MAX_FARMS } from '../../../src/state/farm-registry.js'
 import { FakeClock } from '../../fakes/fake-clock.js'
 import { InMemoryStateStore } from '../../fakes/state-fakes.js'
@@ -181,5 +182,34 @@ describe('FarmRegistry', () => {
         registeredAt: '2026-01-01T00:00:00.000Z',
       },
     ])
+  })
+})
+
+describe('EggPolicy', () => {
+  it('defaults to storing a tenth and releasing the rest to hatch, and saves changes', async () => {
+    const store = new InMemoryStateStore()
+    const policy = new EggPolicy()
+    await policy.attach(store)
+
+    expect(policy.get()).toEqual({ storeFraction: 0.1, release: 'hatch' })
+    expect(policy.set({ storeFraction: 0.5, release: 'store' })).toMatchObject({ ok: true })
+
+    const reloaded = new EggPolicy()
+    await reloaded.attach(store)
+    expect(reloaded.get()).toEqual({ storeFraction: 0.5, release: 'store' })
+  })
+
+  it('cannot be set without a world, and falls back to the default', async () => {
+    const policy = new EggPolicy()
+    expect(policy.set({ storeFraction: 1, release: 'store' }).ok).toBe(false)
+    await policy.attach(new InMemoryStateStore())
+    policy.set({ storeFraction: 1, release: 'store' })
+
+    policy.detach()
+
+    expect(policy.get()).toEqual({ storeFraction: 0.1, release: 'hatch' })
+    const store = new InMemoryStateStore()
+    store.warnOnLoad = 'recovered'
+    expect(await new EggPolicy().attach(store)).toEqual(['recovered'])
   })
 })

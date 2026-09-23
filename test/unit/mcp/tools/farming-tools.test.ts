@@ -5,12 +5,14 @@ import { TaskLauncher } from '../../../../src/mcp/task-launcher.js'
 import {
   BreedAnimalsTool,
   BuildFarmTool,
+  CollectEggsTool,
   HarvestCropsTool,
   InspectFarmTool,
   ListFarmsTool,
   LureAnimalsTool,
   PlantCropsTool,
   RegisterFarmTool,
+  SetEggPolicyTool,
   TendFarmTool,
 } from '../../../../src/mcp/tools/farming-tools.js'
 import type {
@@ -32,7 +34,14 @@ import type {
 } from '../../../../src/skills/farming/lure-animals-skill.js'
 import type { PlantCropsInput, PlantCropsOutput, PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
 import type { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
+import type {
+  CollectEggsInput,
+  CollectEggsOutput,
+  CollectEggsSkill,
+} from '../../../../src/skills/farming/collect-eggs-skill.js'
+import { EggPolicy } from '../../../../src/state/egg-policy.js'
 import { FarmRegistry } from '../../../../src/state/farm-registry.js'
+import { StandingInstructions } from '../../../../src/state/standing-instructions.js'
 import { TaskManager } from '../../../../src/tasks/task-manager.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
 import { FakeLogger } from '../../../fakes/fake-logger.js'
@@ -205,6 +214,83 @@ describe('BreedAnimalsTool', () => {
 
     expect(runs[0]).toEqual({ species: 'cow', farm: 'cow pen', area: undefined, targetCount: 6 })
     expect(result).toMatchObject({ ok: true, data: { result: { bred: 1 } } })
+  })
+})
+
+describe('CollectEggsTool', () => {
+  it('translates input and runs the skill through the task launcher', async () => {
+    const { launcher } = launching()
+    const runs: CollectEggsInput[] = []
+    const outcome: SkillResult<CollectEggsOutput> = ok({
+      pickedUp: 10,
+      stored: 1,
+      released: 9,
+      penFull: false,
+    })
+    const skill = {
+      name: 'collect_eggs',
+      run: (input: CollectEggsInput) => {
+        runs.push(input)
+        return Promise.resolve(outcome)
+      },
+    } as unknown as CollectEggsSkill
+    const tool = new CollectEggsTool(skill, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ farm: 'coop', store_fraction: 0.2, release: 'store', max_chickens: 12 }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({
+      farm: 'coop',
+      area: undefined,
+      storeFraction: 0.2,
+      release: 'store',
+      maxChickens: 12,
+    })
+    expect(result).toMatchObject({ ok: true, data: { result: { pickedUp: 10, stored: 1, released: 9 } } })
+  })
+})
+
+describe('SetEggPolicyTool', () => {
+  async function tool() {
+    const store = new InMemoryStateStore()
+    const policy = new EggPolicy()
+    const standing = new StandingInstructions()
+    await policy.attach(store)
+    await standing.attach(store)
+    return { policy, standing, tool: new SetEggPolicyTool(policy, standing) }
+  }
+
+  it('saves the policy and mirrors it as a standing instruction the briefing shows', async () => {
+    const { policy, standing, tool: t } = await tool()
+
+    const result = t.execute(t.inputSchema.parse({ store_fraction: 0.5, release: 'store' }))
+
+    expect(result).toEqual({ ok: true, data: { storeFraction: 0.5, release: 'store' } })
+    expect(policy.get()).toEqual({ storeFraction: 0.5, release: 'store' })
+    expect(standing.all().egg_policy).toContain('store')
+  })
+
+  it('removes the standing instruction when set back to the default', async () => {
+    const { policy, standing, tool: t } = await tool()
+    t.execute(t.inputSchema.parse({ store_fraction: 0.5, release: 'store' }))
+    expect(standing.all().egg_policy).toBeDefined()
+
+    t.execute(t.inputSchema.parse({ store_fraction: 0.1, release: 'hatch' }))
+
+    expect(policy.get()).toEqual({ storeFraction: 0.1, release: 'hatch' })
+    expect(standing.all().egg_policy).toBeUndefined()
+  })
+
+  it('fails when no world is active', () => {
+    const policy = new EggPolicy()
+    const standing = new StandingInstructions()
+    const t = new SetEggPolicyTool(policy, standing)
+
+    const result = t.execute(t.inputSchema.parse({ store_fraction: 0.1, release: 'hatch' }))
+
+    expect(result).toMatchObject({ ok: false })
   })
 })
 

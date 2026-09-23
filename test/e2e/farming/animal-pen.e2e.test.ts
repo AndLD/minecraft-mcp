@@ -67,6 +67,15 @@ describe('animal farming on a real Minecraft server', () => {
       { description: `the bot to carry ${item}` },
     )
 
+  const untilBotSeesBlock = (name: string): Promise<unknown> =>
+    waitUntil(
+      async () => {
+        const result = await session.bot.call('find_blocks', { names: [name] })
+        return !result.isError && (result.data as { count: number }).count >= 1 ? true : undefined
+      },
+      { description: `the bot to see a ${name}` },
+    )
+
   async function run(tool: string, args: Record<string, unknown>) {
     const first = await session.bot.call(tool, { wait_seconds: 45, ...args })
     if (first.isError) return { failed: true as const, text: first.text, task: undefined }
@@ -164,5 +173,38 @@ describe('animal farming on a real Minecraft server', () => {
     expect(tended.task.result).toMatchObject({
       components: [{ kind: 'pen', herdSizeBefore: 3, herdAction: 'none' }],
     })
+  })
+
+  it('collects eggs from a chicken pen, storing a share and throwing the rest back in', async () => {
+    const penFrom = cell(0, 0, -10)
+    const penTo = cell(10, 0, 0)
+    const chestPos = cell(15, 0, 5)
+    await world.setBlock(chestPos, 'chest')
+    await untilBotSeesBlock('chest')
+    const registered = await session.bot.call('register_farm', {
+      kind: 'pen',
+      species: 'chicken',
+      herd_target: 20,
+      from: penFrom,
+      to: penTo,
+      label: 'coop',
+    })
+    if (registered.isError) throw new Error(`register_farm failed: ${registered.text}`)
+    const containerReg = await session.bot.call('register_container', {
+      x: chestPos.x,
+      y: chestPos.y,
+      z: chestPos.z,
+      label: 'coop chest',
+    })
+    if (containerReg.isError) throw new Error(`register_container failed: ${containerReg.text}`)
+    await world.summonWith('item', cell(5, 0, -5), '{Item:{id:"minecraft:egg",count:10},PickupDelay:0}')
+    await untilBotSeesEntity('item')
+
+    const result = await run('collect_eggs', { farm: 'coop' })
+
+    if (result.failed) throw new Error(`collect_eggs did not succeed: ${result.text}`)
+    expect(result.task.result).toMatchObject({ pickedUp: 10, stored: 1, released: 9, penFull: false })
+    expect(await world.countInChest(chestPos, 'egg')).toBe(1)
+    expect(await world.countItem(bot(), 'egg')).toBe(0)
   })
 })

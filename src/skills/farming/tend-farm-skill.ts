@@ -1,6 +1,7 @@
 import { err, ok } from '../../core/result.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
+import type { CollectEggsSkill } from './collect-eggs-skill.js'
 import type { HarvestCropsSkill } from './harvest-crops-skill.js'
 import type { HerdManager } from './herd-manager.js'
 import type { PlantCropsSkill } from './plant-crops-skill.js'
@@ -19,6 +20,10 @@ export interface TendComponentResult {
   /** Pen: the herd size found, and what was done about it. */
   readonly herdSizeBefore: number | undefined
   readonly herdAction: 'bred' | 'culled' | 'none' | undefined
+  /** A chicken pen: eggs picked up, stored, and released. */
+  readonly eggsPickedUp: number | undefined
+  readonly eggsStored: number | undefined
+  readonly eggsReleased: number | undefined
   readonly problem: string | undefined
 }
 
@@ -31,6 +36,8 @@ export interface TendFarmDeps {
   readonly harvest: HarvestCropsSkill
   readonly plant: PlantCropsSkill
   readonly herd: HerdManager
+  /** Collects eggs as part of tending a chicken pen; without it, a chicken pen is just herded. */
+  readonly collectEggs?: CollectEggsSkill
 }
 
 /**
@@ -68,6 +75,9 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
           planted: 0,
           herdSizeBefore: undefined,
           herdAction: undefined,
+          eggsPickedUp: undefined,
+          eggsStored: undefined,
+          eggsReleased: undefined,
           problem: `${entry.kind} is not tended yet.`,
         })
         continue
@@ -99,6 +109,9 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
         planted,
         herdSizeBefore: undefined,
         herdAction: undefined,
+        eggsPickedUp: undefined,
+        eggsStored: undefined,
+        eggsReleased: undefined,
         problem: harvest.ok ? undefined : harvest.error.message,
       })
     }
@@ -106,30 +119,53 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
   }
 
   private async tendPen(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
+    const base = {
+      id: entry.id,
+      kind: entry.kind,
+      harvested: 0,
+      replanted: 0,
+      planted: 0,
+    }
     if (entry.species === null || entry.herdTarget === null)
       return {
-        id: entry.id,
-        kind: entry.kind,
-        harvested: 0,
-        replanted: 0,
-        planted: 0,
+        ...base,
         herdSizeBefore: undefined,
         herdAction: undefined,
+        eggsPickedUp: undefined,
+        eggsStored: undefined,
+        eggsReleased: undefined,
         problem: 'no species or herd target set for this pen (see build_farm/register_farm).',
       }
     const herded = await this.deps.herd.run(
       { species: entry.species, targetSize: entry.herdTarget, bounds: entry.bounds },
       context,
     )
+
+    let eggs: { pickedUp: number; stored: number; released: number } | undefined
+    let eggsProblem: string | undefined
+    if (entry.species === 'chicken' && this.deps.collectEggs !== undefined) {
+      const collected = await this.deps.collectEggs.run(
+        {
+          farm: entry.id,
+          area: undefined,
+          storeFraction: undefined,
+          release: undefined,
+          maxChickens: entry.herdTarget,
+        },
+        context,
+      )
+      if (collected.ok) eggs = collected.value
+      else eggsProblem = collected.error.message
+    }
+
     return {
-      id: entry.id,
-      kind: entry.kind,
-      harvested: 0,
-      replanted: 0,
-      planted: 0,
+      ...base,
       herdSizeBefore: herded.ok ? herded.value.herdSizeBefore : undefined,
       herdAction: herded.ok ? herded.value.action : undefined,
-      problem: herded.ok ? undefined : herded.error.message,
+      eggsPickedUp: eggs?.pickedUp,
+      eggsStored: eggs?.stored,
+      eggsReleased: eggs?.released,
+      problem: !herded.ok ? herded.error.message : eggsProblem,
     }
   }
 }
