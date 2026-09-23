@@ -16,6 +16,8 @@ import type {
   RecipeLike,
 } from '../../src/bot/bot-like.types.js'
 import type { Position } from '../../src/core/position.types.js'
+import { classifyDoor } from '../../src/skills/movement/door-table.js'
+import { classifySwitch } from '../../src/skills/movement/switch-table.js'
 
 /** A pathfinder whose movements finish only when the test says so, and which behaves like the real plugin. */
 export class FakePathfinder implements PathfinderLike {
@@ -366,7 +368,12 @@ export class FakeBot implements BotLike {
         y: Math.floor(position.y),
         z: Math.floor(position.z),
       },
-      getProperties: () => ({ open: this.doorsOpen.get(cellKey) ?? false }),
+      getProperties: () => {
+        const props: Record<string, unknown> = {}
+        if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
+        if (classifySwitch(name) !== undefined) props['powered'] = this.switchPowered.get(cellKey) ?? false
+        return props
+      },
     }
   }
 
@@ -376,12 +383,31 @@ export class FakeBot implements BotLike {
     this.doorsOpen.set(key(position), open)
   }
 
+  /** Buttons and levers: unpowered unless set here or toggled via `activateBlock`. */
+  private readonly switchPowered = new Map<string, boolean>()
+  setSwitchPowered(position: Position, powered: boolean): void {
+    this.switchPowered.set(key(position), powered)
+  }
+
+  /** Which door a switch's own position opens, for simulating the redstone a test cannot see. */
+  private readonly switchLinks = new Map<string, string>()
+  linkSwitch(switchPosition: Position, doorPosition: Position): void {
+    this.switchLinks.set(key(switchPosition), key(doorPosition))
+  }
+
   readonly activateBlockCalls: Position[] = []
   activateBlock(block: BlockLike): Promise<void> {
     const position = (block as FakeBlock).position
     this.activateBlockCalls.push(position)
     const cellKey = key(position)
-    this.doorsOpen.set(cellKey, !(this.doorsOpen.get(cellKey) ?? false))
+    if (classifySwitch(block.name) !== undefined) {
+      const nowPowered = !(this.switchPowered.get(cellKey) ?? false)
+      this.switchPowered.set(cellKey, nowPowered)
+      const linkedDoor = this.switchLinks.get(cellKey)
+      if (linkedDoor !== undefined) this.doorsOpen.set(linkedDoor, nowPowered)
+    } else {
+      this.doorsOpen.set(cellKey, !(this.doorsOpen.get(cellKey) ?? false))
+    }
     return Promise.resolve()
   }
 

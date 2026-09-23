@@ -10,8 +10,10 @@ export type NavigationFailureReason =
   | 'not_connected'
   /** A closed door, gate, or trapdoor would not open after two tries. */
   | 'door_stuck'
-  /** An iron door or trapdoor blocks the way; it needs a switch (a later phase). */
+  /** An iron door or trapdoor blocks the way; no switch was found for it, or the switch policy is "never". */
   | 'needs_switch'
+  /** An iron door or trapdoor blocks the way and switches were found nearby; the switch policy is "ask". */
+  | 'iron_door_blocked'
 
 export interface NavigationFailure {
   readonly reason: NavigationFailureReason

@@ -8,6 +8,7 @@ import type {
 import type { Position } from '../../../../src/core/position.types.js'
 import { err, ok, type Result } from '../../../../src/core/result.js'
 import { DoorOpeningNavigator } from '../../../../src/skills/movement/door-opening-navigator.js'
+import type { IronDoorHandler, IronDoorOpenOutcome } from '../../../../src/skills/movement/iron-door-handler.js'
 import { FakeBlockScanner } from '../../../fakes/fake-ports.js'
 import { FakeLogger } from '../../../fakes/fake-logger.js'
 
@@ -80,13 +81,32 @@ class SequenceNavigator implements Navigator {
   }
 }
 
-function setup() {
+class FakeIronDoorHandler implements IronDoorHandler {
+  readonly openCalls: Position[] = []
+  readonly restoreCalls: Position[] = []
+  result: Result<IronDoorOpenOutcome, NavigationFailure> = err({
+    reason: 'needs_switch',
+    message: 'not configured',
+  })
+
+  open(doorPosition: Position): Promise<Result<IronDoorOpenOutcome, NavigationFailure>> {
+    this.openCalls.push(doorPosition)
+    return Promise.resolve(this.result)
+  }
+
+  restoreLever(position: Position): Promise<void> {
+    this.restoreCalls.push(position)
+    return Promise.resolve()
+  }
+}
+
+function setup(ironDoors?: IronDoorHandler) {
   const inner = new SequenceNavigator()
   const blocks = new FakeBlockScanner()
   blocks.names = ['oak_door', 'oak_fence_gate', 'oak_trapdoor', 'iron_door', 'iron_trapdoor', 'stone']
   const doors = new FakeDoorAccess()
   const logger = new FakeLogger()
-  const navigator = new DoorOpeningNavigator({ inner, blocks, doors, logger })
+  const navigator = new DoorOpeningNavigator({ inner, blocks, doors, logger, ironDoors })
   return { inner, blocks, doors, logger, navigator }
 }
 
@@ -264,5 +284,87 @@ describe('DoorOpeningNavigator', () => {
     expect(s.logger.entries).toEqual([
       expect.objectContaining({ level: 'warn' }) as unknown,
     ])
+  })
+
+  it('hands an iron door to ironDoors and retries once it reports success', async () => {
+    const ironDoors = new FakeIronDoorHandler()
+    ironDoors.result = ok({})
+    const s = setup(ironDoors)
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'iron_door', false)
+    s.blocks.blocks = [{ name: 'iron_door', position: doorAt, distance: 3 }]
+    s.inner.queue(err(unreachable), ok(target))
+
+    const result = await s.navigator.goToPosition(target, 2, options())
+
+    expect(result).toEqual({ ok: true, value: target })
+    expect(ironDoors.openCalls).toEqual([doorAt])
+    expect(s.inner.goToPositionCalls).toHaveLength(2)
+    expect(s.doors.toggled).toEqual([]) // an iron door is never hand-toggled
+  })
+
+  it('restores a lever ironDoors named, once the trip succeeds', async () => {
+    const ironDoors = new FakeIronDoorHandler()
+    const leverAt = at(6, 64, 5)
+    ironDoors.result = ok({ leverToRestore: leverAt })
+    const s = setup(ironDoors)
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'iron_door', false)
+    s.blocks.blocks = [{ name: 'iron_door', position: doorAt, distance: 3 }]
+    s.inner.queue(err(unreachable), ok(target))
+
+    const result = await s.navigator.goToPosition(target, 2, options())
+
+    expect(result).toEqual({ ok: true, value: target })
+    expect(ironDoors.restoreCalls).toEqual([leverAt])
+  })
+
+  it('does not restore a lever when closeDoors is false', async () => {
+    const ironDoors = new FakeIronDoorHandler()
+    const leverAt = at(6, 64, 5)
+    ironDoors.result = ok({ leverToRestore: leverAt })
+    const s = setup(ironDoors)
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'iron_door', false)
+    s.blocks.blocks = [{ name: 'iron_door', position: doorAt, distance: 3 }]
+    s.inner.queue(err(unreachable), ok(target))
+
+    await s.navigator.goToPosition(target, 2, { ...options(), closeDoors: false })
+
+    expect(ironDoors.restoreCalls).toEqual([])
+  })
+
+  it('passes ironDoors failures straight through (iron_door_blocked, ask policy)', async () => {
+    const ironDoors = new FakeIronDoorHandler()
+    const blocked: NavigationFailure = {
+      reason: 'iron_door_blocked',
+      message: 'Switches nearby: lever at 6, 64, 5.',
+    }
+    ironDoors.result = err(blocked)
+    const s = setup(ironDoors)
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'iron_door', false)
+    s.blocks.blocks = [{ name: 'iron_door', position: doorAt, distance: 3 }]
+    s.inner.queue(err(unreachable))
+
+    const result = await s.navigator.goToPosition(target, 2, options())
+
+    expect(result).toEqual({ ok: false, error: blocked })
+    expect(s.inner.goToPositionCalls).toHaveLength(1) // no retry
+  })
+
+  it('falls back to needs_switch for an iron door when no ironDoors handler is wired', async () => {
+    const s = setup() // no ironDoors dependency at all
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'iron_trapdoor', false)
+    s.blocks.blocks = [{ name: 'iron_trapdoor', position: doorAt, distance: 3 }]
+    s.inner.queue(err(unreachable))
+
+    const result = await s.navigator.goToPosition(target, 2, options())
+
+    expect(result).toEqual({
+      ok: false,
+      error: { reason: 'needs_switch', message: expect.stringContaining('iron_trapdoor') as unknown as string },
+    })
   })
 })

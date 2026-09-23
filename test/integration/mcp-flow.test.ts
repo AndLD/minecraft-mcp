@@ -95,6 +95,10 @@ describe('MCP server over an in-memory transport', () => {
         'teleport_to_position',
         'wait_for_chat',
         'whisper',
+        'press_switch',
+        'open_door',
+        'find_switches',
+        'set_switch_policy',
       ].sort(),
     )
     for (const tool of tools) {

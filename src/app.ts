@@ -27,6 +27,7 @@ import { MineflayerItemFacts } from './bot/mineflayer-item-facts.js'
 import { MineflayerLocomotion } from './bot/mineflayer-locomotion.js'
 import { MineflayerLookTarget } from './bot/mineflayer-look-target.js'
 import { MineflayerDoorAccess } from './bot/mineflayer-door-access.js'
+import { MineflayerSwitchAccess } from './bot/mineflayer-switch-access.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
 import { MineflayerPlacer } from './bot/mineflayer-placer.js'
@@ -92,6 +93,10 @@ import { AttackEntityTool } from './mcp/tools/attack-entity-tool.js'
 import { HuntAnimalsTool } from './mcp/tools/hunt-animals-tool.js'
 import { ListHuntableAnimalsTool } from './mcp/tools/list-huntable-animals-tool.js'
 import { SetFoodPolicyTool } from './mcp/tools/set-food-policy-tool.js'
+import { PressSwitchTool } from './mcp/tools/press-switch-tool.js'
+import { OpenDoorTool } from './mcp/tools/open-door-tool.js'
+import { FindSwitchesTool } from './mcp/tools/find-switches-tool.js'
+import { SetSwitchPolicyTool } from './mcp/tools/set-switch-policy-tool.js'
 import {
   LabelContainerTool,
   ListContainersTool,
@@ -155,6 +160,7 @@ import { ContainerIndex } from './state/container-index.js'
 import { DropRecords } from './state/drop-records.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
+import { SwitchPolicy } from './state/switch-policy.js'
 import { InstructionLog } from './state/instruction-log.js'
 import { NotesStore } from './state/notes-store.js'
 import { ProtectedAreas } from './state/protected-areas.js'
@@ -236,6 +242,11 @@ import { WithdrawItemsSkill } from './skills/storage/withdraw-items-skill.js'
 import { DoorOpeningNavigator } from './skills/movement/door-opening-navigator.js'
 import { FollowPlayerSkill } from './skills/movement/follow-player-skill.js'
 import { GoToSkill } from './skills/movement/goto-skill.js'
+import { IronDoorOpener } from './skills/movement/iron-door-opener.js'
+import { PolicyIronDoorHandler } from './skills/movement/iron-door-handler.js'
+import { OpenDoorSkill } from './skills/movement/open-door-skill.js'
+import { PressSwitchSkill } from './skills/movement/press-switch-skill.js'
+import { SwitchFinder } from './skills/movement/switch-finder.js'
 import { TaskManager } from './tasks/task-manager.js'
 
 /** A record tried this often is not tried again without the player's say-so. */
@@ -310,7 +321,20 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
   })
   const doors = new MineflayerDoorAccess(connection)
-  const navigator = new DoorOpeningNavigator({ inner: rawNavigator, blocks, doors, logger })
+  const switches = new MineflayerSwitchAccess(connection)
+  const switchFinder = new SwitchFinder(blocks)
+  const switchPolicy = new SwitchPolicy()
+  // Walks to a candidate switch with the raw navigator, never the wrapped one below: DoorOpeningNavigator
+  // hands it an iron door to solve, so it must not call back into itself.
+  const ironDoorOpener = new IronDoorOpener(switchFinder, switches, doors, rawNavigator)
+  const ironDoorHandler = new PolicyIronDoorHandler(switchPolicy, switchFinder, ironDoorOpener)
+  const navigator = new DoorOpeningNavigator({
+    inner: rawNavigator,
+    blocks,
+    doors,
+    logger,
+    ironDoors: ironDoorHandler,
+  })
   const tasks = new TaskManager({ clock, scheduler, logger })
   const stopHandler = overrides.stopHandler ?? tasks
   const lanDiscovery = new UdpLanDiscovery(socketFactory, scheduler)
@@ -341,6 +365,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       journal,
       protectedAreas,
       foodPolicy,
+      switchPolicy,
       containerIndex,
       storageRules,
       storagePolicy,
@@ -711,6 +736,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
   const lookTarget = new MineflayerLookTarget(connection)
   const wallTarget = new WallTarget(lookTarget, blocks, entities)
+  const pressSwitch = new PressSwitchSkill({ blocks, switches, doors, navigator })
+  const openDoor = new OpenDoorSkill({ blocks, doors, navigator, opener: ironDoorOpener, vitals })
   const excavations = new ExcavationRegistry()
     .register(new PitProvider())
     .register(new ShaftProvider())
@@ -807,6 +834,10 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GetInventoryTool(inventory))
     .register(new GoToTool(new GoToSkill(navigator, blockFinder), launcher))
     .register(new FollowPlayerTool(new FollowPlayerSkill(navigator), launcher, config.owner))
+    .register(new PressSwitchTool(pressSwitch, launcher, lookTarget, config.owner))
+    .register(new OpenDoorTool(openDoor, launcher, lookTarget, config.owner))
+    .register(new FindSwitchesTool(switchFinder, lookTarget, config.owner))
+    .register(new SetSwitchPolicyTool(switchPolicy, standing))
     .register(new CollectBlockTool(collectBlocks, structuredGather, launcher))
     .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
     .register(new CraftTool(craftItem, launcher))

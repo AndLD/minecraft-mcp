@@ -64,11 +64,14 @@ export class GoToTool implements ToolDefinition<typeof schema> {
   readonly description =
     'Walks the bot to a target: coordinates (x, y, z), a player, or the nearest block of a type. It never digs or builds ' +
     'to get there and avoids lava. A closed wooden door, fence gate, or trapdoor in the way is opened, walked through, ' +
-    'and (by default, see close_doors) closed again once behind the bot. An iron door or trapdoor is not opened (fails ' +
-    'with needs_switch: a later phase presses buttons and levers); a wooden one that will not open after two tries fails ' +
-    'with door_stuck. Long trips continue in the background: if the wait_seconds budget runs out the reply has status ' +
-    '"running" and you poll get_task_status. Fails with a reason such as unreachable, stuck, timeout, target_not_found, ' +
-    'block_not_found, door_stuck, or needs_switch. Only one task runs at a time; pass replace=true to interrupt the current one.'
+    'and (by default, see close_doors) closed again once behind the bot. A closed iron door or trapdoor is handled by ' +
+    'the standing switch policy (set_switch_policy): "auto" (the default) finds and presses a nearby button, lever, or ' +
+    'plate itself and restores a lever afterward; "ask" fails with iron_door_blocked, naming the switches found nearby, ' +
+    'so you can tell the player and then call open_door or press_switch; "never" (and "ask" with nothing found nearby) ' +
+    'fails with needs_switch. A wooden door that will not open after two tries fails with door_stuck. Long trips continue ' +
+    'in the background: if the wait_seconds budget runs out the reply has status "running" and you poll get_task_status. ' +
+    'Fails with a reason such as unreachable, stuck, timeout, target_not_found, block_not_found, door_stuck, needs_switch, ' +
+    'or iron_door_blocked. Only one task runs at a time; pass replace=true to interrupt the current one.'
   readonly inputSchema = schema
 
   constructor(

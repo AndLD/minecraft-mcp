@@ -202,6 +202,61 @@ describe('movement through the MCP server', () => {
       expect(h.bot.activateBlockCalls).toEqual([]) // never tried to open it
     })
 
+    it('reports iron_door_blocked with the switches found, when the policy is ask and one is nearby', async () => {
+      const h = await connected()
+      h.bot.registry = {
+        ...h.bot.registry,
+        blocksByName: { ...h.bot.registry.blocksByName, iron_door: { id: 901 }, lever: { id: 902 } },
+      }
+      const doorAt = { x: 5, y: 64, z: 5 }
+      const leverAt = { x: 6, y: 64, z: 5 }
+      h.bot.setBlock(doorAt, 'iron_door')
+      h.bot.setBlock(leverAt, 'lever')
+      await h.call('set_switch_policy', { policy: 'ask' })
+
+      const pending = h.call('goto', { x: 10, y: 64, z: 10, wait_seconds: 10 })
+      await h.settle()
+      h.bot.pathfinder.failWith('NoPath')
+      const result = await pending
+
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('(reason: iron_door_blocked)')
+      expect(result.text).toContain('lever')
+      expect(h.bot.activateBlockCalls).toEqual([]) // ask never presses anything itself
+    })
+
+    it('with the switch policy auto, presses a linked lever, walks through, and restores it', async () => {
+      const h = await connected()
+      h.bot.registry = {
+        ...h.bot.registry,
+        blocksByName: { ...h.bot.registry.blocksByName, iron_door: { id: 901 }, lever: { id: 902 } },
+      }
+      const doorAt = { x: 5, y: 64, z: 5 }
+      const leverAt = { x: 6, y: 64, z: 5 }
+      h.bot.setBlock(doorAt, 'iron_door')
+      h.bot.setBlock(leverAt, 'lever')
+      h.bot.linkSwitch(leverAt, doorAt)
+      await h.call('set_switch_policy', { policy: 'auto' })
+
+      const pending = h.call('goto', { x: 10, y: 64, z: 10, wait_seconds: 10 })
+      await h.settle()
+      h.bot.pathfinder.failWith('NoPath') // the closed iron door blocks the first attempt
+      await h.settle()
+      h.bot.pathfinder.arrive() // the walk to the lever succeeds
+      await h.settle()
+
+      expect(h.bot.activateBlockCalls).toEqual([leverAt]) // pressed the lever, never touched the door directly
+      expect(h.bot.blockAt(toVec3(doorAt))?.getProperties?.()).toEqual({ open: true })
+
+      h.bot.pathfinder.arrive() // the retried original trip succeeds now that the door is open
+      const result = await pending
+      await h.settle()
+
+      expect(result.data).toMatchObject({ status: 'succeeded' })
+      expect(h.bot.activateBlockCalls).toEqual([leverAt, leverAt]) // pressed, then restored
+      expect(h.bot.blockAt(toVec3(doorAt))?.getProperties?.()).toEqual({ open: false })
+    })
+
     it('gives up when the bot is stuck and stops the pathfinder', async () => {
       const h = await connected()
 

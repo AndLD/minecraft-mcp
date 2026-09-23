@@ -9,6 +9,7 @@ import type {
 import type { Position } from '../../core/position.types.js'
 import { err, type Result } from '../../core/result.js'
 import { classifyDoor, type DoorKind } from './door-table.js'
+import type { IronDoorHandler } from './iron-door-handler.js'
 
 const cellKey = (position: Position): string =>
   `${String(Math.floor(position.x))},${String(Math.floor(position.y))},${String(Math.floor(position.z))}`
@@ -34,13 +35,16 @@ export interface DoorOpeningNavigatorDeps {
   readonly blocks: BlockScanner
   readonly doors: DoorAccess
   readonly logger: Logger
+  /** How to handle a closed iron door in the way. Undefined always reports it as `needs_switch`, untried. */
+  readonly ironDoors?: IronDoorHandler
 }
 
 /**
  * Wraps a `Navigator`: when a trip is unreachable or stuck, looks for a closed door, gate, or trapdoor near the
  * bot, opens it, and tries again — up to a few doors, so a genuinely blocked trip still ends the same way it
- * would have. An iron one is reported as `needs_switch` instead of tried (a later phase presses buttons and
- * levers). Once a trip succeeds, every door it opened is closed again, unless `closeDoors` is false.
+ * would have. An iron one is handed to `ironDoors` (the switch policy decides whether to try pressing a nearby
+ * button or lever, ask the player, or refuse). Once a trip succeeds, every wooden door it opened is closed
+ * again and every lever it pressed is restored, unless `closeDoors` is false.
  */
 export class DoorOpeningNavigator implements Navigator {
   constructor(private readonly deps: DoorOpeningNavigatorDeps) {}
@@ -76,6 +80,7 @@ export class DoorOpeningNavigator implements Navigator {
     options: NavigationOptions,
   ): Promise<Result<T, NavigationFailure>> {
     const opened: Position[] = []
+    const leversToRestore: Position[] = []
     const tried = new Set<string>()
     let result = await attempt()
     while (!result.ok && RETRYABLE.has(result.error.reason) && tried.size < MAX_DOORS_PER_TRIP) {
@@ -84,11 +89,21 @@ export class DoorOpeningNavigator implements Navigator {
       if (found === undefined) break
       tried.add(cellKey(found.position))
       if (found.kind === 'iron') {
-        result = err({
-          reason: 'needs_switch',
-          message: `An iron ${found.name} at ${where(found.position)} blocks the way; it needs a switch to open (not handled yet).`,
-        })
-        break
+        if (this.deps.ironDoors === undefined) {
+          result = err({
+            reason: 'needs_switch',
+            message: `An iron ${found.name} at ${where(found.position)} blocks the way; it needs a switch to open.`,
+          })
+          break
+        }
+        const handled = await this.deps.ironDoors.open(found.position, found.name, options.signal)
+        if (!handled.ok) {
+          result = err(handled.error)
+          break
+        }
+        if (handled.value.leverToRestore !== undefined) leversToRestore.push(handled.value.leverToRestore)
+        result = await attempt()
+        continue
       }
       const didOpen = await this.tryToggle(found.position, options.signal, true)
       if (!didOpen) {
@@ -101,7 +116,10 @@ export class DoorOpeningNavigator implements Navigator {
       opened.push(found.position)
       result = await attempt()
     }
-    if (result.ok && options.closeDoors !== false) await this.closeBehind(opened, options.signal)
+    if (result.ok && options.closeDoors !== false) {
+      await this.closeBehind(opened, options.signal)
+      await this.restoreLevers(leversToRestore, options.signal)
+    }
     return result
   }
 
@@ -143,6 +161,14 @@ export class DoorOpeningNavigator implements Navigator {
       const closed = await this.tryToggle(position, signal, false)
       if (!closed)
         this.deps.logger.warn(`Could not close the ${state.name} behind the bot.`, { position })
+    }
+  }
+
+  private async restoreLevers(levers: readonly Position[], signal: AbortSignal): Promise<void> {
+    if (levers.length === 0 || this.deps.ironDoors === undefined) return
+    for (const position of levers) {
+      if (signal.aborted) return
+      await this.deps.ironDoors.restoreLever(position, signal)
     }
   }
 }
