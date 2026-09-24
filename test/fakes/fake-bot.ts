@@ -375,7 +375,10 @@ export class FakeBot implements BotLike {
     return {
       name,
       light: this.lights.get(key(position)),
-      boundingBox: ['air', 'cave_air', 'water', 'lava'].includes(name) ? 'empty' : 'block',
+      boundingBox:
+        ['air', 'cave_air', 'water', 'lava'].includes(name) || /(^|_)(rail|torch)$/.test(name)
+          ? 'empty'
+          : 'block',
       position: {
         x: Math.floor(position.x),
         y: Math.floor(position.y),
@@ -384,13 +387,95 @@ export class FakeBot implements BotLike {
       getProperties: () => {
         const props: Record<string, unknown> = {}
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
-        if (classifySwitch(name) !== undefined) props['powered'] = this.switchPowered.get(cellKey) ?? false
+        if (classifySwitch(name) !== undefined)
+          props['powered'] = this.switchPowered.get(cellKey) ?? false
         // The real server reports this one as a numeric string ("7"), not a number.
         if (classifyCrop(name) !== undefined) props['age'] = String(this.cropAges.get(cellKey) ?? 0)
+        if (name.endsWith('rail')) {
+          props['shape'] = this.railShapeAt(position)
+          if (name === 'powered_rail') props['powered'] = String(this.railPoweredAt(position))
+        }
         return props
       },
     }
   }
+
+  /** A rail's shape the way the game works it out from the rails next to it (straight, sloped, or a curve). */
+  private railShapeAt(position: Position): string {
+    const isRail = (x: number, y: number, z: number): boolean =>
+      (this.blocks.get(key({ x, y, z })) ?? '').endsWith('rail')
+    const heads = [
+      ['north', 0, -1],
+      ['south', 0, 1],
+      ['east', 1, 0],
+      ['west', -1, 0],
+    ] as const
+    const links: { heading: string; up: boolean }[] = []
+    for (const [heading, dx, dz] of heads) {
+      const x = Math.floor(position.x) + dx
+      const z = Math.floor(position.z) + dz
+      const y = Math.floor(position.y)
+      if (isRail(x, y + 1, z)) links.push({ heading, up: true })
+      else if (isRail(x, y, z) || isRail(x, y - 1, z)) links.push({ heading, up: false })
+    }
+    const rising = links.find((link) => link.up)
+    if (rising !== undefined) return `ascending_${rising.heading}`
+    const [first, second] = links
+    if (first === undefined) return 'north_south'
+    const axis = (heading: string): string =>
+      heading === 'east' || heading === 'west' ? 'east_west' : 'north_south'
+    if (second === undefined) return axis(first.heading)
+    if (axis(first.heading) === axis(second.heading)) return axis(first.heading)
+    const curves: Record<string, string> = {
+      'east,south': 'south_east',
+      'south,west': 'south_west',
+      'north,west': 'north_west',
+      'east,north': 'north_east',
+    }
+    return curves[[first.heading, second.heading].sort().join(',')] ?? 'north_south'
+  }
+
+  /** A powered rail is powered by a redstone torch beside or below it, or by a powered rail up to eight rails along. */
+  private railPoweredAt(position: Position): boolean {
+    const torchAt = (x: number, y: number, z: number): boolean =>
+      ['redstone_torch', 'redstone_wall_torch'].includes(this.blocks.get(key({ x, y, z })) ?? '')
+    const hasTorch = (c: Position): boolean =>
+      torchAt(c.x + 1, c.y, c.z) ||
+      torchAt(c.x - 1, c.y, c.z) ||
+      torchAt(c.x, c.y, c.z + 1) ||
+      torchAt(c.x, c.y, c.z - 1) ||
+      torchAt(c.x, c.y - 1, c.z)
+    const start = {
+      x: Math.floor(position.x),
+      y: Math.floor(position.y),
+      z: Math.floor(position.z),
+    }
+    const seen = new Set<string>([key(start)])
+    let frontier: Position[] = [start]
+    for (let depth = 0; depth <= 8 && frontier.length > 0; depth += 1) {
+      const next: Position[] = []
+      for (const cell of frontier) {
+        if (hasTorch(cell)) return true
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const)
+          for (const dy of [-1, 0, 1]) {
+            const other = { x: cell.x + dx, y: cell.y + dy, z: cell.z + dz }
+            if (seen.has(key(other)) || this.blocks.get(key(other)) !== 'powered_rail') continue
+            seen.add(key(other))
+            next.push(other)
+          }
+      }
+      frontier = next
+    }
+    return false
+  }
+
+  /** Minecarts put on rails, by rail cell. */
+  readonly minecartsPlaced: Position[] = []
 
   /** Doors, gates, and trapdoors: closed unless set open here or toggled via `activateBlock`. */
   private readonly doorsOpen = new Map<string, boolean>()
@@ -424,7 +509,20 @@ export class FakeBot implements BotLike {
     const position = (block as FakeBlock).position
     this.activateBlockCalls.push(position)
     const cellKey = key(position)
-    if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
+    if (this.heldItem?.name === 'minecart' && block.name.endsWith('rail')) {
+      this.minecartsPlaced.push(position)
+      this.removeItems('minecart', 1)
+      this.heldItem =
+        this.count('minecart') > 0 ? { name: 'minecart', count: this.count('minecart') } : null
+      const id = this.nextEntityId
+      this.nextEntityId += 1
+      this.entities[String(id)] = {
+        id,
+        type: 'object',
+        name: 'minecart',
+        position: { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
+      }
+    } else if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
       this.setBlock(position, 'farmland')
     } else if (classifySwitch(block.name) !== undefined) {
       const nowPowered = !(this.switchPowered.get(cellKey) ?? false)
