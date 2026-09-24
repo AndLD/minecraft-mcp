@@ -10,7 +10,7 @@ export interface MobRule {
 }
 
 /**
- * The threat policy as data (see AGENTS.md): change behavior by editing this table, not the reflex.
+ * The threat policy as data (see docs/features/survival/threat-policy.md): change behavior by editing this table, not the reflex.
  * Hostile mobs that are not listed use `DEFAULT_HOSTILE_RULE`.
  */
 export const MOB_RULES: Readonly<Record<string, MobRule>> = {

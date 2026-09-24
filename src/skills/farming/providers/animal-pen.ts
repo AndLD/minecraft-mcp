@@ -28,7 +28,7 @@ export function penCapacity(width: number, length: number): number {
 
 /**
  * A fenced pen with a gate, for one animal species. Stocking it (`lure_animals`), breeding it (`breed_animals`),
- * and keeping its herd at a target size (`tend_farm`) are plain skills, not this provider (see AGENTS.md: layout is
+ * and keeping its herd at a target size (`tend_farm`) are plain skills, not this provider (see docs/features/farming/crop-farming.md: layout is
  * building, tending is not) — a pen the player fenced by hand works exactly the same way once `register_farm`
  * points it out.
  */

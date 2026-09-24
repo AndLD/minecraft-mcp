@@ -70,7 +70,7 @@ export class DoorOpeningNavigator implements Navigator {
     distance: number,
     options: NavigationOptions,
   ): ReturnType<Navigator['follow']> {
-    // A held-open door would need supervising the whole trip, not a single retry; see AGENTS.md's write-up on
+    // A held-open door would need supervising the whole trip, not a single retry; see docs/features/world/opening-ordinary-doors.md on
     // this phase's scope. Following passes straight through to the real navigator.
     return this.deps.inner.follow(player, distance, options)
   }

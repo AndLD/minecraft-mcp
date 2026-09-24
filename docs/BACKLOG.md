@@ -1,6 +1,6 @@
 # Backlog
 
-Ideas, deferred work, and known gaps that are not in [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md) yet. Nothing here is committed to: an item moves into the plan (with its own `feature/<name>` branch) when it is picked.
+Ideas, deferred work, and known gaps that are not in [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN/DEVELOPMENT-PLAN.md) yet. Nothing here is committed to: an item moves into the plan (with its own `feature/<name>` branch) when it is picked.
 
 Each entry says what it is, why it might be worth doing, and what is known about the approach.
 
