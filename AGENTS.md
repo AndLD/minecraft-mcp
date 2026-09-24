@@ -288,8 +288,8 @@ Framework: **Jest** (TypeScript, ESM, `@jest/globals`). Three automated tiers. U
 
 - `npm run typecheck`, `npm run lint`, and `npm test` pass.
 - New behavior has unit tests against fakes and, where modules interact, integration tests. Coverage gate passes.
-- User-facing behavior (new or changed tool or reflex) has a smoke-level e2e scenario, and that feature's own e2e folder passes before merging into `development` (from the e2e-harness feature on). Do not run the full e2e suite per phase; it is reserved for the final gate and releases.
-- The work is on a `feature/*` branch created from `development`.
+- User-facing behavior (new or changed tool or reflex) has a smoke-level e2e scenario, and that feature's own e2e folder passes before merging into `development` (from the e2e-harness feature on). (run policy: see Testing).
+- The work follows the Git workflow above (feature branch, published, merged through a PR).
 - New tool: has zod schema, LLM-oriented description, registered in the composition root, listed in the tool table above.
-- No Mineflayer imports outside `src/bot/`; no stdout writes.
+- The hard rules hold (lint checks most of them).
 - README/plan updated if behavior or configuration changed.

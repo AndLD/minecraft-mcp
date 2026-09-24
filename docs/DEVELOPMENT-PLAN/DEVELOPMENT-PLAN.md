@@ -12,19 +12,19 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | Config | `.env`: `MC_HOST=localhost` (default), `MC_PORT` (optional: when empty the port is discovered from the LAN world broadcast), plus the variables listed in README. The `connect` tool can override host/port at runtime |
 | Instruction channel | In-game chat → `ChatRouter` → `AgentInbox` → agent long-polls `wait_for_chat` |
 | Real-time behavior | Static-code reflexes (eat, flee, lava, drowning, `stop`); the agent only issues high-level goals |
-| Threat policy | Always flee from skeletons and creepers; always flee at low health; fight all other hostile mobs (zombies, spiders, etc.); ignore endermen. Encoded as a data table, see [the threat policy](../features/survival/threat-policy.md) |
+| Threat policy | Flee from skeletons, creepers, and at low health; fight other hostile mobs; ignore endermen. A data table: [threat policy](../features/survival/threat-policy.md) |
 | Block collection | Own `CollectBlocks` skill built on pathfinder behind the `Digger` port; `mineflayer-collectblock` is not used (can be swapped in later behind the same port) |
-| Hunting | A dedicated hunting flow (not just reflex combat): find huntable animals, approach, kill with correct attack timing, collect drops, optionally cook and store the food. Tamed, named, and last-breeding-pair animals are protected by default. Low food is handled by a policy: ask by default, or hunt and cook when the user's instruction allows it |
-| Item handover | The bot can give items to a player on request: fetch the items (inventory first, then remembered chests), walk to the player, drop them at a safe distance so they land at the player's feet, verify they were picked up, and retry or report. Large amounts can go into a chest instead. Reserve items (current tools, armor, food) are kept unless asked |
-| Drop recovery | Automatic by default, skippable on the user's request. Covers the bot's own drops: its inventory after a death, and handed-over items nobody picked up. `auto` never wades into lava, void, or other hazards (it asks instead); the user can say "forget it" at any time, or set a standing instruction. Skipped drops are kept as records with coordinates and can be recovered later |
-| Persistence | Everything worth remembering is saved per world profile through a `StateStore` (atomic JSON files under `DATA_DIR/<profile>/`): world knowledge, containers and rules, standing instructions, a task journal (interrupted tasks are offered for resume, never auto-resumed), an instruction/event log, and agent notes. On `connect` the bot returns a session briefing |
-| World identity | Detected automatically first (fingerprint from signals the server exposes, such as the hashed seed, world name/MOTD, spawn point); if it cannot be determined or is ambiguous, fall back to a profile name given by the user (`WORLD_PROFILE` or `connect(profile)`) |
-| Storage | Chests are first-class. The user can designate specific containers for specific kinds of items (rules); with no matching rule the bot uses any chest with room. Inventory-full handling is a policy: ask the user by default, or offload to storage and return when the user's instruction (per call, or a standing instruction for the session) allows it |
-| Architecture | Ports and adapters, SOLID; Mineflayer isolated in `src/bot/` |
-| Testing | Jest (`@jest/globals`, TypeScript, ESM). Three automated tiers: unit and integration (offline, fast, run by `npm test`) and e2e against a real headless Minecraft 1.21.1 server in Docker. E2E tests are organized per phase: during a phase only that phase's own e2e tests are run; the complete e2e suite runs once, after all primary phases. Manual in-game checks remain a per-phase human step |
-| Testability | All code is testable by construction: dependencies injected via ports, `Clock` and `Random` injected, the app wiring lives in a `createApp()` factory, and Mineflayer sits behind thin adapters |
-| Git workflow | Git Flow. `main` = production, `development` = integration. Every phase or feature lives in its own branch created from `development` |
-| E2E environment | Docker: `itzg/minecraft-server` (Paper 1.21.1, `ONLINE_MODE=FALSE`, RCON enabled) started by Jest global setup via `testcontainers`; scenarios prepared and verified through RCON |
+| Hunting | A dedicated flow (not reflex combat) with protection for tamed, named, and last-breeding-pair animals; low food is a policy. See [hunting and food](../features/gathering/hunting-and-food.md) |
+| Item handover | Give items on request: inventory first, then remembered chests, dropped at the player's feet or put in a chest; reserve items are kept. See [handing items over](../features/storage/handing-items-over.md) |
+| Drop recovery | Automatic by default, skippable, never into lava or void (it asks). See [drop recovery](../features/storage/drop-recovery.md) |
+| Persistence | Everything worth remembering is saved per world profile through a `StateStore`; interrupted tasks are offered for resume, never auto-resumed; `connect` returns a session briefing. See [persistent state](../features/core/persistent-state.md) |
+| World identity | Detected automatically from server signals, falling back to a user-given profile name. See [persistent state](../features/core/persistent-state.md) |
+| Storage | Chests are first-class: rules map items to containers, and inventory-full handling is a policy (ask by default). See [storage](../features/storage/storage.md) |
+| Architecture | Ports and adapters, SOLID, Mineflayer isolated in `src/bot/`; details in [AGENTS.md](../../AGENTS.md) |
+| Testing | Jest with unit, integration, and Docker e2e tiers; rules in [AGENTS.md](../../AGENTS.md) |
+| Testability | All code is testable by construction (see the hard rules in [AGENTS.md](../../AGENTS.md)) |
+| Git workflow | Git Flow with a branch and pull request per phase or feature; rules in [AGENTS.md](../../AGENTS.md) |
+| E2E environment | Paper 1.21.1 in Docker driven through RCON; see [the e2e server](../e2e-docker-server.md) |
 | Tooling | eslint, prettier, tsx (dev), tsc (build), Jest, testcontainers, rcon-client |
 
 ## Risks and how the plan addresses them
@@ -86,9 +86,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 ## Phases
 
 
-Each phase ends with working, tested software and a manual check in the game. Estimates are rough working-session counts.
-
-Every phase (and any later feature) is developed in its own branch created from `development` (see [Git workflow](#git-workflow)). Every phase includes its own unit and integration tests, and from the e2e-harness feature onward also e2e scenarios for its user-facing behavior. While working on a phase, run **only that phase's own e2e tests** (not the ones from earlier phases); a phase is done when its unit, integration, and own e2e tests pass. The complete e2e suite is run once at the end (see the final gate in the hardening phase).
+Each phase ends with working, tested software and a manual check in the game. Estimates are rough working-session counts. Every phase (and any later feature) gets its own branch from `development` and its own e2e folder; see [AGENTS.md](../../AGENTS.md) for the workflow and test rules.
 
 Each phase has its own detail file with the scope, tasks, tests, and exit criteria.
 
@@ -156,38 +154,9 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 
-## Testing strategy
+## Testing strategy and Git workflow
 
-Three automated tiers. Unit and integration run offline with no Minecraft and make up `npm test`. E2E runs against a real headless Minecraft server in Docker. Before a phase is merged into `development`, its unit and integration tests and **its own e2e tests** must pass; the complete e2e suite (all phases) is run once, at the final gate after all primary phases.
-
-| Tier | Scope | Real parts | Fake parts | Location |
-|---|---|---|---|---|
-| Unit | One class or function | the unit under test | all its ports, `Clock`, `Random` | `test/unit/` (mirrors `src/`) |
-| Integration | Several real modules wired together | MCP server + client (SDK in-memory transport), `ToolRegistry`, `TaskManager`, `AgentInbox`, reflex engine, skills, `WorldKnowledgeStore` on a temp dir, `createApp()` wiring | the outer ports (`Connection`, `Navigator`, scanners, `Digger`, `Placer`, ...), usually as a stateful fake world | `test/integration/` |
-| E2E | The whole app against a real server | everything: real `createApp()`, real Mineflayer adapters, real Minecraft 1.21.1 server (Paper in Docker) | nothing (the world is prepared and inspected through RCON; a second bot or RCON simulates the player) | `test/e2e/` |
-
-Rules:
-
-- All code is written to be testable: constructor injection, no global state, no direct `Date.now()`/`Math.random()`/`setTimeout` outside injected `Clock`/`Random`, no Mineflayer imports outside thin adapters.
-- Adapters in `src/bot/` are unit-tested against a small stub of the Mineflayer API (event emitter plus the few methods used).
-- Every bug found in the game gets a regression test at the lowest tier that reproduces it.
-- Coverage gate: 90% lines/branches on `src/` (excluding only the trivial `src/index.ts` entry), enforced from Phase 1 on unit and integration tests. E2E tests do not count toward coverage.
-- E2E scope: a small smoke-level set per phase, not exhaustive. Behavior details belong in unit and integration tests; e2e proves the real bot works against a real server.
-- E2E prerequisites: Docker running locally. One server container per run, scenarios isolated by area and reset through RCON.
-- E2E tests are excluded from `npm test`, so the fast loop stays fast. They are grouped per feature (`test/e2e/<feature>/`): while working on a phase you run only its own feature group, never the accumulated earlier groups. The complete suite (`test:e2e:all`) runs at the final gate in the hardening phase and before any `release/*` merge into `main`. Unit and integration tests are cheap, so they are always run in full.
-
-## Git workflow
-
-Git Flow, with `main` as production and `development` as the integration branch.
-
-- `main`: production only. Updated by release merges, tagged `vX.Y.Z`.
-- `development`: integration branch. All work starts here and returns here.
-- `feature/<name>`: one per phase or feature, created from `development` (for example `feature/movement-perception`; names describe the feature and never contain phase numbers), merged back into `development` with `--no-ff` once tests pass and the phase's manual check is done.
-- `release/<version>`: cut from `development`, merged into `main` (tagged) and back into `development`. The complete test suite, including `test:e2e:all`, must be green on the release branch.
-- `hotfix/<name>`: cut from `main` for urgent production fixes, merged into `main` and `development`.
-- Conventional Commit messages (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`).
-- No direct commits to `main` or `development` (apart from the one-time repository bootstrap in Phase 0).
-- Merging into `development` happens after your approval of the phase; merging into `main` only on your explicit request.
+The rules live in [AGENTS.md](../../AGENTS.md) so that they exist in one place only: the three test tiers, the e2e conventions and run policy, the coverage gate, and the Git Flow branching and pull-request rules. In short for planning purposes: a phase is done when its unit, integration, and own e2e tests pass and the manual check below is done; the complete e2e suite runs once at the final gate ([hardening](phases/hardening-polish.md)) and before any release merge into `main`.
 
 ## Manual in-game check (used at the end of each phase)
 
