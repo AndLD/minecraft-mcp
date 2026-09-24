@@ -85,6 +85,10 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Free-space knowledge is remembered**, not measured: a container the player emptied since the last scan is still treated as full by the fallback selection until it is scanned again.
 - **Building integration**: `build` fetching missing materials from the container index (comes with the building feature).
 
+### Railways
+- **Junctions**: joining a new line to an existing one, a branch off a main line, and crossings. Today an existing rail blocks a route (`existing_rail`), so lines never touch. Needs a way to reuse the existing rails as part of the route and to set the switch or junction layout (powered rails and the way a cart is steered).
+- **Detector and activator rails**: for stations (a cart stops at a powered rail with no power, and a detector rail can trigger something when a cart arrives). Not part of a plain line; belongs with stations and junctions.
+
 ## Maintenance
 - **`npm audit`** reports moderate issues in Mineflayer's authentication dependencies. They are upstream and unused in offline mode; revisit when Mineflayer updates them.
 - **Node and testcontainers**: `testcontainers` is pinned to 11 because 12 needs Node 22.28 or newer. Revisit when the Node baseline moves.
