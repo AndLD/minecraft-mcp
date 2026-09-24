@@ -5,6 +5,7 @@ import {
   HarvestTreesSkill,
   type HarvestTreesInput,
 } from '../../../../src/skills/farming/harvest-trees-skill.js'
+import type { Scheduler } from '../../../../src/core/scheduler.port.js'
 import { FarmRegistry, type GroveSpot } from '../../../../src/state/farm-registry.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
 import { FakeInventory } from '../../../fakes/fake-ports.js'
@@ -21,6 +22,21 @@ import { InMemoryStateStore } from '../../../fakes/state-fakes.js'
 const GROUND = 64
 const at = (x: number, y: number, z: number): Position => ({ x, y, z })
 const rect = (x0: number, z0: number, x1: number, z1: number) => ({ from: at(x0, GROUND, z0), to: at(x1, GROUND, z1) })
+
+/** An auto scheduler that notes every wait, so a test can see when the bot stopped to pick something up. */
+class RecordingScheduler extends AutoScheduler implements Scheduler {
+  constructor(
+    clock: FakeClock,
+    private readonly events: string[],
+  ) {
+    super(clock)
+  }
+
+  override after(delayMs: number, callback: () => void): () => void {
+    this.events.push(`wait ${String(delayMs)}`)
+    return super.after(delayMs, callback)
+  }
+}
 
 async function setup(saplings: Record<string, number> = { oak_sapling: 5 }) {
   const world = new GroveWorld({ x0: -10, x1: 40, z0: -10, z1: 40, y0: 50, y1: 100 })
@@ -47,7 +63,9 @@ async function setup(saplings: Record<string, number> = { oak_sapling: 5 }) {
   }
   const navigator = new InstantNavigator()
   const clock = new FakeClock(0)
-  const drops = new DropCollector({ drops: new FakeDroppedItems(), navigator, scheduler: new AutoScheduler(clock) })
+  const events: string[] = []
+  const droppedItems = new FakeDroppedItems()
+  const drops = new DropCollector({ drops: droppedItems, navigator, scheduler: new RecordingScheduler(clock, events) })
   const guard = new FakeAreaGuard()
   const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
@@ -57,7 +75,7 @@ async function setup(saplings: Record<string, number> = { oak_sapling: 5 }) {
     if (!entry.ok) throw new Error(entry.error)
     return entry.value
   }
-  return { world, digger, placer, navigator, guard, farms, carried, sync, skill, grove }
+  return { world, digger, placer, navigator, guard, farms, carried, sync, skill, grove, events, droppedItems }
 }
 
 const input = (over: Partial<HarvestTreesInput> = {}): HarvestTreesInput => ({
@@ -86,6 +104,26 @@ describe('HarvestTreesSkill', () => {
     expect(s.world.blockAt(at(2, GROUND + 1, 2))).toBe('oak_sapling')
     expect(s.world.blockAt(at(8, GROUND + 1, 8))).toBe('oak_sapling')
     expect(result.ok && result.value.gained).toContainEqual({ name: 'oak_log', count: 4 })
+  })
+
+  it('picks up each log’s drop right after breaking it, not once for the whole tree', async () => {
+    const s = await setup({})
+    s.grove([spot(2, 2)])
+    s.world.trunk(2, GROUND, 2, 3)
+    const dig = s.digger.onDug
+    s.digger.onDug = (position, name) => {
+      dig(position, name)
+      s.events.push('dig')
+    }
+
+    await s.skill.run(input({ replant: false }), skillContext().context)
+
+    const digs = s.events.flatMap((event, index) => (event === 'dig' ? [index] : []))
+    expect(digs).toHaveLength(3)
+    for (const [i, at] of digs.slice(0, -1).entries()) {
+      const between = s.events.slice(at + 1, digs[i + 1])
+      expect(between).toContain('wait 350')
+    }
   })
 
   it('follows branches that touch the trunk', async () => {

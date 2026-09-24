@@ -135,6 +135,7 @@ import {
   BuildFarmTool,
   CollectEggsTool,
   CollectSaplingsTool,
+  DiscoverFarmTool,
   HarvestCropsTool,
   HarvestTreesTool,
   InspectFarmTool,
@@ -231,6 +232,7 @@ import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
 import { CollectEggsSkill } from './skills/farming/collect-eggs-skill.js'
 import { CollectSaplingsSkill } from './skills/farming/collect-saplings-skill.js'
+import { DiscoverFarmSkill } from './skills/farming/discover-farm-skill.js'
 import { EggThrower } from './skills/farming/egg-thrower.js'
 import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
 import { GroveSpotFinder } from './skills/farming/grove-spots.js'
@@ -938,6 +940,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     collectEggs,
     plantTrees,
   })
+  const discoverFarm = new DiscoverFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry, vitals })
   const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })
   // Server commands (teleporting), which only work when the server lets the bot use them.
   const serverCommands = new MineflayerServerCommands(connection, scheduler)
@@ -1040,6 +1043,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new SetEggPolicyTool(eggPolicy, standing))
     .register(new TendFarmTool(tendFarm, launcher))
     .register(new InspectFarmTool(inspectFarm))
+    .register(new DiscoverFarmTool(discoverFarm))
     .register(new ListFarmsTool(farmRegistry))
     .register(new RegisterFarmTool(farmRegistry))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))

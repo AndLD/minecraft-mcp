@@ -2,6 +2,9 @@ import type { BlockScanner } from '../../core/block-scanner.port.js'
 import type { Position } from '../../core/position.types.js'
 
 const BARRIER = /(_fence|_fence_gate|_wall)$|^iron_bars$/
+
+/** Fences, fence gates, walls, and iron bars: what a pen is made of. */
+export const isPenBarrier = (name: string): boolean => BARRIER.test(name)
 const LOOK_DISTANCE = 3
 const DIRECTIONS: readonly Position[] = [
   { x: 1, y: 0, z: 0 },
@@ -32,7 +35,7 @@ export class PenDetector {
         y,
         z: z + direction.z * step,
       })
-      if (name !== undefined && BARRIER.test(name)) return true
+      if (name !== undefined && isPenBarrier(name)) return true
     }
     return false
   }

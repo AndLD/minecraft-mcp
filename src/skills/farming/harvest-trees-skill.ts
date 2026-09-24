@@ -201,8 +201,12 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
       if (this.deps.blocks.blockAt(log) !== logName) continue
       const outcome = await this.cut(log, context)
       if (outcome === 'aborted') return { dug, left, bases, aborted: true }
-      if (outcome === 'dug') dug += 1
-      else left += 1
+      if (outcome === 'dug') {
+        dug += 1
+        // Each log's drop is picked up as it falls, like collect_block does per block: a whole tree's drops at
+        // once can leave the last one (which falls furthest) out of the sweep.
+        await this.deps.drops.collectNear(log, context.signal)
+      } else left += 1
     }
     return { dug, left, bases, aborted: false }
   }

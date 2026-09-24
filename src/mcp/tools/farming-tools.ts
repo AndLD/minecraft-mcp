@@ -3,6 +3,7 @@ import { PENNABLE_SPECIES } from '../../skills/farming/animal-table.js'
 import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
 import type { CollectEggsSkill } from '../../skills/farming/collect-eggs-skill.js'
+import type { DiscoverFarmSkill } from '../../skills/farming/discover-farm-skill.js'
 import type { CollectSaplingsSkill } from '../../skills/farming/collect-saplings-skill.js'
 import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill.js'
 import type { HarvestTreesSkill } from '../../skills/farming/harvest-trees-skill.js'
@@ -714,6 +715,48 @@ export class RegisterFarmTool implements ToolDefinition<typeof registerFarmSchem
       builtByBot: false,
     })
     return registered.ok ? toolOk({ farm: farmView(registered.value) }) : toolFail(registered.error)
+  }
+}
+
+const discoverFarmSchema = z.object({
+  around: positionSchema
+    .optional()
+    .describe("The place to look around, for example a player's position. Omit to look around the bot."),
+  radius: z
+    .number()
+    .int()
+    .min(4)
+    .max(48)
+    .default(24)
+    .describe('How far to look from that place, in blocks (4-48).'),
+  group: z
+    .string()
+    .min(1)
+    .max(40)
+    .optional()
+    .describe('A group name to put in every proposed registration, for example "home".'),
+})
+
+export class DiscoverFarmTool implements ToolDefinition<typeof discoverFarmSchema> {
+  readonly name = 'discover_farm'
+  readonly description =
+    'Read-only: looks around a place for farms the bot was never told about (built by hand) and PROPOSES how to ' +
+    'register them; it registers nothing and changes nothing. Fields come from clusters of farmland (the crop from ' +
+    'what grows there), pens from fenced areas (the species from the animals inside; an empty fenced area with a gate ' +
+    'is a low-confidence proposal). Each proposal carries "register": the exact arguments for register_farm. Tell ' +
+    'the player what was found (kind, size, crop or species, notes) and call register_farm only after they agree. ' +
+    'Things a registered farm already covers are listed as alreadyRegistered. Groves are not detected. Sees only ' +
+    'loaded terrain and animals within view distance.'
+  readonly inputSchema = discoverFarmSchema
+
+  constructor(private readonly skill: DiscoverFarmSkill) {}
+
+  async execute(input: z.output<typeof discoverFarmSchema>, context: ToolContext) {
+    const result = await this.skill.run(
+      { around: input.around, radius: input.radius, group: input.group },
+      { signal: context.signal, progress: () => undefined },
+    )
+    return result.ok ? toolOk(result.value) : toolFail(result.error.message)
   }
 }
 
