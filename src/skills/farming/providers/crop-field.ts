@@ -41,7 +41,7 @@ type CropFieldParams = z.output<typeof cropFieldParams>
 /**
  * A tilled, watered, fenced crop field. Every plot the field itself does not use for the water channel is tilled,
  * ready for a crop. Planting the field (and tending it afterwards: harvesting, replanting) is `plant_crops`/
- * `harvest_crops`, not this provider (see AGENTS.md: layout is building, tending is not) — `BuildFarmSkill` calls
+ * `harvest_crops`, not this provider (see docs/features/farming/crop-farming.md: layout is building, tending is not) — `BuildFarmSkill` calls
  * `plant_crops` itself right after a successful build, so "build me a wheat farm" still plants it in one call.
  * Planting is kept out of this WorkPlan on purpose: a `place` step reserves its cell for the whole run, and a dense
  * grid of reserved seed cells one block above every tilled plot left the standing-spot search with nowhere to put

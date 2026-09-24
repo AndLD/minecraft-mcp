@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server that puts a [Mineflayer](https://github.com/PrismarineJS/mineflayer) bot into your Minecraft world, so an AI agent (Claude) can play with you as a co-player: gather, craft, build, explore, and follow your in-game chat instructions.
 
-> Status: **planning**. See [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md) for the roadmap and [AGENTS.md](AGENTS.md) for architecture and coding rules.
+> Status: **planning**. See [DEVELOPMENT-PLAN.md](docs/DEVELOPMENT-PLAN/DEVELOPMENT-PLAN.md) for the roadmap and [AGENTS.md](AGENTS.md) for architecture and coding rules.
 
 ## How it works
 
@@ -117,6 +117,8 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 
 ## Project docs
 
-- [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md): phased roadmap with acceptance criteria
-- [BACKLOG.md](BACKLOG.md): ideas and deferred work that are not in the plan yet (for example voice instructions)
+- [DEVELOPMENT-PLAN.md](docs/DEVELOPMENT-PLAN/DEVELOPMENT-PLAN.md): phased roadmap with acceptance criteria
+- [BACKLOG.md](docs/BACKLOG.md): ideas and deferred work that are not in the plan yet (for example voice instructions)
+- [docs/features/FEATURES.md](docs/features/FEATURES.md): how each implemented feature works, one file per feature
+- [docs/e2e-docker-server.md](docs/e2e-docker-server.md): the throwaway Minecraft server the e2e tests use
 - [AGENTS.md](AGENTS.md): architecture, SOLID rules, testing (Jest), Git Flow, conventions, and the runtime protocol for the agent
