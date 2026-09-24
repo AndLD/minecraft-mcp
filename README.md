@@ -121,4 +121,5 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 - [BACKLOG.md](docs/BACKLOG.md): ideas and deferred work that are not in the plan yet (for example voice instructions)
 - [docs/features/FEATURES.md](docs/features/FEATURES.md): how each implemented feature works, one file per feature
 - [docs/e2e-docker-server.md](docs/e2e-docker-server.md): the throwaway Minecraft server the e2e tests use
+- [docs/agent-start-prompt.md](docs/agent-start-prompt.md): a prompt to paste into Claude Code to connect the bot and keep it listening to chat
 - [AGENTS.md](AGENTS.md): architecture, SOLID rules, testing (Jest), Git Flow, conventions, and the runtime protocol for the agent
