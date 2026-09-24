@@ -116,7 +116,8 @@ describe('stairs and a water landing on a real Minecraft server', () => {
     expect(await is(cell(9, -2, -7), 'air')).toBe(true) // step 1
     expect(await is(cell(10, -3, -7), 'air')).toBe(true) // step 2
     expect(await is(cell(10, -4, -7), 'bedrock')).toBe(true) // its floor is the bedrock
-    if (!(await is(cell(9, -3, -7), 'dirt'))) {
+    // Dirt with open air above it turns to grass by itself, so either means the block was left standing.
+    if (!(await is(cell(9, -3, -7), 'dirt')) && !(await is(cell(9, -3, -7), 'grass_block'))) {
       const seen: string[] = []
       for (const name of [
         'air',
@@ -130,7 +131,7 @@ describe('stairs and a water landing on a real Minecraft server', () => {
       ])
         if (await is(cell(9, -3, -7), name)) seen.push(name)
       throw new Error(
-        `Below step 1 there should be dirt, but it is: ${seen.join(', ') || 'something else'}\n${(await slice()).join('\n')}`,
+        `Below step 1 there should be dirt (or grass grown over it), but it is: ${seen.join(', ') || 'something else'}\n${(await slice()).join('\n')}`,
       )
     }
     expect(await is(cell(10, -3, -5), 'air')).toBe(true) // the pit itself, bottom layer
