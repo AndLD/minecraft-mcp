@@ -3,6 +3,7 @@ import { PENNABLE_SPECIES } from '../../skills/farming/animal-table.js'
 import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
 import type { CollectEggsSkill } from '../../skills/farming/collect-eggs-skill.js'
+import type { CollectSaplingsSkill } from '../../skills/farming/collect-saplings-skill.js'
 import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill.js'
 import type { HarvestTreesSkill } from '../../skills/farming/harvest-trees-skill.js'
 import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.js'
@@ -458,8 +459,8 @@ export class PlantTreesTool implements ToolDefinition<typeof plantTreesSchema> {
     'existing trees. Give an area (rectangle), a farm, or around (a ring around a house or point), and a count. ' +
     'Set preview to see the spots first. The result is remembered as a grove (list_farms; a rectangle is also ' +
     'protected from other tasks). With farm set to a grove and no count it refills the spots where a tree is gone. ' +
-    'It never breaks leaves for saplings: fails no_saplings, or reports saplingsMissing, when the bot lacks them ' +
-    '(collect_block on leaves, or withdraw_items). Runs in the background: poll get_task_status when the reply has ' +
+    'It never goes looking for saplings: fails no_saplings, or reports saplingsMissing, when the bot lacks them ' +
+    '(collect_saplings, or withdraw_items). Runs in the background: poll get_task_status when the reply has ' +
     'status "running".'
   readonly inputSchema = plantTreesSchema
 
@@ -495,6 +496,70 @@ export class PlantTreesTool implements ToolDefinition<typeof plantTreesSchema> {
               preview: input.preview,
               label: input.label,
               group: input.group,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const collectSaplingsSchema = z.object({
+  species: z
+    .enum(TREE_NAMES)
+    .optional()
+    .describe(`Which tree's saplings: ${TREE_NAMES.join(', ')}. Any species when left out.`),
+  count: z.number().int().min(1).max(64).describe('How many saplings to get (not counting ones already carried).'),
+  max_leaves: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .optional()
+    .describe('Most leaves to break before giving up. Defaults to 40 per sapling wanted.'),
+  max_distance: z.number().min(1).max(64).default(32).describe('How far to look for leaves, in blocks (1-64).'),
+  on_inventory_full: z
+    .enum(INVENTORY_FULL_KINDS)
+    .optional()
+    .describe('What to do when the inventory fills up. Defaults to the standing set_storage_policy.'),
+  ...taskOptionsShape,
+})
+
+export class CollectSaplingsTool implements ToolDefinition<typeof collectSaplingsSchema> {
+  readonly name = 'collect_saplings'
+  readonly description =
+    'Gets tree saplings by breaking leaves by hand (a leaf drops one about 1 time in 20, jungle 1 in 40, so it takes ' +
+    'many leaves) and by picking up saplings already lying nearby. Only on request, never on its own. Never uses ' +
+    'shears. Needs trees with leaves within max_distance; the same limits as collect_block apply (protected areas, ' +
+    'lava, no tunnelling). Stops when it has count saplings, has broken max_leaves leaves (leaf_budget), or finds ' +
+    'no more (no_leaves); the message says how many it got. To also get saplings while gathering wood, use ' +
+    'collect_block with saplings. Runs in the background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = collectSaplingsSchema
+
+  constructor(
+    private readonly skill: CollectSaplingsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof collectSaplingsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Collect ${String(input.count)} ${input.species ?? ''} saplings`.replace('  ', ' '),
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            {
+              species: input.species,
+              count: input.count,
+              maxLeaves: input.max_leaves,
+              maxDistance: input.max_distance,
+              onInventoryFull: input.on_inventory_full,
             },
             ctx,
           ),

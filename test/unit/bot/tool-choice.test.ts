@@ -77,3 +77,15 @@ describe('chooseTool', () => {
     expect(best(['iron_pickaxe', 'netherite_pickaxe', 'diamond_pickaxe'])).toBe('netherite_pickaxe')
   })
 })
+
+describe('chooseTool for leaves', () => {
+  const leaves = { harvestTools: [], material: 'leaves;mineable/hoe' }
+
+  it('never picks shears: they make a leaf drop itself and no sapling', () => {
+    expect(chooseTool({ ...leaves, carried: ['shears'] })).toEqual({ canHarvest: true, tool: undefined })
+    expect(chooseTool({ ...leaves, carried: ['shears', 'iron_hoe', 'wooden_hoe'] })).toEqual({
+      canHarvest: true,
+      tool: 'iron_hoe',
+    })
+  })
+})

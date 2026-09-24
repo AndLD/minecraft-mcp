@@ -168,8 +168,8 @@ export class PlantTreesSkill implements Skill<PlantTreesInput, PlantTreesOutput>
       return err({
         reason: 'no_saplings',
         message:
-          `The bot has no ${tree.sapling} to plant. Gather some (break ${tree.name} leaves with ` +
-          'collect_block) or fetch them from a chest.',
+          `The bot has no ${tree.sapling} to plant. Gather some (collect_saplings, or collect_block with ` +
+          'saplings) or fetch them from a chest.',
       })
 
     let farmId = entry?.id

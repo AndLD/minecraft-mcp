@@ -6,6 +6,9 @@ import {
   isPlantableGround,
   isSaplingName,
   isTreeAvoidedNeighbour,
+  leavesOf,
+  SAPLING_ITEMS,
+  speciesOfBlocks,
   speciesOfLog,
   TREE_NAMES,
   treeFor,
@@ -57,5 +60,22 @@ describe('tree table', () => {
     for (const name of ['dirt_path', 'farmland', 'oak_door', 'birch_fence_gate', 'oak_trapdoor'])
       expect(isTreeAvoidedNeighbour(name)).toBe(true)
     expect(isTreeAvoidedNeighbour('stone')).toBe(false)
+  })
+
+  it('names the leaves and every sapling', () => {
+    const darkOak = treeFor('dark_oak')
+    if (darkOak === undefined) throw new Error('missing species')
+    expect(leavesOf(darkOak)).toBe('dark_oak_leaves')
+    expect(SAPLING_ITEMS).toContain('cherry_sapling')
+    expect(SAPLING_ITEMS).toHaveLength(TREE_NAMES.length)
+  })
+
+  it('reads the one species a set of blocks is about, or none', () => {
+    expect(speciesOfBlocks(['oak_log'])?.name).toBe('oak')
+    expect(speciesOfBlocks(['oak_log', 'oak_log'])?.name).toBe('oak')
+    expect(speciesOfBlocks(['oak_log', 'birch_log'])).toBeUndefined()
+    expect(speciesOfBlocks(['logs'])).toBeUndefined()
+    expect(speciesOfBlocks(['oak_log', 'stone'])).toBeUndefined()
+    expect(speciesOfBlocks([])).toBeUndefined()
   })
 })

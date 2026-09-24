@@ -42,6 +42,27 @@ const TREES: readonly TreeSpec[] = [
   tree('cherry', 5, 8),
 ]
 
+/** Every sapling item the table knows. */
+export const SAPLING_ITEMS: readonly string[] = TREES.map((spec) => spec.sapling)
+
+/** The leaf block of a species: breaking it by hand is what drops that species' sapling. */
+export const leavesOf = (spec: TreeSpec): string => `${spec.name}_leaves`
+
+/**
+ * The one species a set of block names is about (`oak_log` -> oak), or undefined when it is none or several (a
+ * group such as `logs`, or oak and birch together).
+ */
+export function speciesOfBlocks(names: readonly string[]): TreeSpec | undefined {
+  const found = new Set<TreeSpec>()
+  for (const name of names) {
+    const spec = speciesOfLog(name)
+    if (spec === undefined) return undefined
+    found.add(spec)
+  }
+  const [only] = found
+  return found.size === 1 ? only : undefined
+}
+
 export const TREE_NAMES = TREES.map((spec) => spec.name) as [string, ...string[]]
 
 /** The tree species by its name (`oak`), sapling item (`oak_sapling`), or log block (`oak_log`). */

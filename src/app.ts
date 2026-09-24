@@ -134,6 +134,7 @@ import {
   BreedAnimalsTool,
   BuildFarmTool,
   CollectEggsTool,
+  CollectSaplingsTool,
   HarvestCropsTool,
   HarvestTreesTool,
   InspectFarmTool,
@@ -229,6 +230,7 @@ import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
 import { CollectEggsSkill } from './skills/farming/collect-eggs-skill.js'
+import { CollectSaplingsSkill } from './skills/farming/collect-saplings-skill.js'
 import { EggThrower } from './skills/farming/egg-thrower.js'
 import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
 import { GroveSpotFinder } from './skills/farming/grove-spots.js'
@@ -713,6 +715,13 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     guard: protectedAreas,
     full: inventoryFull,
   })
+  // Saplings come from breaking leaves, on request only (collect_saplings, or `saplings` on collect_block).
+  const collectSaplings = new CollectSaplingsSkill({
+    blocks,
+    inventory,
+    leaves: collectBlocks,
+    drops: dropCollector,
+  })
   const craftItem = new CraftItemSkill({
     book: recipes,
     planner,
@@ -977,7 +986,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new OpenDoorTool(openDoor, launcher, lookTarget, config.owner))
     .register(new FindSwitchesTool(switchFinder, lookTarget, config.owner))
     .register(new SetSwitchPolicyTool(switchPolicy, standing))
-    .register(new CollectBlockTool(collectBlocks, structuredGather, launcher))
+    .register(new CollectBlockTool(collectBlocks, structuredGather, launcher, collectSaplings))
     .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
     .register(new CraftTool(craftItem, launcher))
     .register(new SmeltTool(smeltItems, launcher))
@@ -1023,6 +1032,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PlantCropsTool(plantCrops, launcher))
     .register(new HarvestCropsTool(harvestCrops, launcher))
     .register(new PlantTreesTool(plantTrees, launcher))
+    .register(new CollectSaplingsTool(collectSaplings, launcher))
     .register(new HarvestTreesTool(harvestTrees, launcher))
     .register(new LureAnimalsTool(lureAnimals, launcher))
     .register(new BreedAnimalsTool(breedAnimals, launcher))
