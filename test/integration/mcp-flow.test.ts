@@ -105,6 +105,8 @@ describe('MCP server over an in-memory transport', () => {
         'lure_animals',
         'breed_animals',
         'collect_eggs',
+        'plant_trees',
+        'harvest_trees',
         'set_egg_policy',
         'tend_farm',
         'inspect_farm',

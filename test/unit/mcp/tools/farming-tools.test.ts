@@ -7,10 +7,12 @@ import {
   BuildFarmTool,
   CollectEggsTool,
   HarvestCropsTool,
+  HarvestTreesTool,
   InspectFarmTool,
   ListFarmsTool,
   LureAnimalsTool,
   PlantCropsTool,
+  PlantTreesTool,
   RegisterFarmTool,
   SetEggPolicyTool,
   TendFarmTool,
@@ -33,6 +35,11 @@ import type {
   LureAnimalsSkill,
 } from '../../../../src/skills/farming/lure-animals-skill.js'
 import type { PlantCropsInput, PlantCropsOutput, PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
+import type {
+  HarvestTreesInput,
+  HarvestTreesSkill,
+} from '../../../../src/skills/farming/harvest-trees-skill.js'
+import type { PlantTreesInput, PlantTreesSkill } from '../../../../src/skills/farming/plant-trees-skill.js'
 import type { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
 import type {
   CollectEggsInput,
@@ -84,6 +91,7 @@ describe('BuildFarmTool', () => {
         crop: 'wheat',
         species: null,
         herdTarget: null,
+        spots: null,
         bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 66, z: 2 } },
         label: null,
         group: null,
@@ -291,6 +299,107 @@ describe('SetEggPolicyTool', () => {
     const result = t.execute(t.inputSchema.parse({ store_fraction: 0.1, release: 'hatch' }))
 
     expect(result).toMatchObject({ ok: false })
+  })
+})
+
+describe('PlantTreesTool', () => {
+  function stub() {
+    const runs: PlantTreesInput[] = []
+    const skill = {
+      name: 'plant_trees',
+      run: (input: PlantTreesInput) => {
+        runs.push(input)
+        return Promise.resolve(ok({ mode: 'plant', planted: 3 }))
+      },
+    } as unknown as PlantTreesSkill
+    return { runs, skill }
+  }
+
+  it('translates a rectangle request and runs the skill through the task launcher', async () => {
+    const { launcher } = launching()
+    const { runs, skill } = stub()
+    const tool = new PlantTreesTool(skill, launcher)
+    const area = { from: { x: 0, y: 64, z: 0 }, to: { x: 9, y: 64, z: 9 } }
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ species: 'oak', count: 3, area, label: 'oak wood', big: false }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({
+      species: 'oak',
+      count: 3,
+      farm: undefined,
+      area,
+      around: undefined,
+      spacing: undefined,
+      big: false,
+      preview: false,
+      label: 'oak wood',
+      group: undefined,
+    })
+    expect(result).toMatchObject({ ok: true, data: { result: { planted: 3 } } })
+  })
+
+  it('translates a ring around a house, and a refill of a grove', async () => {
+    const { launcher } = launching()
+    const { runs, skill } = stub()
+    const tool = new PlantTreesTool(skill, launcher)
+
+    await tool.execute(
+      tool.inputSchema.parse({
+        species: 'birch',
+        count: 6,
+        around: { from: { x: 1, y: 64, z: 1 }, to: { x: 5, y: 64, z: 5 }, distance: 3 },
+        preview: true,
+      }),
+      context,
+    )
+    await tool.execute(tool.inputSchema.parse({ farm: 'wood' }), { signal: new AbortController().signal, ...{} })
+
+    expect(runs[0]).toMatchObject({
+      species: 'birch',
+      around: { from: { x: 1, y: 64, z: 1 }, to: { x: 5, y: 64, z: 5 }, distance: 3, depth: undefined },
+      preview: true,
+    })
+    expect(runs[1]).toMatchObject({ farm: 'wood', count: undefined, species: undefined })
+  })
+
+  it('rejects an unknown species and a zero count', () => {
+    const { skill } = stub()
+    const tool = new PlantTreesTool(skill, launching().launcher)
+
+    expect(tool.inputSchema.safeParse({ species: 'mangrove', count: 1 }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ species: 'oak', count: 0 }).success).toBe(false)
+  })
+})
+
+describe('HarvestTreesTool', () => {
+  it('translates input and runs the skill through the task launcher', async () => {
+    const { launcher } = launching()
+    const runs: HarvestTreesInput[] = []
+    const skill = {
+      name: 'harvest_trees',
+      run: (input: HarvestTreesInput) => {
+        runs.push(input)
+        return Promise.resolve(ok({ trees: 2, logs: 9, left: 0, replanted: 2, saplingsMissing: 0, gained: [] }))
+      },
+    } as unknown as HarvestTreesSkill
+    const tool = new HarvestTreesTool(skill, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ farm: 'wood', replant: false, max_trees: 2 }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({ farm: 'wood', area: undefined, replant: false, maxTrees: 2 })
+    expect(result).toMatchObject({ ok: true, data: { result: { trees: 2, logs: 9 } } })
+  })
+
+  it('replants unless told not to', () => {
+    const tool = new HarvestTreesTool({} as unknown as HarvestTreesSkill, launching().launcher)
+
+    expect(tool.inputSchema.parse({ farm: 'wood' }).replant).toBe(true)
   })
 })
 

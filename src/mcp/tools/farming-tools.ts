@@ -4,9 +4,12 @@ import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
 import type { CollectEggsSkill } from '../../skills/farming/collect-eggs-skill.js'
 import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill.js'
+import type { HarvestTreesSkill } from '../../skills/farming/harvest-trees-skill.js'
 import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.js'
 import type { LureAnimalsSkill } from '../../skills/farming/lure-animals-skill.js'
 import type { PlantCropsSkill } from '../../skills/farming/plant-crops-skill.js'
+import type { PlantTreesSkill } from '../../skills/farming/plant-trees-skill.js'
+import { TREE_NAMES } from '../../skills/farming/tree-table.js'
 import type { TendFarmSkill } from '../../skills/farming/tend-farm-skill.js'
 import { EGG_RELEASE_KINDS, type EggPolicy } from '../../state/egg-policy.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
@@ -29,6 +32,7 @@ const farmView = (entry: FarmEntry) => ({
   crop: entry.crop,
   species: entry.species,
   herdTarget: entry.herdTarget,
+  spotCount: entry.spots?.length ?? null,
   bounds: entry.bounds,
   label: entry.label,
   group: entry.group,
@@ -404,6 +408,149 @@ export class SetEggPolicyTool implements ToolDefinition<typeof setEggPolicySchem
   }
 }
 
+const plantTreesSchema = z.object({
+  species: z
+    .enum(TREE_NAMES)
+    .optional()
+    .describe(`Which tree: ${TREE_NAMES.join(', ')}. Left out when refilling a grove (its own species is used).`),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('How many trees to plant. Leave out, with farm set to a grove, to refill its empty spots.'),
+  farm: z.string().min(1).optional().describe('A grove to plant into or refill (see list_farms).'),
+  area: boundsSchema
+    .optional()
+    .describe('Two opposite corners of the plot to plant in; y is the ground level (the surface is found near it).'),
+  around: z
+    .object({
+      from: positionSchema.describe('One corner of the thing to plant around, or a single point.'),
+      to: positionSchema.optional().describe('The opposite corner, for a building; omit for a point.'),
+      distance: z.number().int().min(0).max(32).optional().describe('How far from it the ring starts (default 6).'),
+      depth: z.number().int().min(1).max(32).optional().describe('How wide the ring is (default 6).'),
+    })
+    .optional()
+    .describe('Plant in a ring around a house or a point instead of in a rectangle.'),
+  spacing: z
+    .number()
+    .int()
+    .min(2)
+    .max(16)
+    .optional()
+    .describe("Least distance between two trees, overriding the species' own (about 4)."),
+  big: z
+    .boolean()
+    .optional()
+    .describe('Plant the 2x2 variant, four saplings per tree: spruce and jungle only grow big this way; dark oak always does.'),
+  preview: z.boolean().default(false).describe('Only report where the trees would go; place nothing.'),
+  label: z.string().min(1).max(40).optional().describe('A name for the new grove, for example "oak wood".'),
+  group: z.string().min(1).max(40).optional().describe('Ties the grove together with other farm components.'),
+  ...taskOptionsShape,
+})
+
+export class PlantTreesTool implements ToolDefinition<typeof plantTreesSchema> {
+  readonly name = 'plant_trees'
+  readonly description =
+    'Plants tree saplings from the inventory at spots that suit the species: dirt-type ground, the free space above ' +
+    'it the tree needs, spread out by its spacing, clear of other farms, protected areas, doors, paths, and ' +
+    'existing trees. Give an area (rectangle), a farm, or around (a ring around a house or point), and a count. ' +
+    'Set preview to see the spots first. The result is remembered as a grove (list_farms; a rectangle is also ' +
+    'protected from other tasks). With farm set to a grove and no count it refills the spots where a tree is gone. ' +
+    'It never breaks leaves for saplings: fails no_saplings, or reports saplingsMissing, when the bot lacks them ' +
+    '(collect_block on leaves, or withdraw_items). Runs in the background: poll get_task_status when the reply has ' +
+    'status "running".'
+  readonly inputSchema = plantTreesSchema
+
+  constructor(
+    private readonly skill: PlantTreesSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof plantTreesSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Plant ${input.count === undefined ? '' : `${String(input.count)} `}${input.species ?? 'trees'}`,
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            {
+              species: input.species,
+              count: input.count,
+              farm: input.farm,
+              area: input.area,
+              around:
+                input.around === undefined
+                  ? undefined
+                  : {
+                      from: input.around.from,
+                      to: input.around.to,
+                      distance: input.around.distance,
+                      depth: input.around.depth,
+                    },
+              spacing: input.spacing,
+              big: input.big,
+              preview: input.preview,
+              label: input.label,
+              group: input.group,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const harvestTreesSchema = z.object({
+  ...farmOrAreaShape,
+  replant: z.boolean().default(true).describe('Plant a sapling where each tree stood, once the whole tree is down.'),
+  max_trees: z.number().int().min(1).optional().describe('Stop after felling this many trees.'),
+  ...taskOptionsShape,
+})
+
+export class HarvestTreesTool implements ToolDefinition<typeof harvestTreesSchema> {
+  readonly name = 'harvest_trees'
+  readonly description =
+    'Fells the grown trees of a grove (or of an area) and, by default, replants each spot with a sapling of the ' +
+    'same wood. This is the deliberate way to cut a registered grove: collect_block leaves it alone. It works from ' +
+    'the ground, so the top of a tall tree can stay out of reach: that is reported as left, and such a tree is not ' +
+    'replanted. Leaves are left to decay (they drop saplings and apples). Reports what was gained. Runs in the ' +
+    'background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = harvestTreesSchema
+
+  constructor(
+    private readonly skill: HarvestTreesSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof harvestTreesSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Harvest trees',
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            { farm: input.farm, area: input.area, replant: input.replant, maxTrees: input.max_trees },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
 const tendFarmSchema = z.object({
   farm: z.string().min(1).describe('A farm id, label, or group name (see list_farms).'),
   ...taskOptionsShape,
@@ -414,7 +561,9 @@ export class TendFarmTool implements ToolDefinition<typeof tendFarmSchema> {
   readonly description =
     'One pass over a registered farm, or every component of a group: for a field, harvests what is ripe, ' +
     'replants, and fills empty plots; for a pen with a species and herd_target set, breeds it up or culls the ' +
-    'surplus with hunt_animals. A component that fails is reported and skipped; the others carry on. Runs in the ' +
+    'surplus with hunt_animals and collects a chicken pen\'s eggs; for a grove, plants saplings again where a tree ' +
+    'is gone (it never fells: that is harvest_trees). A component that fails is reported and skipped; the others ' +
+    'carry on. Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = tendFarmSchema
 
@@ -447,7 +596,8 @@ const inspectFarmSchema = z.object({
 export class InspectFarmTool implements ToolDefinition<typeof inspectFarmSchema> {
   readonly name = 'inspect_farm'
   readonly description =
-    'Read-only: reports a farm or group\'s ripe, growing, and empty plots without touching anything. Call this for ' +
+    'Read-only: reports a farm or group\'s ripe, growing, and empty plots (for a grove: grown trees, saplings, and ' +
+    'empty spots; for a pen: adults and babies) without touching anything. Call this for ' +
     '"check the farm"; use tend_farm to actually do the work.'
   readonly inputSchema = inspectFarmSchema
 
@@ -464,7 +614,7 @@ export class InspectFarmTool implements ToolDefinition<typeof inspectFarmSchema>
 
 const registerFarmSchema = z.object({
   kind: z.enum(['field', 'pen', 'grove']).default('field').describe('What kind of farm component this is.'),
-  crop: z.string().min(1).optional().describe('The crop it grows, for a field.'),
+  crop: z.string().min(1).optional().describe('The crop it grows, for a field, or the tree species (oak, ...), for a grove.'),
   species: z.string().min(1).optional().describe('The animal species it keeps, for a pen.'),
   herd_target: z
     .number()

@@ -6,6 +6,7 @@ import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
 import { classifyCrop } from './crop-table.js'
 import { insideBounds } from './farm-area.types.js'
+import { scanGrove } from './grove-scan.js'
 
 const SEARCH_RADIUS = 48
 
@@ -17,7 +18,7 @@ export interface ComponentReport {
   readonly id: string
   readonly kind: FarmEntry['kind']
   readonly crop: string | null
-  /** Field: ripe, growing, and empty plots. */
+  /** Field: ripe, growing, and empty plots. Grove: grown trees, saplings, and empty spots (`crop` is the tree). */
   readonly ripe: number
   readonly growing: number
   readonly empty: number
@@ -79,7 +80,17 @@ export class InspectFarmSkill implements Skill<InspectFarmInput, InspectFarmOutp
         babies: herd.filter((a) => a.baby).length,
       }
     }
-    if (entry.kind !== 'field') return { ...base, ripe: 0, growing: 0, empty: 0, adults: 0, babies: 0 }
+    if (entry.kind === 'grove') {
+      const sites = scanGrove(entry, this.deps.blocks)
+      return {
+        ...base,
+        ripe: sites.filter((site) => site.state === 'grown').length,
+        growing: sites.filter((site) => site.state === 'sapling').length,
+        empty: sites.filter((site) => site.state === 'empty').length,
+        adults: 0,
+        babies: 0,
+      }
+    }
 
     let ripe = 0
     let growing = 0
