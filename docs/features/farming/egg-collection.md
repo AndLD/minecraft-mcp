@@ -1,5 +1,8 @@
 # Egg collection
 
+**Depends on:** [Animal farming](animal-farming.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md), [Storage](../storage/storage.md) (optional).  
+**Used by:** no other feature directly.
+
 Phase 18's third sub-branch (`feature/egg-collection`), a follow-up split out of `feature/animal-farming`'s own scope once that branch merged (the plan described eggs as part of animal farming, "after breeding", but the rest of that branch was already large). Reuses the pen and species infrastructure `feature/animal-farming` built (`FarmRegistry`, `AnimalPenProvider`, `HerdManager`) unchanged; nothing here touches an animal directly, only ground items.
 
 - Branch: `feature/egg-collection`. No new ports: eggs are picked up with the existing `DropCollector` (gathering) and thrown with the existing `InventoryWriter`/`Gaze` ports `give_items`' drop mode already uses — confirmed by research before writing any code that `InventoryWriter.toss('egg', 1)`, called once per egg, is already the correct primitive for "throw exactly one at a time" (its `WindowDropper` backing takes the single-click code path for `count === 1`), so no new low-level port method was needed.

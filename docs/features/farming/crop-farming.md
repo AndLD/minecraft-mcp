@@ -1,5 +1,8 @@
 # Crop farming
 
+**Depends on:** [Construction and building](../world/construction-and-building.md), [Persistent state](../core/persistent-state.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md), [Storage](../storage/storage.md) (optional).  
+**Used by:** [Animal farming](animal-farming.md), [Tree farming](tree-farming.md), [Discovering farms](discovering-farms.md).
+
 Phase 18's first sub-feature (`feature/crop-farming`; animal pens and tree groves are separate later branches). **Design decision, from the plan: layout is building, tending is not.** `build_farm` lays a field out as a `WorkPlan` through the shared `PlanExecutor`, the same engine `excavate`/`build`/`flatten_area` use; `plant_crops`/`harvest_crops`/`tend_farm`/`inspect_farm` are ordinary skills with no engine dependency, so they also work on a field the player built or registered by hand.
 
 - Branch: `feature/crop-farming`. New ports `CropAccess` (`src/core/crop.port.ts`: `stateAt` — a crop's block name and blockstate `age`) and `Tiller` (`src/core/tiller.port.ts`: `till` — equips a hoe from the inventory and right-clicks the block), mirroring `DoorAccess`/`SwitchAccess`'s shape exactly. `MineflayerCropAccess`/`MineflayerTiller` implement them; `classifyCrop`/`cropFor` (`src/skills/farming/crop-table.ts`) are a pure table (`wheat`/`carrots`/`potatoes`/`beetroots`, each with its seed item and the block's max `age`).

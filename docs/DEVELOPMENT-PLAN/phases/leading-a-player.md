@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** [3 Movement and perception](movement-perception.md), [18 Farming, crops, animals, and trees](farming.md) (optional), [22 World discovery, including caves and canyons](world-discovery.md) (optional).  
+**Needed by:** no later phase depends on it directly.
+
 "Come to me and lead me to the village." A standalone feature, not part of discovery: the target can be a structure the bot found, a landmark (`home`), a registered container or farm, or plain coordinates, so it is useful with or without exploration. It builds on `Navigator`, the player lookup, `Gaze`, and chat.
 
 - Branch: `feature/lead-player`. A `LeadPlayerSkill` (`lead_player`) in the movement skills; no engine and no new port beyond a way to face a player (the `Gaze` port already does).

@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** [3 Movement and perception](movement-perception.md), [9 Storage and containers](storage-containers.md).  
+**Needed by:** [11 Drop recovery](drop-recovery.md).
+
 Today there is no way to hand items over: the inventory port can drop items, but no tool exposes it, and nothing walks to a player, chooses what to give, or fetches it from storage. This phase adds that flow.
 
 - Branch: `feature/item-handover`.

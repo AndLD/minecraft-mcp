@@ -2,6 +2,9 @@
 
 _Estimate: 1 session._
 
+**Depends on:** every earlier phase (it hardens and verifies the whole system).  
+**Needed by:** -.
+
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
 - Review of the shared safety rules (hazard envelope, light, drops) across excavation, site preparation, signs, railways, cave exploration, and autonomy (the limits and the kill switch).

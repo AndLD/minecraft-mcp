@@ -1,5 +1,8 @@
 # Sapling collecting
 
+**Depends on:** [Tree farming](tree-farming.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md).  
+**Used by:** no other feature directly.
+
 Phase 18's follow-up after tree farming (`feature/sapling-collecting`). **Optional and on request only**: `plant_trees` never goes looking for saplings (it fails `no_saplings` or reports `saplingsMissing`, and says to use `collect_saplings`), no reflex or task collects them by itself, and `collect_block` only does it when asked for with `saplings`.
 
 - **How saplings are had.** A leaf broken by hand or with a tool drops one by chance (about 1 in 20, jungle 1 in 40), so the goal is counted in saplings and the work is a budget of leaves. **Never with shears**: they make the leaf block drop itself, no sapling. `chooseTool` never picks shears (leaves read as `leaves;mineable/hoe`, so a hoe is used when carried, otherwise bare hands), and `tool-choice.test.ts` pins that. Leaves that decay after a tree is felled drop saplings on the ground too, so the skill first picks up saplings lying near the bot.

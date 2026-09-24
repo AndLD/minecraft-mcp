@@ -1,5 +1,8 @@
 # Tree farming
 
+**Depends on:** [Crop farming](crop-farming.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md).  
+**Used by:** [Sapling collecting](sapling-collecting.md).
+
 Phase 18's last sub-branch (`feature/tree-farming`). Groves are planted, watched, and felled by plain skills, like crops and animals: there is **no engine client** here (no `TreeGroveProvider` as a `WorkPlan`), because a grove has no blocks to build. It is a set of sapling spots, and planting a sapling is one `Placer.placeAt`. That is a change from the plan's own text, which had `TreeGroveProvider` as an engine client, and for the same reason as crops: a plan reserves the cell of every pending `place` step, and a grove needs no fence, floor, or water to justify the machinery.
 
 - Branch: `feature/tree-farming`. No new ports and no new adapters: planting is `Placer`, felling is `Digger`, drops are `DropCollector`, what stands where is `BlockScanner`.

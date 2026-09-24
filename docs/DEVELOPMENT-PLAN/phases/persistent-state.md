@@ -2,6 +2,9 @@
 
 _Estimate: 1.5 sessions._
 
+**Depends on:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md).  
+**Needed by:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md) (optional), [9 Storage and containers](storage-containers.md), [11 Drop recovery](drop-recovery.md), [13 Construction engine and building](construction-building.md) (optional), [22 World discovery, including caves and canyons](world-discovery.md), [24 Autonomy, the bot's own will](autonomy.md).
+
 - Branch: `feature/persistent-state`.
 - Ports: `StateStore` (load/save versioned JSON documents by key), `WorldIdentifier` (produces a world fingerprint from the connection). Implementation: `FileStateStore` with atomic write (temp file + rename), a backup copy, schema versions with migrations, debounced writes, flush on shutdown, and a fallback to empty state with a warning when a file is corrupt.
 - **World profiles.** Data lives under `DATA_DIR/<profile>/`. On connect, `WorldIdentifier` builds a fingerprint from whatever signals the spike showed to be stable (candidates: hashed seed, world name from the MOTD, world spawn point, dimension). Resolution order:

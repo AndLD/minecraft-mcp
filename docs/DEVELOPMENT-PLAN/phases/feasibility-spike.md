@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** nothing (the starting point).  
+**Needed by:** [1 Project scaffold](project-scaffold.md).
+
 Branch: `feature/feasibility-spike`. Throwaway script (removed after the scaffold; it lives in git history), not part of the architecture and not covered by tests.
 
 - Repository bootstrap first: initial commit with the docs on `main`, then create `development` from it.

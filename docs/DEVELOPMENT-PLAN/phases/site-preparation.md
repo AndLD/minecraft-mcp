@@ -2,6 +2,9 @@
 
 _Estimate: 2 sessions._
 
+**Depends on:** [3 Movement and perception](movement-perception.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md).  
+**Needed by:** [17 Iron doors and switches](iron-doors-switches.md), [18 Farming, crops, animals, and trees](farming.md) (optional), [21 Signs](signs.md).
+
 Three features that prepare a place for building or living, each on its own branch: `feature/site-leveling` (about 1 session), `feature/dug-rooms` (about 0.75), and `feature/door-opening` (about 0.25). The first two are clients of the excavation machinery and the construction engine; the third belongs to movement.
 
 #### Site leveling (`feature/site-leveling`, done)

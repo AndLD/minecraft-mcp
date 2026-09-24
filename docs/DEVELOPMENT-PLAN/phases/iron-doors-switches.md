@@ -2,6 +2,9 @@
 
 _Estimate: ¾ session._
 
+**Depends on:** [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [9 Storage and containers](storage-containers.md) (optional).  
+**Needed by:** no later phase depends on it directly.
+
 An iron door cannot be opened by hand. It opens while something powers it: a button, a lever, or a pressure plate, usually beside the door. The bot cannot see the redstone behind them, so this phase recognises switches by where they are and checks by trying. It follows Phase 15's ordinary door opening.
 
 - Branch: `feature/switches`. Reuses the door handling and `NavigationRunner` of Phase 16, and `LookTarget` for "the button I am looking at".

@@ -2,6 +2,9 @@
 
 _Estimate: 1 session._
 
+**Depends on:** [1 Project scaffold](project-scaffold.md).  
+**Needed by:** [3 Movement and perception](movement-perception.md), [4 E2E test harness](e2e-harness.md), [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md).
+
 - `src/core`: port interfaces (`Connection`, `ChatPort`, `VitalsReader`, `Clock`, `Logger`) and shared types (`Position`, `Result`).
 - `src/bot`: `MineflayerConnection` (connect/disconnect/reconnect events, error handling) and chat adapter.
 - `src/chat`: `AgentInbox` (chat and events, `wait(timeout, signal)`, bounded buffer), `ChatRouter` (owner filtering, then fixed commands, then inbox), `StopCommand`.

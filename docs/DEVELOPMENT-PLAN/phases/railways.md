@@ -2,6 +2,9 @@
 
 _Estimate: 2 sessions._
 
+**Depends on:** [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md), [9 Storage and containers](storage-containers.md) (optional), [22 World discovery, including caves and canyons](world-discovery.md) (optional).  
+**Needed by:** [24 Autonomy, the bot's own will](autonomy.md) (optional).
+
 - Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
 - **Route planning** (`RailRoutePlanner`): from a start to an end (coordinates, a player, or a landmark), as a chain of straight runs with 90° turns, staying within rail rules: slopes of one block up or down per rail, curves only with plain rails (powered rails cannot bend), no water or lava on the route. `layout`: `surface` (the line follows the terrain: gaps and dips are filled with support blocks, small rises are cut, water and ravines are bridged), `underground` (a tunnel dug by the excavation engine, lit, for a metro), or `auto` (surface where it is easy, underground where the terrain is not). A preview reports length, materials, and problems before anything is built.
 - **Two variants:**

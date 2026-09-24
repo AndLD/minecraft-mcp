@@ -1,5 +1,8 @@
 # Dug rooms
 
+**Depends on:** [Excavation](excavation.md), [Construction and building](construction-and-building.md).  
+**Used by:** no other feature directly.
+
 - **`RoomProvider`** (`feature/dug-rooms`, shape `room` in `src/skills/excavation/providers/room.ts`) is an ordinary `ExcavationProvider`, used through `excavate`/`preview_excavation` like every other shape; no changes to `ExcavationContext` or `ExcavationProvider.generate()` were needed. What is new: reading the wall a player looks at, and a door that is a courtesy rather than a hard requirement.
 - **`LookTarget` gained the hit face** (`src/core/container.port.ts`: `blockLookedAt` now also returns `face`, one of `top`/`bottom`/`north`/`south`/`east`/`west`; `MineflayerLookTarget` maps Mineflayer's `BlockFace` enum from `bot.world.raycast`'s result, which itself gained a `face: number` field in `BotLike`).
 - **`WallTarget`** (`src/skills/excavation/wall-target.ts`) turns "the wall I'm looking at" into an origin and a direction: it reads `LookTarget.blockLookedAt(player)`, refuses a look at the floor or ceiling (`not_a_wall`) or no look at all (`no_target`), and otherwise digs **opposite the face that was hit** (a north face means the wall faces north, so the room digs south). The origin is the **hit block's own column**, at the **walkable floor found by scanning down the column just outside the wall** (the player's side), falling back to the player's own standing level when no floor is found in range. `at`/`direction` (either or both) skip reading the look when the request already names them.

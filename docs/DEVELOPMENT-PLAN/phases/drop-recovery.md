@@ -2,6 +2,9 @@
 
 _Estimate: 1 session._
 
+**Depends on:** [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [10 Item handover](item-handover.md).  
+**Needed by:** [20 Sleeping and respawn point](sleeping-respawn.md) (optional).
+
 The plan had no death handling at all, and nothing about items the bot has dropped that end up lying around. This phase makes recovering the bot's own drops automatic by default, and skippable whenever you ask.
 
 - Branch: `feature/drop-recovery`.

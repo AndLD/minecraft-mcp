@@ -189,7 +189,7 @@ interface BlueprintProvider {
 
 ### Feature documentation
 
-How each feature works (design decisions, gotchas found in real runs, tests, exit criteria) lives under [docs/features/](docs/features/FEATURES.md), one file per feature. **Read the file for the feature you are about to change, and update it in the same branch as the code.** Add a new feature as a new file plus a row in the index.
+How each feature works (design decisions, gotchas found in real runs, tests, exit criteria) lives under [docs/features/](docs/features/FEATURES.md), one file per feature. **Read the file for the feature you are about to change, and update it in the same branch as the code.** Add a new feature as a new file plus a row in the index, and record what it depends on (and update the "Used by" line of those features); a new phase gets a row in the plan's dependency table.
 
 ## MCP tool surface (target)
 

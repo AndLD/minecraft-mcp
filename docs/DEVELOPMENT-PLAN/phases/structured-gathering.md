@@ -2,6 +2,9 @@
 
 _Estimate: 1 session._
 
+**Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [14 Excavation and mining](excavation-mining.md).  
+**Needed by:** no later phase depends on it directly.
+
 Found live: gathering a bulk terrain block (dirt, stone, cobblestone, sand, gravel, netherrack) through `collect_block` digs the nearest matching block wherever one happens to be, one at a time. For a big request this leaves a scatter of small, uneven single-block holes across the area instead of one clean dig, and looks like vandalism rather than mining. Builds directly on excavation (Phase 14) and needs nothing else, which is why it comes right after it, before site preparation and the rest.
 
 - Branch: `feature/structured-gathering`. A client of the excavation providers and the construction engine; no change to the shapes themselves.

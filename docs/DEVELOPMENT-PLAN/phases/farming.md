@@ -2,6 +2,9 @@
 
 _Estimate: 3.25 sessions._
 
+**Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [13 Construction engine and building](construction-building.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md) (optional).  
+**Needed by:** [23 Leading a player](leading-a-player.md) (optional), [24 Autonomy, the bot's own will](autonomy.md).
+
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
 **Design decision: layout is building, tending is not.** A vegetable garden or a pen *is* a buildable structure, so laying one out belongs to the construction engine (a new `PlanProvider`, executed by `PlanExecutor`, with `SiteSafety` and `LightManager`). But planting, harvesting, replanting, and breeding are recurring operations on *whatever farm exists*, including one the player built by hand, so they are ordinary skills with no dependency on the engine. Merging them into "building" would make every harvest a build plan; keeping them apart lets the tending skills work on the player's own farms and on ones the bot built.

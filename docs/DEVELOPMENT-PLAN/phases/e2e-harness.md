@@ -2,6 +2,9 @@
 
 _Estimate: 1 session._
 
+**Depends on:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md), [3 Movement and perception](movement-perception.md).  
+**Needed by:** no later phase depends on it directly.
+
 - Branch: `feature/e2e-harness`.
 - `docker/` with the server configuration (image `itzg/minecraft-server`, `TYPE=PAPER`, `VERSION=1.21.1`, `ONLINE_MODE=FALSE`, `EULA=TRUE`, RCON on, superflat world, `SPAWN_PROTECTION=0`, `DIFFICULTY` and `doMobSpawning` set per suite).
 - Jest `e2e` project with a global setup/teardown that starts one server container for the whole run (`testcontainers`, random mapped ports, wait for the "Done" log line) and tears it down after; server and bot logs are attached to failures.

@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** [3 Movement and perception](movement-perception.md).  
+**Needed by:** [20 Sleeping and respawn point](sleeping-respawn.md) (optional), [22 World discovery, including caves and canyons](world-discovery.md) (optional).
+
 The bot can walk to you, but sometimes you want it next to you at once (it is far away, in a cave, or across water). When the server allows commands, it can teleport to you.
 
 - Branch: `feature/server-commands`.

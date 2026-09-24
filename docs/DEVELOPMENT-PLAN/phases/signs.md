@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** [9 Storage and containers](storage-containers.md), [13 Construction engine and building](construction-building.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md).  
+**Needed by:** no later phase depends on it directly.
+
 Place a sign with text where the player says, and take one down again. Signs are how a player labels a chest, marks a farm, or names a room, and the bot only ever labels things in its own memory (`label_container`, `set_landmark`) with nothing visible in the world.
 
 - Branch: `feature/signs`. Standing-sign and wall-sign placement is a client of `Placer.placeAgainst`; the target uses the `LookTarget` port with the hit face added in Phase 16 (dug rooms).

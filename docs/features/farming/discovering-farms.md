@@ -1,5 +1,8 @@
 # Discovering farms
 
+**Depends on:** [Crop farming](crop-farming.md), [Animal farming](animal-farming.md).  
+**Used by:** no other feature directly.
+
 Phase 18's last piece (`feature/discover-farm`): **read-only** scanning for farms the player built by hand, so nobody has to describe them corner by corner. It **proposes** and never registers: the agent shows the player what was found, and calls `register_farm` with a proposal's `register` arguments only after they agree.
 
 - **`DiscoverFarmSkill`** (`discover_farm`: `around` a position (the bot when left out), `radius` 4 to 48 (default 24), optional `group`; `src/skills/farming/discover-farm-skill.ts`). No new ports: blocks, crops (`CropAccess`), and animals (`AnimalScanner`) are all it reads. `BlockScanner.findBlocks` searches around the bot, so for a place far from it the search reaches `distance(bot, place) + radius` and the results are then cut to the radius (the same limit `CollectEggsSkill` lives with). Only loaded terrain and animals in view are seen.

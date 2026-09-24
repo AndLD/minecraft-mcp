@@ -1,5 +1,8 @@
 # Railways
 
+**Depends on:** [Construction and building](construction-and-building.md), [Excavation](excavation.md), [Storage](../storage/storage.md) (optional).  
+**Used by:** no other feature directly.
+
 Phase 19 (`feature/railways`). A railway is a route plus a `WorkPlan` carried out by the shared `PlanExecutor` (cutting, bridging, lighting, and placing are the engine's own), with the hazard rule on. New here: where the line runs and how high (`RailRoutePlanner`), what is powered and how (`assignPower`, `buildRailwayPlan`), checking and repairing the result (`RailVerifier`), and putting a cart on it.
 
 - Branch: `feature/railways`. New ports `RailAccess` (`src/core/rail.port.ts`: a rail block's `name`, `shape`, and `powered` from its blockstate) and `MinecartPlacer` (`src/core/minecart.port.ts`: right-click a rail with a minecart from the inventory), implemented by `MineflayerRailAccess` and `MineflayerMinecarts` (which waits for the cart entity to appear, so a click that did nothing is a failure). `RailwayLog` (`src/state/railway-log.ts`, per world) remembers the lines built (start, end, layout, variant, rails, label) so a cart can go "at the start of the railway" without coordinates.

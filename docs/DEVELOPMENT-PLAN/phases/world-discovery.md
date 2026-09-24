@@ -2,6 +2,9 @@
 
 _Estimate: 2 sessions._
 
+**Depends on:** [3 Movement and perception](movement-perception.md), [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md), [12 Server commands and teleport](server-commands-teleport.md) (optional), [14 Excavation and mining](excavation-mining.md) (optional).  
+**Needed by:** [19 Railways](railways.md) (optional), [23 Leading a player](leading-a-player.md) (optional), [24 Autonomy, the bot's own will](autonomy.md) (optional).
+
 - `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
 - `StructureSignature` implementations detected from loaded chunks and entities:
   - village: bell, villager entities, hay bales, path blocks, house doors

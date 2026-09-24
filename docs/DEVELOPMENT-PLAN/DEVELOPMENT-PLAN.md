@@ -121,6 +121,41 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [24 Autonomy, the bot's own will](phases/autonomy.md) | 2.5 sessions |
 | [25 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
+## Dependencies between phases
+
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 25 (hardening) needs every other phase.
+
+| Phase | Needs | Optional |
+|---|---|---|
+| [0 Feasibility spike](phases/feasibility-spike.md) | - | - |
+| [1 Project scaffold](phases/project-scaffold.md) | 0 | - |
+| [2 Core skeleton and MCP shell](phases/core-skeleton-mcp-shell.md) | 1 | - |
+| [3 Movement and perception](phases/movement-perception.md) | 2 | - |
+| [4 E2E test harness](phases/e2e-harness.md) | 2, 3 | - |
+| [5 Persistent state](phases/persistent-state.md) | 2 | - |
+| [6 Survival reflexes](phases/survival-reflexes.md) | 2, 3 | - |
+| [7 Gathering, crafting, smelting](phases/gathering-crafting-smelting.md) | 3, 5 | - |
+| [8 Hunting and food](phases/hunting-food.md) | 3, 6, 7 | 5 |
+| [9 Storage and containers](phases/storage-containers.md) | 3, 5, 7 | - |
+| [10 Item handover](phases/item-handover.md) | 3, 9 | - |
+| [11 Drop recovery](phases/drop-recovery.md) | 5, 6, 7, 10 | - |
+| [12 Server commands and teleport](phases/server-commands-teleport.md) | 3 | - |
+| [13 Construction engine and building](phases/construction-building.md) | 3, 7, 9 | 5 |
+| [14 Excavation and mining](phases/excavation-mining.md) | 13 | 7, 9 |
+| [15 Structured gathering: pits and quarries instead of scattered holes](phases/structured-gathering.md) | 7, 14 | - |
+| [16 Site preparation: leveling, dug rooms, and opening doors](phases/site-preparation.md) | 3, 13, 14 | - |
+| [17 Iron doors and switches](phases/iron-doors-switches.md) | 16 | 9 |
+| [18 Farming, crops, animals, and trees](phases/farming.md) | 7, 8, 9, 13 | 16 |
+| [19 Railways](phases/railways.md) | 13, 14 | 9, 22 |
+| [20 Sleeping and respawn point](phases/sleeping-respawn.md) | 3, 6 | 11, 12, 13 |
+| [21 Signs](phases/signs.md) | 9, 13, 16 | - |
+| [22 World discovery, including caves and canyons](phases/world-discovery.md) | 3, 5, 6 | 12, 14 |
+| [23 Leading a player](phases/leading-a-player.md) | 3 | 18, 22 |
+| [24 Autonomy, the bot's own will](phases/autonomy.md) | 5, 6, 7, 8, 9, 13, 14, 18 | 19, 20, 22 |
+| [25 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+
+Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
+
 ## Testing strategy
 
 Three automated tiers. Unit and integration run offline with no Minecraft and make up `npm test`. E2E runs against a real headless Minecraft server in Docker. Before a phase is merged into `development`, its unit and integration tests and **its own e2e tests** must pass; the complete e2e suite (all phases) is run once, at the final gate after all primary phases.

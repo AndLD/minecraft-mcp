@@ -1,5 +1,8 @@
 # Threat policy
 
+**Depends on:** nothing (a base feature).  
+**Used by:** [Survival reflexes](survival-reflexes.md).
+
 `ThreatResponse` is driven by a data table (`mob type → action`), not by `if` chains, so policy changes do not touch the reflex code (Open/Closed).
 
 | Rule | Action |

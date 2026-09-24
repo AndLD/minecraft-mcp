@@ -1,5 +1,8 @@
 # Iron doors and switches
 
+**Depends on:** [Opening ordinary doors](opening-ordinary-doors.md), [Persistent state](../core/persistent-state.md).  
+**Used by:** no other feature directly.
+
 An iron door cannot be opened by hand (Phase 16 already classifies it as `'iron'` and refuses to click it). This phase finds the button, lever, or plate that opens one — by where it is, since the redstone wiring behind it is invisible — presses it, and does so only as far as the player's own standing rule allows.
 
 - Branch: `feature/switches`. Reuses `DoorOpeningNavigator`, `DoorAccess`, and `classifyDoor` from Phase 16 unchanged; adds the equivalent pair for switches.

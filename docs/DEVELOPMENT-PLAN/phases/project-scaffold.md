@@ -2,6 +2,9 @@
 
 _Estimate: ½ session._
 
+**Depends on:** [0 Feasibility spike](feasibility-spike.md).  
+**Needed by:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md).
+
 - Branch: `feature/project-scaffold`.
 - `package.json` (ESM, scripts), `tsconfig.json` (strict), eslint + prettier, Jest, `.gitignore`, `.env.example`.
 - Jest setup: `jest.config.ts` for TypeScript + ESM (run through `node --experimental-vm-modules`), `.js`-extension module mapping, `@jest/globals` imports, separate unit and integration projects, coverage thresholds. Scripts: `test`, `test:unit`, `test:integration`, `test:coverage`.
