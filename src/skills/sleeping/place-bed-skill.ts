@@ -88,7 +88,7 @@ export class PlaceBedSkill implements Skill<PlaceBedInput, PlaceBedOutput> {
         message:
           input.at === undefined
             ? 'There is no free two-block spot with solid ground within 6 blocks. Move somewhere flatter or clear a space.'
-            : 'A bed does not fit there: it needs two free cells in a row with solid ground and free air above, outside protected areas.',
+            : 'A bed does not fit there: it needs two free cells in a row with solid ground and free air above, and a free cell behind the foot to stand on.',
       })
 
     const walked = await deps.navigator.goToPosition(spot.stand, 0, { signal: context.signal })

@@ -36,12 +36,9 @@ describe('bed table', () => {
       false,
       false,
     ])
-    expect(['overworld', 'the_nether', 'the_end', 'minecraft:the_nether'].map(bedsExplode)).toEqual([
-      false,
-      true,
-      true,
-      true,
-    ])
+    expect(['overworld', 'the_nether', 'the_end', 'minecraft:the_nether'].map(bedsExplode)).toEqual(
+      [false, true, true, true],
+    )
   })
 })
 
@@ -142,6 +139,72 @@ describe('findBedSpot', () => {
     const wet = flat()
     for (let x = -8; x <= 8; x += 1) for (let z = -8; z <= 8; z += 1) wet.set(x, Y, z, 'water')
     expect(findBedSpot(wet, guard, at(0), false)).toBeUndefined()
+  })
+})
+
+describe('findBedSpot in a room', () => {
+  const guard = { protectedAt: (): undefined => undefined }
+  /** A 3 by 3 interior (x 3..5, z -11..-9) with stone walls two high around it, on a flat floor. */
+  function room(door?: Position) {
+    // Only the house is loaded, so nothing outside it can hold a bed.
+    const world = new GroveWorld({ x0: 2, x1: 6, z0: -12, z1: -8, y0: 50, y1: 90 })
+    world.ground(2, -12, 6, -8, Y - 1, 'oak_planks')
+    for (let x = 2; x <= 6; x += 1)
+      for (let z = -12; z <= -8; z += 1) {
+        const inside = x >= 3 && x <= 5 && z >= -11 && z <= -9
+        if (inside) continue
+        for (const y of [Y, Y + 1]) world.set(x, y, z, 'oak_planks')
+      }
+    if (door !== undefined) {
+      world.set(door.x, Y, door.z, 'oak_door')
+      world.set(door.x, Y + 1, door.z, 'oak_door')
+    }
+    return world
+  }
+  const inside = (p: Position): boolean => p.x >= 3 && p.x <= 5 && p.z >= -11 && p.z <= -9
+  const middle: Position = { x: 4, y: Y, z: -10 }
+
+  it('puts the bed against a wall inside the room, not in the middle of it', () => {
+    const spot = findBedSpot(room(), guard, middle, false)
+
+    expect(spot).toBeDefined()
+    if (spot === undefined) return
+    expect(inside(spot.foot) && inside(spot.head) && inside(spot.stand)).toBe(true)
+    const touching = (p: Position): boolean => p.x === 3 || p.x === 5 || p.z === -11 || p.z === -9
+    expect(touching(spot.foot) && touching(spot.head)).toBe(true)
+  })
+
+  it('keeps the bed and the standing place away from the doorway when there is another way', () => {
+    const door = { x: 4, y: Y, z: -12 }
+    const spot = findBedSpot(room(door), guard, middle, false)
+
+    expect(spot).toBeDefined()
+    if (spot === undefined) return
+    for (const cell of [spot.foot, spot.head, spot.stand])
+      expect(Math.abs(cell.x - door.x) + Math.abs(cell.z - door.z)).toBeGreaterThan(1)
+  })
+
+  it('still uses a spot beside the door when that is all there is', () => {
+    const world = room({ x: 4, y: Y, z: -12 })
+    // A 3 by 1 corridor: only the row along the door can hold a bed.
+    for (const z of [-10, -9])
+      for (const x of [3, 4, 5]) for (const y of [Y, Y + 1]) world.set(x, y, z, 'oak_planks')
+
+    const spot = findBedSpot(world, guard, { x: 4, y: Y, z: -11 }, false)
+
+    expect(spot).toBeDefined()
+    expect(spot?.foot.z).toBe(-11)
+  })
+
+  it('puts a bed into a protected area when the cell was named, and refuses it otherwise', () => {
+    const world = room()
+    const protectedHouse = {
+      protectedAt: (p: Position) => (inside(p) ? { id: 'house', label: 'house' } : undefined),
+    }
+
+    expect(findBedSpot(world, protectedHouse, middle, false)).toBeUndefined()
+    const named = findBedSpot(world, protectedHouse, { x: 5, y: Y, z: -10 }, true)
+    expect(named?.foot).toEqual({ x: 5, y: Y, z: -10 })
   })
 })
 

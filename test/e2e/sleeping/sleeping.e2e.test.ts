@@ -93,16 +93,19 @@ describe('sleeping on a real Minecraft server', () => {
   }
 
   const beds = async () =>
-    dataOf<{ beds: { colour: string; respawnPoint: boolean; intact: boolean }[]; respawnPoint: unknown }>(
-      await session.bot.call('list_beds'),
-    )
+    dataOf<{
+      beds: { colour: string; respawnPoint: boolean; intact: boolean }[]
+      respawnPoint: unknown
+    }>(await session.bot.call('list_beds'))
 
   it('places a bed it carries as two blocks in a row, and remembers it', async () => {
     await world.give(bot(), 'red_bed', 1)
     await waitUntil(
       async () => {
         const inventory = await session.bot.call('get_inventory')
-        const items = inventory.isError ? [] : (inventory.data as { items: { name: string }[] }).items
+        const items = inventory.isError
+          ? []
+          : (inventory.data as { items: { name: string }[] }).items
         return items.some((i) => i.name === 'red_bed') ? true : undefined
       },
       { description: 'the bot to carry the bed' },
@@ -115,6 +118,88 @@ describe('sleeping on a real Minecraft server', () => {
     expect(await world.isBlock(result.foot, 'red_bed')).toBe(true)
     expect(await world.isBlock(result.head, 'red_bed')).toBe(true)
     expect((await beds()).beds).toHaveLength(1)
+  })
+
+  describe('in a house', () => {
+    // A 5 by 5 house from the `house` blueprint: floor corner (2, -12), interior x 3..5 and z -11..-9, the doorway
+    // at x = 4 in the north wall (z = -12).
+    const inside = (p: Position): boolean => p.x >= 3 && p.x <= 5 && p.z >= -11 && p.z <= -9
+
+    async function houseWithBotInside(): Promise<void> {
+      await world.give(bot(), 'oak_planks', 100)
+      await world.give(bot(), 'oak_door', 1)
+      await world.give(bot(), 'red_bed', 2)
+      await waitUntil(
+        async () => {
+          const inventory = await session.bot.call('get_inventory')
+          const items = inventory.isError
+            ? []
+            : (inventory.data as { items: { name: string }[] }).items
+          return ['oak_planks', 'oak_door', 'red_bed'].every((n) => items.some((i) => i.name === n))
+            ? true
+            : undefined
+        },
+        { description: 'the bot to carry the materials' },
+      )
+      const built = await run('build', {
+        blueprint: 'house',
+        params: { width: 5, depth: 5 },
+        origin: { x: 2, y: GROUND_Y, z: -12 },
+      })
+      if (built.failed) throw new Error(`The house was not built: ${built.text}`)
+      await world.teleport(bot(), { x: 4.5, y: GROUND_Y + 1, z: -9.5 })
+      await waitUntil(
+        async () => {
+          const status = dataOf<{ vitals: { position: Position } | null }>(
+            await session.bot.call('get_status'),
+          )
+          const at = status.vitals?.position
+          return at !== undefined && at.z > -11 && at.z < -9 && Math.abs(at.y - (GROUND_Y + 1)) < 1
+            ? true
+            : undefined
+        },
+        { description: 'the bot to stand inside the house' },
+      )
+    }
+
+    it('puts the bed inside, against a wall, and not in front of the door', async () => {
+      await houseWithBotInside()
+
+      const placed = await run('place_bed')
+
+      if (placed.failed) throw new Error(placed.text)
+      const { foot, head } = placed.task.result as { foot: Position; head: Position }
+      const bedY = GROUND_Y + 1
+      expect(await world.isBlock({ ...foot, y: bedY }, 'red_bed')).toBe(true)
+      expect(await world.isBlock({ ...head, y: bedY }, 'red_bed')).toBe(true)
+      expect(inside(foot) && inside(head)).toBe(true)
+      const wall = (p: Position): boolean => p.x === 3 || p.x === 5 || p.z === -11 || p.z === -9
+      expect(wall(foot) && wall(head)).toBe(true)
+      // Nothing of the bed touches the cell in front of the doorway.
+      for (const p of [foot, head]) expect(p.x === 4 && p.z === -11).toBe(false)
+    })
+
+    it('puts a bed into a protected house only when told the cell', async () => {
+      await houseWithBotInside()
+      const protectedHouse = await session.bot.call('protect_area', {
+        x1: 2,
+        y1: GROUND_Y,
+        z1: -12,
+        x2: 6,
+        y2: GROUND_Y + 4,
+        z2: -8,
+        label: 'house',
+      })
+      expect(protectedHouse.isError).toBe(false)
+
+      const refused = await run('place_bed')
+      const named = await run('place_bed', { at: { x: 5, y: GROUND_Y + 1, z: -10 } })
+
+      expect(refused.failed).toBe(true)
+      expect(refused.text).toContain('no_space')
+      if (named.failed) throw new Error(named.text)
+      expect(await world.isBlock({ x: 5, y: GROUND_Y + 1, z: -10 }, 'red_bed')).toBe(true)
+    })
   })
 
   it('sets the respawn point by day, and the game confirms it', async () => {
@@ -173,7 +258,11 @@ describe('sleeping on a real Minecraft server', () => {
     await world.setTime('18000')
     await world.setDifficulty('easy')
     await makeBed(-3, -5)
-    await world.summonWith('zombie', { x: -1.5, y: GROUND_Y, z: -3.5 }, '{NoAI:1b,PersistenceRequired:1b}')
+    await world.summonWith(
+      'zombie',
+      { x: -1.5, y: GROUND_Y, z: -3.5 },
+      '{NoAI:1b,PersistenceRequired:1b}',
+    )
 
     const outcome = await waitUntil(
       async () => {
@@ -192,8 +281,12 @@ describe('sleeping on a real Minecraft server', () => {
     await world.teleport(bot(), { x: far - 2 + 0.5, y: GROUND_Y, z: 0.5 })
     await waitUntil(
       async () => {
-        const status = dataOf<{ vitals: { position: Position } | null }>(await session.bot.call('get_status'))
-        return status.vitals !== null && Math.abs(status.vitals.position.x - (far - 1.5)) < 2 ? true : undefined
+        const status = dataOf<{ vitals: { position: Position } | null }>(
+          await session.bot.call('get_status'),
+        )
+        return status.vitals !== null && Math.abs(status.vitals.position.x - (far - 1.5)) < 2
+          ? true
+          : undefined
       },
       { description: 'the bot to arrive at the far bed' },
     )

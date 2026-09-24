@@ -118,7 +118,7 @@ const placeSchema = z.object({
   at: positionSchema
     .optional()
     .describe(
-      'The cell for the foot end of the bed. Omit to use the nearest free two-block spot near the bot.',
+      'The cell for the foot end of the bed; allowed inside protected areas. Omit to let the bot choose a spot near it.',
     ),
   colour: z
     .enum(BED_COLOURS)
@@ -130,8 +130,10 @@ const placeSchema = z.object({
 export class PlaceBedTool implements ToolDefinition<typeof placeSchema> {
   readonly name = 'place_bed'
   readonly description =
-    'Puts a bed from the inventory on the ground: a bed is two blocks in a row, so it looks for a free spot with solid ' +
-    'ground and free air above (or uses the cell given), outside protected areas, and remembers the bed. Beds are made ' +
+    'Puts a bed from the inventory on the ground: a bed is two blocks in a row, so it looks within 6 blocks of the bot ' +
+    '(stand inside the house to put it in the house) for a free spot with solid ground and free air above, preferring ' +
+    'spots against walls or in a corner and not beside a door, outside protected areas, and remembers the bed. With at ' +
+    '(the foot cell) the bed goes exactly there, also inside a protected area, because you named the place. Beds are made ' +
     'with craft (for example white_bed: three wool and three planks): it does not craft or fetch one. ' +
     NEVER_IN_NETHER +
     'Failures: no_bed_item, no_space, unreachable, not_placed.'
