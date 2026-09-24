@@ -15,6 +15,8 @@ export interface BotEvents {
   health: () => void
   /** Every chat line as plain text, including the server's own messages (deaths, joins). */
   messagestr: (message: string) => void
+  /** A line shown above the hotbar (sleeping refusals such as "monsters nearby" arrive this way). Its text is `String(message)`. */
+  actionBar: (message: unknown) => void
 }
 
 export interface EntityLike {
@@ -170,6 +172,7 @@ export interface BotLike {
     readonly slots: readonly (ItemLike | null)[]
   }
   readonly heldItem: ItemLike | null
+  readonly isSleeping: boolean
   readonly pathfinder: PathfinderLike
   chat(message: string): void
   whisper(username: string, message: string): void
@@ -202,6 +205,9 @@ export interface BotLike {
   activateBlock(block: BlockLike): Promise<void>
   /** Right-clicks an entity with whatever is in hand (feeding or breeding an animal is done this way). */
   activateEntity(entity: EntityLike): Promise<void>
+  /** Lies down in a bed block returned by `blockAt`. Rejects when the game refuses (not night, monsters, too far). */
+  sleep(bed: BlockLike): Promise<void>
+  wake(): Promise<void>
   /** Turns to face a point. */
   lookAt(point: Position, force?: boolean): Promise<void>
   /** Waits for game ticks (50 ms each). */

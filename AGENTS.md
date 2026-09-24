@@ -87,6 +87,7 @@ Skills receive only the ports they need, never a whole bot.
 | `FurnaceAccess` | open a furnace: put input and fuel, take output, input, and fuel back |
 | `InventoryReader` / `InventoryWriter` | contents; throw items out (`toss`) |
 | `Gaze` | turn to face a point (then wait for the server to learn the direction) |
+| `Sleeper` / `BedAccess` | lie down in a bed, get up, whether the bot sleeps; a bed's blockstate and right-clicking it, returning the server's reply lines |
 | `RailAccess` / `MinecartPlacer` | a rail block's shape and power from its blockstate; put a minecart from the inventory on a rail |
 | `ServerCommands` | which commands the server offers the bot (from its command list), and typing one (`/tp`) and reading the server's reply, classified as ok, no permission, unknown command, error, or no reply |
 | `DeathWatcher` | reports each death (place, dimension, what was carried and worn, the server's message) once the bot has respawned; reads what is carried now |

@@ -391,6 +391,10 @@ export class FakeBot implements BotLike {
           props['powered'] = this.switchPowered.get(cellKey) ?? false
         // The real server reports this one as a numeric string ("7"), not a number.
         if (classifyCrop(name) !== undefined) props['age'] = String(this.cropAges.get(cellKey) ?? 0)
+        if (name.endsWith('_bed')) {
+          props['part'] = this.bedParts.get(cellKey) ?? 'foot'
+          props['occupied'] = false
+        }
         if (name.endsWith('rail')) {
           props['shape'] = this.railShapeAt(position)
           if (name === 'powered_rail') props['powered'] = String(this.railPoweredAt(position))
@@ -504,6 +508,36 @@ export class FakeBot implements BotLike {
   /** Blocks a hoe turns into farmland when right-clicked. */
   private static readonly TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
 
+  /** Beds: which half a cell is (`foot` by default), what the server says when used, and whether the bot lies in one. */
+  private readonly bedParts = new Map<string, 'head' | 'foot'>()
+  setBedPart(position: Position, part: 'head' | 'foot'): void {
+    this.bedParts.set(key(position), part)
+  }
+  bedRefusesRespawn = false
+  readonly bedsUsed: Position[] = []
+  isSleeping = false
+  /** A refusal `sleep` throws with (and puts on the action bar), for example "You may not rest now, there are monsters nearby". */
+  sleepRefusal: string | undefined
+  readonly sleepCalls: Position[] = []
+  sleep(bed: BlockLike): Promise<void> {
+    this.sleepCalls.push((bed as FakeBlock).position)
+    if (this.sleepRefusal !== undefined) {
+      this.emit('actionBar', this.sleepRefusal)
+      return Promise.reject(new Error('bot.sleep: server refused'))
+    }
+    const t = this.time.timeOfDay
+    if (t < 12_541 || t > 23_458)
+      return Promise.reject(new Error("it's not night and it's not a thunderstorm"))
+    this.isSleeping = true
+    return Promise.resolve()
+  }
+  wakeCalls = 0
+  wake(): Promise<void> {
+    this.wakeCalls += 1
+    this.isSleeping = false
+    return Promise.resolve()
+  }
+
   readonly activateBlockCalls: Position[] = []
   activateBlock(block: BlockLike): Promise<void> {
     const position = (block as FakeBlock).position
@@ -524,6 +558,12 @@ export class FakeBot implements BotLike {
       }
     } else if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
       this.setBlock(position, 'farmland')
+    } else if (block.name.endsWith('_bed')) {
+      // Using a bed sets the respawn point (unless a test made it refuse) and, at night, lies the bot down.
+      this.bedsUsed.push(position)
+      if (!this.bedRefusesRespawn) this.emit('messagestr', 'Respawn point set')
+      const t = this.time.timeOfDay
+      if (t >= 12_541 && t <= 23_458) this.isSleeping = true
     } else if (classifySwitch(block.name) !== undefined) {
       const nowPowered = !(this.switchPowered.get(cellKey) ?? false)
       this.switchPowered.set(cellKey, nowPowered)
