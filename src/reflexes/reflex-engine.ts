@@ -27,6 +27,8 @@ export interface ReflexEngineOptions {
   readonly scheduler: Scheduler
   readonly clock: Clock
   readonly logger: Logger
+  /** A sleeping bot cannot flee or fight: it is woken before a reflex that moves it acts. */
+  readonly sleeper?: { isSleeping(): boolean; wake(): Promise<void> }
   readonly tickMs?: number
   /** How far to look for entities that reflexes may care about. */
   readonly scanRadius?: number
@@ -141,6 +143,7 @@ export class ReflexEngine {
 
   private async begin(reflex: Reflex, state: ReflexState): Promise<void> {
     if (reflex.preemptsTask) {
+      if (this.options.sleeper?.isSleeping() === true) await this.options.sleeper.wake()
       const stopped = await this.options.tasks.suspend()
       if (stopped !== undefined) {
         this.options.emit(

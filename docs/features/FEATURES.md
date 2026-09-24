@@ -20,6 +20,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 |---|---|---|
 | [Threat policy](survival/threat-policy.md) | The mob-to-action table: flee, fight, ignore | - |
 | [Survival reflexes](survival/survival-reflexes.md) | `ReflexEngine`, priorities, preempting and resuming tasks | Threat policy, Tasks |
+| [Sleeping and respawn point](survival/sleeping-and-respawn.md) | Beds, `sleep`, `set_respawn_point`, `place_bed`, the night policy, noticing a lost bed | Survival reflexes, Tasks, Persistent state, Drop recovery (optional), Server commands and teleporting (optional) |
 
 ## Gathering and food
 

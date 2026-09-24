@@ -1,9 +1,12 @@
 import type { Clock } from '../../core/clock.port.js'
 import type { DeathEvent, DeathWatcher } from '../../core/death-watcher.port.js'
-import { roundPosition } from '../../core/position.js'
+import { distanceBetween, roundPosition } from '../../core/position.js'
+import type { Position } from '../../core/position.types.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { DropRecoveryPolicy } from '../../state/drop-recovery-policy.js'
+import type { BedEntry } from '../../state/bed-registry.js'
 import type { DropRecords } from '../../state/drop-records.js'
+import { bedsExplode } from '../sleeping/bed-table.js'
 import { describeBrief, subtractCounts, totalOf } from './item-counts.js'
 
 /** The inventory is reset a moment after the respawn; only then does it show what was kept. */
@@ -22,9 +25,19 @@ export interface DeathResponderDeps {
   emit(type: string, message: string): void
   /** Says something in the game chat. */
   say(text: string): void
+  /** The respawn point, to notice when the bot did not wake up at it (the bed was destroyed or obstructed). */
+  readonly beds?: {
+    respawn(): BedEntry | undefined
+    markLost(id: string): BedEntry | undefined
+  }
+  /** Where the bot is now, read after the respawn. */
+  readonly whereIsBot?: () => { readonly position: Position; readonly dimension: string } | undefined
   readonly clock: Clock
   readonly scheduler: Scheduler
 }
+
+/** A respawn within this many blocks of the bed counts as waking up in it. */
+const BED_RESPAWN_RADIUS = 16
 
 /**
  * Reacts to the bot's death with plain code (no agent round trip): cancels the task, works out what was lost by
@@ -64,6 +77,7 @@ export class DeathResponder {
     await new Promise<void>((resolve) => {
       deps.scheduler.after(RESPAWN_SETTLE_MS, resolve)
     })
+    this.checkRespawnPoint()
     const lost = subtractCounts(event.carried, deps.watcher.carried())
     const spot = roundPosition(event.position)
     const place = `${String(Math.round(spot.x))}, ${String(Math.round(spot.y))}, ${String(Math.round(spot.z))} in ${event.dimension}`
@@ -124,5 +138,20 @@ export class DeathResponder {
     deps.scheduler.after(START_DELAY_MS, () => {
       void deps.recovery.start(record.id)
     })
+  }
+
+  /** The game silently uses the world spawn when the bed is gone or blocked; the bot has to notice that itself. */
+  private checkRespawnPoint(): void {
+    const { deps } = this
+    const bed = deps.beds?.respawn()
+    const now = deps.whereIsBot?.()
+    if (bed === undefined || now === undefined || bedsExplode(now.dimension)) return
+    const at = { x: bed.x, y: bed.y, z: bed.z }
+    if (distanceBetween(now.position, at) <= BED_RESPAWN_RADIUS) return
+    deps.beds?.markLost(bed.id)
+    deps.emit(
+      'respawn_point_lost',
+      `The bot did not wake up at its bed (${String(bed.x)}, ${String(bed.y)}, ${String(bed.z)}): it was destroyed or obstructed, so the world spawn was used. The bed is no longer the respawn point. Tell the player; place_bed and set_respawn_point make a new one.`,
+    )
   }
 }

@@ -103,6 +103,13 @@ import { OpenDoorTool } from './mcp/tools/open-door-tool.js'
 import { FindSwitchesTool } from './mcp/tools/find-switches-tool.js'
 import { SetSwitchPolicyTool } from './mcp/tools/set-switch-policy-tool.js'
 import {
+  ListBedsTool,
+  PlaceBedTool,
+  SetRespawnPointTool,
+  SetSleepPolicyTool,
+  SleepTool,
+} from './mcp/tools/sleeping-tools.js'
+import {
   LabelContainerTool,
   ListContainersTool,
   RegisterContainerTool,
@@ -184,6 +191,8 @@ import { EggPolicy } from './state/egg-policy.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
+import { BedRegistry } from './state/bed-registry.js'
+import { SleepPolicy } from './state/sleep-policy.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
 import { SwitchPolicy } from './state/switch-policy.js'
@@ -252,6 +261,14 @@ import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
 import { PlaceMinecartSkill } from './skills/railway/place-minecart-skill.js'
+import { MineflayerBedAccess } from './bot/mineflayer-bed-access.js'
+import { MineflayerSleeper } from './bot/mineflayer-sleeper.js'
+import { BedFinder } from './skills/sleeping/bed-finder.js'
+import { NightResponder } from './skills/sleeping/night-responder.js'
+import { NightWatch } from './skills/sleeping/night-watch.js'
+import { PlaceBedSkill } from './skills/sleeping/place-bed-skill.js'
+import { SetRespawnPointSkill } from './skills/sleeping/set-respawn-point-skill.js'
+import { SleepSkill } from './skills/sleeping/sleep-skill.js'
 import { RailRoutePlanner } from './skills/railway/rail-route-planner.js'
 import { RailVerifier } from './skills/railway/rail-verifier.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
@@ -302,6 +319,8 @@ const DEFAULT_RECOVERY_ATTEMPTS = 2
 /** When a task or reflex keeps the bot busy, an automatic recovery tries again this often, for about 3 minutes. */
 const RECOVERY_RETRY_MS = 5_000
 const RECOVERY_RETRIES = 36
+/** How often the bot checks whether night has fallen (for the sleep policy). */
+const NIGHT_CHECK_MS = 5_000
 
 /** The low-level seams. Tests replace them; production uses the real implementations. */
 export interface AppDeps {
@@ -399,6 +418,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const farmRegistry = new FarmRegistry(clock)
   const eggPolicy = new EggPolicy()
   const railwayLog = new RailwayLog(clock)
+  const bedRegistry = new BedRegistry(clock)
+  const sleepPolicy = new SleepPolicy()
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
   const dropRecords = new DropRecords(clock)
@@ -423,6 +444,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       farmRegistry,
       eggPolicy,
       railwayLog,
+      bedRegistry,
+      sleepPolicy,
       storageRules,
       storagePolicy,
       dropRecords,
@@ -465,6 +488,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     },
     scheduler,
   })
+  const sleeper = new MineflayerSleeper(connection)
   const reflexes = new ReflexEngine({
     reflexes: [
       new AvoidLava({ blocks, navigator, locomotion, safeSpots }),
@@ -489,6 +513,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     entities,
     tasks,
     resume: invokeResume,
+    sleeper,
     emit: (message) => {
       inbox.pushEvent({ type: 'reflex', message })
     },
@@ -527,6 +552,58 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       message: `Task ${event.snapshot.id} (${event.snapshot.description}) is waiting: ${event.snapshot.pending.message} Options: ${event.snapshot.pending.options.join(', ')}.`,
     })
   })
+  // Sleeping: beds, the respawn point, and what the bot does at nightfall.
+  const bedAccess = new MineflayerBedAccess(connection, scheduler)
+  const bedFinder = new BedFinder(blocks, bedRegistry)
+  const sleepSkill = new SleepSkill({
+    vitals,
+    blocks,
+    entities,
+    navigator,
+    sleeper,
+    finder: bedFinder,
+    registry: bedRegistry,
+    clock,
+    scheduler,
+  })
+  const setRespawnPoint = new SetRespawnPointSkill({
+    vitals,
+    blocks,
+    navigator,
+    beds: bedAccess,
+    sleeper,
+    finder: bedFinder,
+    registry: bedRegistry,
+  })
+  const placeBed = new PlaceBedSkill({
+    vitals,
+    blocks,
+    inventory,
+    navigator,
+    placer: new MineflayerPlacer(connection),
+    gaze: new MineflayerGaze(connection),
+    guard: protectedAreas,
+    registry: bedRegistry,
+    scheduler,
+  })
+  const nightResponder = new NightResponder({
+    policy: sleepPolicy,
+    vitals,
+    registry: bedRegistry,
+    busy: () =>
+      tasks.current() !== undefined ||
+      reflexes.activeReflex() !== undefined ||
+      entities.nearby(16).some((entity) => entity.category === 'hostile'),
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+    startSleep: async () => {
+      const result = await invoke('sleep', { wait_seconds: 0 }, { signal: new AbortController().signal })
+      return { ok: result.ok, message: result.ok ? '' : result.error }
+    },
+    clock,
+  })
+  const nightWatch = new NightWatch(() => nightResponder.tick(), scheduler, NIGHT_CHECK_MS)
   const router = new ChatRouter({
     inbox,
     logger,
@@ -539,12 +616,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   connection.onEvent((event) => {
     if (event.type === 'disconnected' || event.type === 'kicked') {
       void reflexes.stop()
+      nightWatch.stop()
       // Cancel first, so the journal records the tasks as interrupted, then release the world's state.
       void tasks.cancel(undefined, 'disconnected').then(() => worldState.close())
     }
     switch (event.type) {
       case 'connected':
         if (config.reflexesEnabled) reflexes.start()
+        nightWatch.start()
         inbox.pushEvent({ type: 'connected', message: `Bot ${event.username} joined the world.` })
         break
       case 'disconnected':
@@ -661,6 +740,11 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
   const deathResponder = new DeathResponder({
     watcher: new MineflayerDeathWatcher(connection, clock),
+    beds: bedRegistry,
+    whereIsBot: () => {
+      const now = vitals.read()
+      return now === undefined ? undefined : { position: now.position, dimension: now.dimension }
+    },
     records: dropRecords,
     policy: dropPolicy,
     recovery: autoRecovery,
@@ -1023,6 +1107,11 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new OpenDoorTool(openDoor, launcher, lookTarget, config.owner))
     .register(new FindSwitchesTool(switchFinder, lookTarget, config.owner))
     .register(new SetSwitchPolicyTool(switchPolicy, standing))
+    .register(new SleepTool(sleepSkill, launcher))
+    .register(new SetRespawnPointTool(setRespawnPoint, launcher))
+    .register(new PlaceBedTool(placeBed, launcher))
+    .register(new ListBedsTool(bedRegistry))
+    .register(new SetSleepPolicyTool(sleepPolicy, standing))
     .register(new CollectBlockTool(collectBlocks, structuredGather, launcher, collectSaplings))
     .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
     .register(new CraftTool(craftItem, launcher))
@@ -1123,6 +1212,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     mcpServer,
     serve: (transport) => mcpServer.connect(transport),
     shutdown: async () => {
+      nightWatch.stop()
       await reflexes.stop()
       await tasks.cancel(undefined, 'shutdown')
       await connection.disconnect()
