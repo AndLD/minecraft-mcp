@@ -5,6 +5,7 @@ import type { CollectEggsSkill } from './collect-eggs-skill.js'
 import type { HarvestCropsSkill } from './harvest-crops-skill.js'
 import type { HerdManager } from './herd-manager.js'
 import type { PlantCropsSkill } from './plant-crops-skill.js'
+import type { PlantTreesSkill } from './plant-trees-skill.js'
 
 export interface TendFarmInput {
   readonly farm: string
@@ -38,6 +39,8 @@ export interface TendFarmDeps {
   readonly herd: HerdManager
   /** Collects eggs as part of tending a chicken pen; without it, a chicken pen is just herded. */
   readonly collectEggs?: CollectEggsSkill
+  /** Refills the empty spots of a grove; without it a grove is reported as not tended. */
+  readonly plantTrees?: PlantTreesSkill
 }
 
 /**
@@ -64,6 +67,10 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
       if (context.signal.aborted) return err({ reason: 'aborted', message: 'Cancelled.' })
       if (entry.kind === 'pen') {
         components.push(await this.tendPen(entry, context))
+        continue
+      }
+      if (entry.kind === 'grove' && this.deps.plantTrees !== undefined) {
+        components.push(await this.tendGrove(entry, context))
         continue
       }
       if (entry.kind !== 'field') {
@@ -116,6 +123,39 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
       })
     }
     return ok({ components })
+  }
+
+  /** Never fells: refills the spots where a tree is gone with the saplings the bot carries (`planted`). */
+  private async tendGrove(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
+    const planted = await this.deps.plantTrees?.run(
+      {
+        species: undefined,
+        count: undefined,
+        farm: entry.id,
+        area: undefined,
+        around: undefined,
+        spacing: undefined,
+        big: undefined,
+        preview: false,
+        label: undefined,
+        group: undefined,
+      },
+      context,
+    )
+    const done = planted?.ok === true ? planted.value : undefined
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      harvested: 0,
+      replanted: 0,
+      planted: done?.planted ?? 0,
+      herdSizeBefore: undefined,
+      herdAction: undefined,
+      eggsPickedUp: undefined,
+      eggsStored: undefined,
+      eggsReleased: undefined,
+      problem: planted?.ok === false ? planted.error.message : undefined,
+    }
   }
 
   private async tendPen(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {

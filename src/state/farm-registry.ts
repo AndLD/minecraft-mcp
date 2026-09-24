@@ -7,16 +7,24 @@ import { defineDocument } from './define-document.js'
 import type { ProfileScoped } from './profile-scoped.types.js'
 
 const pointSchema = z.object({ x: z.number().int(), y: z.number().int(), z: z.number().int() })
+const spotSchema = z.object({
+  x: z.number().int(),
+  y: z.number().int(),
+  z: z.number().int(),
+  size: z.union([z.literal(1), z.literal(2)]),
+})
 const farmSchema = z.object({
   id: z.string(),
   kind: z.enum(['field', 'pen', 'grove']),
-  /** The crop this field grows, or null for anything else, or a field with none set. */
+  /** The crop this field grows, or the tree species of a grove; null for anything else, or none set. */
   crop: z.string().nullable(),
   /** The animal species this pen keeps, or null for anything else, or a pen with none set. */
   species: z.string().nullable(),
   /** The herd size `tend_farm` breeds up to and culls down to, for a pen; null leaves the herd alone. */
   herdTarget: z.number().int().min(1).nullable(),
   bounds: z.object({ from: pointSchema, to: pointSchema }),
+  /** A grove's planting spots (sapling cells; `size` 2 is a 2x2 of four saplings), or null when none are recorded. */
+  spots: z.array(spotSchema).nullable(),
   label: z.string().nullable(),
   /** Ties several components into one farm, for example "home". */
   group: z.string().nullable(),
@@ -26,10 +34,11 @@ const farmSchema = z.object({
 })
 
 export type FarmEntry = z.infer<typeof farmSchema>
+export type GroveSpot = z.infer<typeof spotSchema>
 
 const farmsDocument = defineDocument({
   key: 'farms',
-  version: 2,
+  version: 3,
   schema: z.object({ farms: z.array(farmSchema), nextId: z.number().int() }),
   initial: () => ({ farms: [] as FarmEntry[], nextId: 1 }),
   migrations: {
@@ -39,6 +48,10 @@ const farmsDocument = defineDocument({
         ...doc,
         farms: doc.farms.map((entry) => ({ ...entry, species: null, herdTarget: null })),
       }
+    },
+    2: (data) => {
+      const doc = data as { farms: readonly Record<string, unknown>[]; nextId: number }
+      return { ...doc, farms: doc.farms.map((entry) => ({ ...entry, spots: null })) }
     },
   },
 })
@@ -52,6 +65,7 @@ export interface RegisterFarmOptions {
   readonly crop?: string | undefined
   readonly species?: string | undefined
   readonly herdTarget?: number | undefined
+  readonly spots?: readonly GroveSpot[] | undefined
   readonly bounds: { readonly from: Position; readonly to: Position }
   readonly label?: string | undefined
   readonly group?: string | undefined
@@ -98,6 +112,7 @@ export class FarmRegistry implements ProfileScoped {
       species: options.species ?? null,
       herdTarget: options.herdTarget ?? null,
       bounds: options.bounds,
+      spots: options.spots === undefined ? null : [...options.spots],
       label: label === undefined || label === '' ? null : label,
       group: group === undefined || group === '' ? null : group,
       builtByBot: options.builtByBot ?? false,
@@ -116,6 +131,22 @@ export class FarmRegistry implements ProfileScoped {
     this.farms = this.farms.filter((candidate) => candidate.id !== id)
     this.persist()
     return ok(entry)
+  }
+
+  /** Adds planting spots to a grove (a spot already recorded is not added twice). */
+  addSpots(id: string, spots: readonly GroveSpot[]): Result<FarmEntry> {
+    if (this.store === undefined) return err(NOT_ACTIVE)
+    const index = this.farms.findIndex((candidate) => candidate.id === id)
+    const entry = this.farms[index]
+    if (entry === undefined) return err(`There is no farm ${id}.`)
+    const known = entry.spots ?? []
+    const fresh = spots.filter(
+      (spot) => !known.some((have) => have.x === spot.x && have.y === spot.y && have.z === spot.z),
+    )
+    const updated: FarmEntry = { ...entry, spots: [...known, ...fresh] }
+    this.farms[index] = updated
+    this.persist()
+    return ok(updated)
   }
 
   list(): Result<readonly FarmEntry[]> {

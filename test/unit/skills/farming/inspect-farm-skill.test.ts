@@ -150,7 +150,7 @@ describe('InspectFarmSkill', () => {
     })
   })
 
-  it('reports a grove component with zero counts (not built yet)', async () => {
+  it('reports a grove with nothing standing in it as zero counts', async () => {
     const s = await setup()
     const entry = s.farms.register({ kind: 'grove', bounds })
     if (!entry.ok) throw new Error(entry.error)
@@ -174,6 +174,71 @@ describe('InspectFarmSkill', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.value.components).toHaveLength(2)
+  })
+
+  it('counts a planted grove by its spots: grown, sapling, and empty', async () => {
+    const s = await setup()
+    const entry = s.farms.register({
+      kind: 'grove',
+      crop: 'oak',
+      bounds: { from: at(0, 64, 0), to: at(20, 64, 20) },
+      spots: [
+        { x: 2, y: 65, z: 2, size: 1 },
+        { x: 8, y: 65, z: 8, size: 1 },
+        { x: 14, y: 65, z: 14, size: 1 },
+        { x: 4, y: 65, z: 16, size: 2 },
+      ],
+    })
+    if (!entry.ok) throw new Error(entry.error)
+    s.blocks.blockNames.set(key(at(2, 65, 2)), 'oak_log')
+    s.blocks.blockNames.set(key(at(8, 65, 8)), 'oak_sapling')
+    s.blocks.blockNames.set(key(at(5, 65, 17)), 'oak_log') // one trunk of a 2x2 tree is enough
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { components: [{ kind: 'grove', crop: 'oak', ripe: 2, growing: 1, empty: 1 }] },
+    })
+  })
+
+  it('finds the trees of a grove registered by hand inside its bounds', async () => {
+    const s = await setup()
+    s.blocks.names = ['dirt', 'oak_log', 'oak_sapling']
+    const entry = s.farms.register({
+      kind: 'grove',
+      bounds: { from: at(0, 64, 0), to: at(10, 64, 10) },
+    })
+    if (!entry.ok) throw new Error(entry.error)
+    s.blocks.blocks = [
+      { name: 'oak_log', position: at(3, 65, 3), distance: 1 },
+      { name: 'oak_log', position: at(3, 66, 3), distance: 1 }, // higher up the same trunk
+      { name: 'oak_log', position: at(6, 70, 6), distance: 1 }, // a log with no ground under it
+      { name: 'oak_log', position: at(40, 65, 40), distance: 1 }, // outside the bounds
+      { name: 'oak_sapling', position: at(8, 65, 8), distance: 1 },
+    ]
+    s.blocks.blockNames.set(key(at(3, 64, 3)), 'grass_block')
+    s.blocks.blockNames.set(key(at(3, 65, 3)), 'oak_log')
+    s.blocks.blockNames.set(key(at(6, 69, 6)), 'air')
+    s.blocks.blockNames.set(key(at(40, 64, 40)), 'grass_block')
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { components: [{ kind: 'grove', ripe: 1, growing: 1, empty: 0 }] },
+    })
+  })
+
+  it('finds nothing in a hand-registered grove when no tree block is known', async () => {
+    const s = await setup()
+    s.blocks.names = ['dirt']
+    const entry = s.farms.register({ kind: 'grove', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toMatchObject({ ok: true, value: { components: [{ ripe: 0, growing: 0, empty: 0 }] } })
   })
 
   it('fails with unknown_farm for an unrecognised reference', async () => {

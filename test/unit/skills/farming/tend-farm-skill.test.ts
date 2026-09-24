@@ -4,6 +4,7 @@ import type { CollectEggsSkill } from '../../../../src/skills/farming/collect-eg
 import type { HarvestCropsSkill } from '../../../../src/skills/farming/harvest-crops-skill.js'
 import type { HerdManager } from '../../../../src/skills/farming/herd-manager.js'
 import type { PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
+import type { PlantTreesSkill } from '../../../../src/skills/farming/plant-trees-skill.js'
 import { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
 import { FarmRegistry } from '../../../../src/state/farm-registry.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
@@ -57,21 +58,44 @@ class FakeCollectEggs implements Pick<CollectEggsSkill, 'run'> {
   }
 }
 
-async function setup(withCollectEggs = false) {
+class FakePlantTrees implements Pick<PlantTreesSkill, 'run'> {
+  readonly calls: unknown[] = []
+  result: Awaited<ReturnType<PlantTreesSkill['run']>> = ok({
+    mode: 'replant',
+    species: 'oak',
+    requested: 2,
+    planted: 2,
+    skipped: 0,
+    saplingsMissing: 0,
+    spots: [],
+    capacity: undefined,
+    rejected: undefined,
+    farm: 'farm-1',
+    protectedArea: false,
+  })
+  run(input: unknown) {
+    this.calls.push(input)
+    return Promise.resolve(this.result)
+  }
+}
+
+async function setup(withCollectEggs = false, withPlantTrees = false) {
   const farms = new FarmRegistry(new FakeClock(0))
   await farms.attach(new InMemoryStateStore())
   const harvest = new FakeHarvest()
   const plant = new FakePlant()
   const herd = new FakeHerd()
   const collectEggs = new FakeCollectEggs()
+  const plantTrees = new FakePlantTrees()
   const skill = new TendFarmSkill({
     farms,
     harvest: harvest as unknown as HarvestCropsSkill,
     plant: plant as unknown as PlantCropsSkill,
     herd: herd as unknown as HerdManager,
     collectEggs: withCollectEggs ? (collectEggs as unknown as CollectEggsSkill) : undefined,
+    plantTrees: withPlantTrees ? (plantTrees as unknown as PlantTreesSkill) : undefined,
   })
-  return { farms, harvest, plant, herd, collectEggs, skill }
+  return { farms, harvest, plant, herd, collectEggs, plantTrees, skill }
 }
 
 const bounds = { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 64, z: 2 } }
@@ -263,6 +287,56 @@ describe('TendFarmSkill', () => {
     expect(groveResult?.problem).toBe('grove is not tended yet.')
     const fieldResult = result.value.components.find((c) => c.kind === 'field')
     expect(fieldResult?.harvested).toBe(3)
+  })
+
+  it('refills the empty spots of a grove, never felling, and reports the saplings planted', async () => {
+    const s = await setup(false, true)
+    const entry = s.farms.register({ kind: 'grove', crop: 'oak', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        components: [
+          {
+            id: entry.value.id,
+            kind: 'grove',
+            harvested: 0,
+            replanted: 0,
+            planted: 2,
+            herdSizeBefore: undefined,
+            herdAction: undefined,
+            eggsPickedUp: undefined,
+            eggsStored: undefined,
+            eggsReleased: undefined,
+            problem: undefined,
+          },
+        ],
+      },
+    })
+    expect(s.plantTrees.calls).toEqual([
+      expect.objectContaining({ farm: entry.value.id, count: undefined, area: undefined, preview: false }),
+    ])
+  })
+
+  it('reports why a grove could not be refilled without failing the rest', async () => {
+    const s = await setup(false, true)
+    const grove = s.farms.register({ kind: 'grove', crop: 'oak', bounds, group: 'home' })
+    const field = s.farms.register({ kind: 'field', crop: 'wheat', bounds, group: 'home' })
+    if (!grove.ok || !field.ok) throw new Error('setup failed')
+    s.plantTrees.result = err({ reason: 'no_count', message: 'Say how many trees to plant.' })
+
+    const result = await s.skill.run({ farm: 'home' }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components.find((c) => c.kind === 'grove')).toMatchObject({
+      planted: 0,
+      problem: 'Say how many trees to plant.',
+    })
+    expect(result.value.components.find((c) => c.kind === 'field')?.harvested).toBe(3)
   })
 
   it('does not plant when the field has no crop set', async () => {

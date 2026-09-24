@@ -175,6 +175,7 @@ describe('FarmRegistry', () => {
         crop: 'wheat',
         species: null,
         herdTarget: null,
+        spots: null,
         bounds: bounds(0, 0, 2, 2),
         label: 'old field',
         group: null,
@@ -182,6 +183,76 @@ describe('FarmRegistry', () => {
         registeredAt: '2026-01-01T00:00:00.000Z',
       },
     ])
+  })
+})
+
+describe('FarmRegistry groves', () => {
+  it('registers a grove with its spots and adds more later without duplicates', async () => {
+    const { farms } = await registry()
+    const entry = farms.register({
+      kind: 'grove',
+      crop: 'oak',
+      bounds: bounds(0, 0, 10, 10),
+      spots: [{ x: 1, y: 65, z: 1, size: 1 }],
+    })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const updated = farms.addSpots(entry.value.id, [
+      { x: 1, y: 65, z: 1, size: 1 },
+      { x: 5, y: 65, z: 5, size: 2 },
+    ])
+
+    expect(updated).toMatchObject({
+      ok: true,
+      value: {
+        spots: [
+          { x: 1, y: 65, z: 1, size: 1 },
+          { x: 5, y: 65, z: 5, size: 2 },
+        ],
+      },
+    })
+    expect(farms.addSpots('farm-99', []).ok).toBe(false)
+  })
+
+  it('has no spots unless given, and cannot add them without a world', async () => {
+    const { farms } = await registry()
+    const entry = farms.register({ kind: 'grove', bounds: bounds(0, 0, 4, 4) })
+    if (!entry.ok) throw new Error(entry.error)
+    expect(entry.value.spots).toBeNull()
+    expect(farms.addSpots(entry.value.id, [{ x: 0, y: 64, z: 0, size: 1 }])).toMatchObject({
+      ok: true,
+      value: { spots: [{ x: 0, y: 64, z: 0, size: 1 }] },
+    })
+    farms.detach()
+    expect(farms.addSpots(entry.value.id, []).ok).toBe(false)
+  })
+
+  it('migrates a version-2 document (from before groves had spots)', async () => {
+    const store = new InMemoryStateStore()
+    store.files.set('farms', {
+      version: 2,
+      data: {
+        farms: [
+          {
+            id: 'farm-1',
+            kind: 'pen',
+            crop: null,
+            species: 'cow',
+            herdTarget: 4,
+            bounds: bounds(0, 0, 2, 2),
+            label: null,
+            group: null,
+            builtByBot: true,
+            registeredAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        nextId: 2,
+      },
+    })
+
+    const { farms } = await registry(store)
+
+    expect(farms.all()[0]).toMatchObject({ species: 'cow', herdTarget: 4, spots: null })
   })
 })
 

@@ -135,10 +135,12 @@ import {
   BuildFarmTool,
   CollectEggsTool,
   HarvestCropsTool,
+  HarvestTreesTool,
   InspectFarmTool,
   ListFarmsTool,
   LureAnimalsTool,
   PlantCropsTool,
+  PlantTreesTool,
   RegisterFarmTool,
   SetEggPolicyTool,
   TendFarmTool,
@@ -229,11 +231,14 @@ import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
 import { CollectEggsSkill } from './skills/farming/collect-eggs-skill.js'
 import { EggThrower } from './skills/farming/egg-thrower.js'
 import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
+import { GroveSpotFinder } from './skills/farming/grove-spots.js'
 import { HarvestCropsSkill } from './skills/farming/harvest-crops-skill.js'
+import { HarvestTreesSkill } from './skills/farming/harvest-trees-skill.js'
 import { HerdManager } from './skills/farming/herd-manager.js'
 import { InspectFarmSkill } from './skills/farming/inspect-farm-skill.js'
 import { LureAnimalsSkill } from './skills/farming/lure-animals-skill.js'
 import { PlantCropsSkill } from './skills/farming/plant-crops-skill.js'
+import { PlantTreesSkill } from './skills/farming/plant-trees-skill.js'
 import { AnimalPenProvider } from './skills/farming/providers/animal-pen.js'
 import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
@@ -828,6 +833,25 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inventory,
     farms: farmRegistry,
   })
+  const plantTrees = new PlantTreesSkill({
+    blocks,
+    navigator,
+    placer: constructionPlacer,
+    inventory,
+    farms: farmRegistry,
+    finder: new GroveSpotFinder({ blocks, guard: protectedAreas, farms: farmRegistry }),
+    protectedAreas,
+  })
+  const harvestTrees = new HarvestTreesSkill({
+    blocks,
+    navigator,
+    digger: constructionDigger,
+    placer: constructionPlacer,
+    drops: dropCollector,
+    inventory,
+    guard: protectedAreas,
+    farms: farmRegistry,
+  })
   const buildFarmSkill = new BuildFarmSkill({
     registry: farmLayouts,
     executor: planExecutor,
@@ -903,6 +927,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     plant: plantCrops,
     herd: herdManager,
     collectEggs,
+    plantTrees,
   })
   const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })
   // Server commands (teleporting), which only work when the server lets the bot use them.
@@ -997,6 +1022,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BuildFarmTool(buildFarmSkill, launcher))
     .register(new PlantCropsTool(plantCrops, launcher))
     .register(new HarvestCropsTool(harvestCrops, launcher))
+    .register(new PlantTreesTool(plantTrees, launcher))
+    .register(new HarvestTreesTool(harvestTrees, launcher))
     .register(new LureAnimalsTool(lureAnimals, launcher))
     .register(new BreedAnimalsTool(breedAnimals, launcher))
     .register(new CollectEggsTool(collectEggs, launcher))
