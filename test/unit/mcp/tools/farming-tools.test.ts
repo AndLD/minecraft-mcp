@@ -7,6 +7,7 @@ import {
   BuildFarmTool,
   CollectEggsTool,
   CollectSaplingsTool,
+  DiscoverFarmTool,
   HarvestCropsTool,
   HarvestTreesTool,
   InspectFarmTool,
@@ -40,6 +41,7 @@ import type {
   HarvestTreesInput,
   HarvestTreesSkill,
 } from '../../../../src/skills/farming/harvest-trees-skill.js'
+import type { DiscoverFarmSkill } from '../../../../src/skills/farming/discover-farm-skill.js'
 import type {
   CollectSaplingsInput,
   CollectSaplingsSkill,
@@ -499,6 +501,55 @@ describe('InspectFarmTool', () => {
     const result = await tool.execute(tool.inputSchema.parse({ farm: 'nope' }), context)
 
     expect(result).toEqual({ ok: false, error: 'no such farm' })
+  })
+})
+
+describe('DiscoverFarmTool', () => {
+  it('passes the place, radius, and group through and returns the proposals', async () => {
+    const runs: unknown[] = []
+    const skill = {
+      run: (input: unknown) => {
+        runs.push(input)
+        return Promise.resolve(ok({ proposals: [{ kind: 'field' }], alreadyRegistered: [] }))
+      },
+    } as unknown as DiscoverFarmSkill
+    const tool = new DiscoverFarmTool(skill)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ around: { x: 1, y: 64, z: 2 }, radius: 30, group: 'home' }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({ around: { x: 1, y: 64, z: 2 }, radius: 30, group: 'home' })
+    expect(result).toMatchObject({ ok: true, data: { proposals: [{ kind: 'field' }] } })
+  })
+
+  it('looks around the bot within 24 blocks by default, and limits the radius', async () => {
+    const runs: unknown[] = []
+    const skill = {
+      run: (input: unknown) => {
+        runs.push(input)
+        return Promise.resolve(ok({ proposals: [] }))
+      },
+    } as unknown as DiscoverFarmSkill
+    const tool = new DiscoverFarmTool(skill)
+
+    await tool.execute(tool.inputSchema.parse({}), context)
+
+    expect(runs[0]).toEqual({ around: undefined, radius: 24, group: undefined })
+    expect(tool.inputSchema.safeParse({ radius: 3 }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ radius: 49 }).success).toBe(false)
+  })
+
+  it('reports a failure', async () => {
+    const skill = {
+      run: () => Promise.resolve(err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })),
+    } as unknown as DiscoverFarmSkill
+    const tool = new DiscoverFarmTool(skill)
+
+    const result = await tool.execute(tool.inputSchema.parse({}), context)
+
+    expect(result).toEqual({ ok: false, error: 'Not connected to a Minecraft world.' })
   })
 })
 

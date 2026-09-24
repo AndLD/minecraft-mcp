@@ -111,6 +111,7 @@ describe('MCP server over an in-memory transport', () => {
         'set_egg_policy',
         'tend_farm',
         'inspect_farm',
+        'discover_farm',
         'list_farms',
         'register_farm',
       ].sort(),
