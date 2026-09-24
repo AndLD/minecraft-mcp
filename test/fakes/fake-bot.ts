@@ -363,6 +363,54 @@ export class FakeBot implements BotLike {
     this.blocks.set(key(position), name)
     // Any change to the block starts a fresh growth stage (a freshly placed crop is not still the old one's age).
     this.cropAges.delete(key(position))
+    if (!FakeBot.isSign(name)) this.signs.delete(key(position))
+  }
+
+  private static isSign(name: string): boolean {
+    return /_(wall_)?sign$/.test(name) && !name.includes('hanging')
+  }
+
+  /** Signs by cell: the text of each side (lines joined with newlines), waxed, and where the front faces. */
+  readonly signs = new Map<
+    string,
+    { front: string; back: string; waxed: boolean; facing: string | undefined; rotation: number | undefined }
+  >()
+  /** Cells whose editor the server has opened for the bot: only there does `updateSign` change anything. */
+  private readonly signEditors = new Set<string>()
+  readonly signUpdates: { position: Position; text: string; back: boolean }[] = []
+  /** Makes `updateSign` do nothing, like a server that refuses the text. */
+  ignoreSignUpdates = false
+
+  /** Puts a sign into the world for a test (a player's sign, possibly waxed). */
+  setSign(
+    position: Position,
+    options: {
+      name?: string
+      front?: string
+      back?: string
+      waxed?: boolean
+      facing?: string
+      rotation?: number
+    } = {},
+  ): void {
+    this.setBlock(position, options.name ?? 'oak_wall_sign')
+    this.signs.set(key(position), {
+      front: options.front ?? '',
+      back: options.back ?? '',
+      waxed: options.waxed ?? false,
+      facing: options.facing ?? (options.rotation === undefined ? 'north' : undefined),
+      rotation: options.rotation,
+    })
+  }
+
+  updateSign(block: BlockLike, text: string, back = false): void {
+    const position = (block as FakeBlock).position
+    this.signUpdates.push({ position, text, back })
+    const cell = key(position)
+    const sign = this.signs.get(cell)
+    if (this.ignoreSignUpdates || sign === undefined || !this.signEditors.has(cell) || sign.waxed)
+      return
+    this.signs.set(cell, { ...sign, [back ? 'back' : 'front']: text })
   }
 
   blockAt(position: Position): FakeBlock | null {
@@ -384,8 +432,16 @@ export class FakeBot implements BotLike {
         y: Math.floor(position.y),
         z: Math.floor(position.z),
       },
+      getSignText: () => {
+        const sign = this.signs.get(cellKey)
+        return [sign?.front ?? '', sign?.back ?? '']
+      },
+      blockEntity: { is_waxed: this.signs.get(cellKey)?.waxed === true ? 1 : 0 },
       getProperties: () => {
         const props: Record<string, unknown> = {}
+        const sign = this.signs.get(cellKey)
+        if (sign?.facing !== undefined) props['facing'] = sign.facing
+        if (sign?.rotation !== undefined) props['rotation'] = String(sign.rotation)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
         if (classifySwitch(name) !== undefined)
           props['powered'] = this.switchPowered.get(cellKey) ?? false
@@ -558,6 +614,14 @@ export class FakeBot implements BotLike {
       }
     } else if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
       this.setBlock(position, 'farmland')
+    } else if (FakeBot.isSign(block.name)) {
+      // Right-clicking a sign that is not waxed opens its editor for the bot.
+      if (this.signs.get(cellKey)?.waxed !== true) {
+        this.signEditors.add(cellKey)
+        queueMicrotask(() => {
+          this.emit('signOpen', block)
+        })
+      }
     } else if (block.name.endsWith('_bed')) {
       // Using a bed sets the respawn point (unless a test made it refuse) and, at night, lies the bot down.
       this.bedsUsed.push(position)
@@ -730,7 +794,7 @@ export class FakeBot implements BotLike {
         (this.heldItem !== null &&
           data.harvestTools[this.registry.itemsByName[this.heldItem.name]?.id ?? -1] === true)
       if (harvestable)
-        this.dropItem(this.drops[block.name] ?? block.name, 1, {
+        this.dropItem(this.drops[block.name] ?? block.name.replace(/_wall_sign$/, '_sign'), 1, {
           x: at.x + 0.5,
           y: this.groundLevel(at) + 0.3,
           z: at.z + 0.5,
@@ -787,12 +851,36 @@ export class FakeBot implements BotLike {
     const target = { x: base.x + face.x, y: base.y + face.y, z: base.z + face.z }
     const name = this.heldItem?.name
     if (name === undefined) return Promise.reject(new Error('Nothing in hand'))
+    if (!this.sneaking && FakeBot.USABLE.test(reference.name))
+      return Promise.reject(
+        new Error(
+          `Server did not answer the placement at ${String(target.x)},${String(target.y)},${String(target.z)}: the click used the ${reference.name}`,
+        ),
+      )
     this.removeItems(name, 1)
     this.heldItem = this.count(name) > 0 ? { name, count: this.count(name) } : null
-    this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
+    if (FakeBot.isSign(name)) this.placeSign(name, target, face)
+    else this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
     this.placed.push({ name, position: target })
     this.settle()
     return Promise.resolve()
+  }
+
+  /** A sign item on a top face is a standing sign (turned like the server turns it, to face the bot); on a side, a wall sign. */
+  private placeSign(name: string, target: Position, face: Position): void {
+    const standing = face.y === 1
+    this.setBlock(target, standing ? name : name.replace(/_sign$/, '_wall_sign'))
+    let facing: string | undefined
+    let rotation: number | undefined
+    if (standing) {
+      const from = this.entity?.position ?? target
+      // The game's own yaw (0 looks south, 90 west) of the bot looking at the cell; the sign turns to face the placer.
+      const yaw = Math.atan2(-(target.x + 0.5 - from.x), target.z + 0.5 - from.z)
+      rotation = ((Math.floor(((yaw * 180) / Math.PI + 180) * 16 / 360 + 0.5) % 16) + 16) % 16
+    } else facing = face.x === 1 ? 'east' : face.x === -1 ? 'west' : face.z === 1 ? 'south' : 'north'
+    this.signs.set(key(target), { front: '', back: '', waxed: false, facing, rotation })
+    // The server opens the editor for whoever placed the sign.
+    this.signEditors.add(key(target))
   }
 
   /** Container contents by block cell; each is the container's slot list. */
@@ -944,11 +1032,18 @@ export class FakeBot implements BotLike {
     return Promise.resolve()
   }
 
+  /** Whether the bot holds sneak. */
+  sneaking = false
+
+  /** Blocks a right click uses (opens, toggles) instead of placing a block against them, unless the bot sneaks. */
+  private static readonly USABLE = /(^|_)(chest|barrel|crafting_table|furnace|door|button|lever|shulker_box)$/
+
   /** When true the bot jumps (1.25 blocks up) and falls until it stands on something solid, so it can pillar up. */
   physics = false
 
-  setControlState(control: 'jump' | 'sprint', active: boolean): void {
+  setControlState(control: 'jump' | 'sprint' | 'sneak', active: boolean): void {
     this.controlStates.push({ control, active })
+    if (control === 'sneak') this.sneaking = active
     const position = this.entity?.position
     if (this.physics && control === 'jump' && active && position !== undefined)
       this.entity = { position: { ...position, y: Math.floor(position.y) + 1.25 } }

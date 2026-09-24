@@ -357,6 +357,42 @@ describe('MineflayerPlacer', () => {
     expect(bot.placed).toEqual([{ name: 'crafting_table', position: { x: 2, y: 64, z: 0 } }])
   })
 
+  it('holds sneak while placing against a block that a click would use, and lets go afterwards', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'chest')
+    bot.setBlock({ x: 2, y: 64, z: 1 }, 'air')
+    bot.inventoryItems = [{ name: 'oak_sign', count: 1 }]
+    const placer = new MineflayerPlacer(holderOf(bot))
+    const chest = { x: 2, y: 64, z: 0 }
+    const south = { x: 0, y: 0, z: 1 }
+
+    const refused = await placer.placeAgainst('oak_sign', chest, south)
+    const placed = await placer.placeAgainst('oak_sign', chest, south, { sneak: true })
+
+    expect(refused).toMatchObject({ ok: false, error: { reason: 'failed' } })
+    expect(placed).toEqual({ ok: true, value: undefined })
+    expect(bot.placed).toEqual([{ name: 'oak_sign', position: { x: 2, y: 64, z: 1 } }])
+    expect(bot.controlStates).toEqual([
+      { control: 'sneak', active: true },
+      { control: 'sneak', active: false },
+    ])
+    expect(bot.sneaking).toBe(false)
+  })
+
+  it('lets go of sneak also when the placement fails', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.inventoryItems = [{ name: 'oak_sign', count: 1 }]
+    bot.heldItem = null
+    const placer = new MineflayerPlacer(holderOf(bot))
+    bot.placeBlock = () => Promise.reject(new Error('refused'))
+
+    const result = await placer.placeAgainst('oak_sign', { x: 2, y: 64, z: 0 }, { x: 0, y: 0, z: 1 }, { sneak: true })
+
+    expect(result).toMatchObject({ ok: false })
+    expect(bot.sneaking).toBe(false)
+  })
+
   it('refuses without the item, without support, and without a bot', async () => {
     const bot = gameBot()
     bot.setBlock({ x: 2, y: 63, z: 0 }, 'air')

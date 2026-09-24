@@ -192,6 +192,7 @@ import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
+import { SignRegistry } from './state/sign-registry.js'
 import { SleepPolicy } from './state/sleep-policy.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
@@ -262,6 +263,14 @@ import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
 import { PlaceMinecartSkill } from './skills/railway/place-minecart-skill.js'
 import { MineflayerBedAccess } from './bot/mineflayer-bed-access.js'
+import { MineflayerSignAccess } from './bot/mineflayer-sign-access.js'
+import { EditSignSkill } from './skills/signs/edit-sign-skill.js'
+import { PlaceSignSkill } from './skills/signs/place-sign-skill.js'
+import { RemoveSignSkill } from './skills/signs/remove-sign-skill.js'
+import { SignReader } from './skills/signs/sign-reader.js'
+import { SignSupplies } from './skills/signs/sign-supplies.js'
+import { SignTargeter } from './skills/signs/sign-target.js'
+import { EditSignTool, PlaceSignTool, ReadSignsTool, RemoveSignTool } from './mcp/tools/sign-tools.js'
 import { MineflayerSleeper } from './bot/mineflayer-sleeper.js'
 import { BedFinder } from './skills/sleeping/bed-finder.js'
 import { NightResponder } from './skills/sleeping/night-responder.js'
@@ -419,6 +428,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const eggPolicy = new EggPolicy()
   const railwayLog = new RailwayLog(clock)
   const bedRegistry = new BedRegistry(clock)
+  const signRegistry = new SignRegistry(clock)
   const sleepPolicy = new SleepPolicy()
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
@@ -445,6 +455,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       eggPolicy,
       railwayLog,
       bedRegistry,
+      signRegistry,
       sleepPolicy,
       storageRules,
       storagePolicy,
@@ -884,6 +895,43 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   })
   const lookTarget = new MineflayerLookTarget(connection)
   const wallTarget = new WallTarget(lookTarget, blocks, entities)
+  // Signs: put up, change, take down, and read, named by what the player looks at or points to.
+  const signAccess = new MineflayerSignAccess(connection, scheduler)
+  const signReader = new SignReader(blocks, signAccess, signRegistry)
+  const signTargeter = new SignTargeter(blocks, lookTarget, signReader)
+  const placeSign = new PlaceSignSkill({
+    vitals,
+    blocks,
+    signs: signAccess,
+    navigator,
+    placer: constructionPlacer,
+    guard: protectedAreas,
+    supplies: new SignSupplies({
+      inventory,
+      index: containerIndex,
+      fetcher: materialFetcher,
+      crafter: new CraftingSupplies(craftItem),
+    }),
+    registry: signRegistry,
+    scheduler,
+  })
+  const editSign = new EditSignSkill({
+    signs: signAccess,
+    navigator,
+    guard: protectedAreas,
+    registry: signRegistry,
+    scheduler,
+  })
+  const removeSign = new RemoveSignSkill({
+    blocks,
+    signs: signAccess,
+    navigator,
+    digger: constructionDigger,
+    drops: dropCollector,
+    inventory,
+    guard: protectedAreas,
+    registry: signRegistry,
+  })
   const pressSwitch = new PressSwitchSkill({ blocks, switches, doors, navigator })
   const openDoor = new OpenDoorSkill({ blocks, doors, navigator, opener: ironDoorOpener, vitals })
   const excavations = new ExcavationRegistry()
@@ -1110,6 +1158,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new SleepTool(sleepSkill, launcher))
     .register(new SetRespawnPointTool(setRespawnPoint, launcher))
     .register(new PlaceBedTool(placeBed, launcher))
+    .register(
+      new PlaceSignTool(placeSign, launcher, lookTarget, containerIndex, entities, config.owner),
+    )
+    .register(new EditSignTool(editSign, launcher, signTargeter, config.owner))
+    .register(new RemoveSignTool(removeSign, launcher, signTargeter, config.owner))
+    .register(new ReadSignsTool(signReader))
     .register(new ListBedsTool(bedRegistry))
     .register(new SetSleepPolicyTool(sleepPolicy, standing))
     .register(new CollectBlockTool(collectBlocks, structuredGather, launcher, collectSaplings))

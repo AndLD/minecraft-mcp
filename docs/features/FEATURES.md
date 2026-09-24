@@ -48,6 +48,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | [Dug rooms](world/dug-rooms.md) | The `room` shape, wall targeting, entrance modes, doors | Excavation, Construction and building |
 | [Opening ordinary doors](world/opening-ordinary-doors.md) | `DoorOpeningNavigator`, gates and trapdoors | Tasks |
 | [Iron doors and switches](world/iron-doors-and-switches.md) | Buttons, levers, plates, `set_switch_policy`, `open_door` | Opening ordinary doors, Persistent state |
+| [Signs](world/signs.md) | `place_sign`, `edit_sign`, `remove_sign`, `read_signs`, sneaking while placing, `SignRegistry` | Storage, Construction and building, Persistent state, Gathering, crafting, smelting |
 | [Railways](world/railways.md) | Route planning, power layout, verification, `place_minecart` | Construction and building, Excavation, Storage (optional) |
 
 ## Farming

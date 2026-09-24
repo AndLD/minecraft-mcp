@@ -1,4 +1,4 @@
-import type { PlaceFailure, Placer } from '../core/placer.port.js'
+import type { PlaceFailure, PlaceOptions, Placer } from '../core/placer.port.js'
 import type { Position } from '../core/position.types.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { BlockLike, BotHolder, BotLike } from './bot-like.types.js'
@@ -10,6 +10,8 @@ const fail = (reason: PlaceFailure['reason'], message: string): Result<never, Pl
 const UP = toVec3({ x: 0, y: 1, z: 0 })
 /** The server needs a moment to turn the bot and to act on the bucket. */
 const BUCKET_TICKS = 5
+/** The server must have learned that the bot sneaks before the click arrives. */
+const SNEAK_TICKS = 3
 
 export class MineflayerPlacer implements Placer {
   constructor(private readonly holder: BotHolder) {}
@@ -33,6 +35,7 @@ export class MineflayerPlacer implements Placer {
     itemName: string,
     reference: Position,
     face: Position,
+    options: PlaceOptions = {},
   ): Promise<Result<void, PlaceFailure>> {
     const bot = this.holder.current()
     if (bot === undefined) return fail('not_connected', 'Not connected to a Minecraft world.')
@@ -44,7 +47,15 @@ export class MineflayerPlacer implements Placer {
     const block = bot.blockAt(toVec3(reference))
     if (block === null || block.boundingBox !== 'block')
       return fail('no_support', 'There is no solid block to place it against.')
-    return this.place(bot, id, block, toVec3(face))
+    if (options.sneak !== true) return this.place(bot, id, block, toVec3(face))
+
+    bot.setControlState('sneak', true)
+    try {
+      await bot.waitForTicks(SNEAK_TICKS)
+      return await this.place(bot, id, block, toVec3(face))
+    } finally {
+      bot.setControlState('sneak', false)
+    }
   }
 
   private async place(

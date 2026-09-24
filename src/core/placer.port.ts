@@ -6,6 +6,14 @@ export interface PlaceFailure {
   readonly message: string
 }
 
+export interface PlaceOptions {
+  /**
+   * Hold sneak while placing. A click on a chest, barrel, crafting table, door, or button uses it instead of putting a
+   * block against it; sneaking makes the game place the block. Needed to hang a sign on a chest.
+   */
+  readonly sneak?: boolean
+}
+
 export interface Placer {
   /** Puts a block from the inventory into the empty cell at `target`, against the block below it. */
   placeAt(itemName: string, target: Position): Promise<Result<void, PlaceFailure>>
@@ -18,5 +26,6 @@ export interface Placer {
     itemName: string,
     reference: Position,
     face: Position,
+    options?: PlaceOptions,
   ): Promise<Result<void, PlaceFailure>>
 }
