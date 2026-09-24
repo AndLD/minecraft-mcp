@@ -3,6 +3,7 @@ import { err, ok } from '../../../../src/core/result.js'
 import type { SkillContext, SkillResult } from '../../../../src/core/skill.types.js'
 import { TaskLauncher } from '../../../../src/mcp/task-launcher.js'
 import { CollectBlockTool } from '../../../../src/mcp/tools/collect-block-tool.js'
+import type { CollectSaplingsSkill } from '../../../../src/skills/farming/collect-saplings-skill.js'
 import type { StructuredGatherSkill } from '../../../../src/skills/gathering/structured-gather-skill.js'
 import { CraftTool } from '../../../../src/mcp/tools/craft-tool.js'
 import { ListRecipesTool } from '../../../../src/mcp/tools/list-recipes-tool.js'
@@ -316,6 +317,170 @@ describe('CollectBlockTool: structured layout', () => {
 
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('not_connected') })
     expect(scatteredInputs).toHaveLength(0) // never falls back for this reason
+  })
+})
+
+describe('CollectBlockTool: saplings', () => {
+  interface SaplingInput {
+    species: string | undefined
+    count: number
+    maxLeaves: number | undefined
+    maxDistance: number
+    onInventoryFull: string | undefined
+  }
+
+  function wired(
+    gained: { name: string; count: number }[],
+    saplings: (input: SaplingInput) => SkillResult<unknown> = () => ok({ saplings: 3, leaves: 44 }),
+  ) {
+    const { launcher, tasks } = launching()
+    const logs = stubSkill('collect_block', () => ok({ mined: 4, requested: 4, gained }))
+    const got = stubSkill<SaplingInput>('collect_saplings', saplings)
+    const tool = new CollectBlockTool(
+      logs.skill as unknown as CollectBlocksSkill,
+      undefined,
+      launcher,
+      got.skill as unknown as CollectSaplingsSkill,
+    )
+    return { tool, tasks, logs, got }
+  }
+
+  it('does nothing about saplings unless asked', async () => {
+    const { tool, got } = wired([])
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], count: 4 }), context)
+
+    expect(got.inputs).toEqual([])
+    expect(result).toMatchObject({ ok: true, data: { result: { mined: 4 } } })
+    expect(result.ok && (result.data as { result: object }).result).not.toHaveProperty('saplings')
+  })
+
+  it('collects the saplings of the species being cut once the logs are done', async () => {
+    const { tool, got } = wired([{ name: 'oak_log', count: 4 }])
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['oak_log'], count: 4, saplings: 3, max_distance: 20 }),
+      context,
+    )
+
+    expect(got.inputs[0]).toEqual({
+      species: 'oak',
+      count: 3,
+      maxLeaves: undefined,
+      maxDistance: 20,
+      onInventoryFull: undefined,
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        result: {
+          mined: 4,
+          saplings: { requested: 3, gained: 3, leaves: 44, stoppedBecause: 'enough' },
+        },
+      },
+    })
+  })
+
+  it('counts the saplings the log run already gained, and skips the leaves when that is enough', async () => {
+    const some = wired([{ name: 'oak_sapling', count: 1 }, { name: 'birch_sapling', count: 9 }])
+    const plenty = wired([{ name: 'oak_sapling', count: 5 }])
+
+    await some.tool.execute(some.tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 3 }), context)
+    const enough = await plenty.tool.execute(
+      plenty.tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 3 }),
+      context,
+    )
+
+    expect(some.got.inputs[0]).toMatchObject({ species: 'oak', count: 2 })
+    expect(plenty.got.inputs).toEqual([])
+    expect(enough).toMatchObject({
+      ok: true,
+      data: { result: { saplings: { requested: 3, gained: 5, leaves: 0, stoppedBecause: 'enough' } } },
+    })
+  })
+
+  it('takes any species for a group of logs, and counts them all', async () => {
+    const { tool, got } = wired([{ name: 'birch_sapling', count: 1 }])
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['logs'], saplings: 2 }), context)
+
+    expect(got.inputs[0]).toMatchObject({ species: undefined, count: 1 })
+  })
+
+  it('reports coming up short without failing the logs', async () => {
+    const { tool } = wired([], () =>
+      err({ reason: 'leaf_budget', message: 'Broke 120 leaves.', detail: { saplings: 2, requested: 5, leaves: 120 } }),
+    )
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 5 }), context)
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        status: 'succeeded',
+        result: { mined: 4, saplings: { requested: 5, gained: 2, leaves: 120, stoppedBecause: 'leaf_budget' } },
+      },
+    })
+  })
+
+  it('reports a failure without details as zero saplings', async () => {
+    const { tool } = wired([], () => err({ reason: 'no_leaves', message: 'none' }))
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 2 }), context)
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { result: { saplings: { gained: 0, leaves: 0, stoppedBecause: 'no_leaves' } } },
+    })
+  })
+
+  it('is cancelled when the sapling stage is', async () => {
+    const { tool } = wired([], () => err({ reason: 'aborted', message: 'Cancelled.' }))
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 2 }), context)
+
+    expect(result).toMatchObject({ ok: false })
+  })
+
+  it('leaves a failed log run alone', async () => {
+    const { launcher } = launching()
+    const logs = stubSkill('collect_block', () => err({ reason: 'block_not_found', message: 'no logs' }))
+    const got = stubSkill<SaplingInput>('collect_saplings')
+    const tool = new CollectBlockTool(
+      logs.skill as unknown as CollectBlocksSkill,
+      undefined,
+      launcher,
+      got.skill as unknown as CollectSaplingsSkill,
+    )
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 2 }), context)
+
+    expect(got.inputs).toEqual([])
+  })
+
+  it('ignores saplings when no sapling skill is wired in', async () => {
+    const { launcher } = launching()
+    const logs = stubSkill('collect_block', () => ok({ mined: 1, gained: [] }))
+    const tool = new CollectBlockTool(logs.skill as unknown as CollectBlocksSkill, undefined, launcher)
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], saplings: 2 }), context)
+
+    expect(result).toMatchObject({ ok: true, data: { result: { mined: 1 } } })
+  })
+
+  it('remembers the saplings in what a resumed task asks for', async () => {
+    const { tool, tasks } = wired([])
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'], count: 4, saplings: 3 }), context)
+
+    expect(tasks.latest()?.resume?.arguments).toMatchObject({ blocks: ['oak_log'], saplings: 3 })
+  })
+
+  it('rejects a sapling count out of range', () => {
+    const { tool } = wired([])
+
+    expect(tool.inputSchema.safeParse({ blocks: ['oak_log'], saplings: 0 }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ blocks: ['oak_log'], saplings: 65 }).success).toBe(false)
   })
 })
 

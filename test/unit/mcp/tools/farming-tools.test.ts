@@ -6,6 +6,7 @@ import {
   BreedAnimalsTool,
   BuildFarmTool,
   CollectEggsTool,
+  CollectSaplingsTool,
   HarvestCropsTool,
   HarvestTreesTool,
   InspectFarmTool,
@@ -39,6 +40,10 @@ import type {
   HarvestTreesInput,
   HarvestTreesSkill,
 } from '../../../../src/skills/farming/harvest-trees-skill.js'
+import type {
+  CollectSaplingsInput,
+  CollectSaplingsSkill,
+} from '../../../../src/skills/farming/collect-saplings-skill.js'
 import type { PlantTreesInput, PlantTreesSkill } from '../../../../src/skills/farming/plant-trees-skill.js'
 import type { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
 import type {
@@ -371,6 +376,57 @@ describe('PlantTreesTool', () => {
 
     expect(tool.inputSchema.safeParse({ species: 'mangrove', count: 1 }).success).toBe(false)
     expect(tool.inputSchema.safeParse({ species: 'oak', count: 0 }).success).toBe(false)
+  })
+})
+
+describe('CollectSaplingsTool', () => {
+  function stub() {
+    const runs: CollectSaplingsInput[] = []
+    const skill = {
+      name: 'collect_saplings',
+      run: (input: CollectSaplingsInput) => {
+        runs.push(input)
+        return Promise.resolve(ok({ saplings: 3, requested: 3, leaves: 50, gained: [] }))
+      },
+    } as unknown as CollectSaplingsSkill
+    return { runs, skill }
+  }
+
+  it('translates input and runs the skill through the task launcher', async () => {
+    const { launcher, tasks } = launching()
+    const { runs, skill } = stub()
+    const tool = new CollectSaplingsTool(skill, launcher)
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ species: 'birch', count: 3, max_leaves: 90, on_inventory_full: 'stop' }),
+      context,
+    )
+
+    expect(runs[0]).toEqual({
+      species: 'birch',
+      count: 3,
+      maxLeaves: 90,
+      maxDistance: 32,
+      onInventoryFull: 'stop',
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { description: 'Collect 3 birch saplings', result: { saplings: 3, leaves: 50 } },
+    })
+    expect(tasks.latest()?.resume?.tool).toBe('collect_saplings')
+  })
+
+  it('names any species plainly, and asks for a count', async () => {
+    const { launcher } = launching()
+    const { skill } = stub()
+    const tool = new CollectSaplingsTool(skill, launcher)
+
+    const result = await tool.execute(tool.inputSchema.parse({ count: 2 }), context)
+
+    expect(result).toMatchObject({ ok: true, data: { description: 'Collect 2 saplings' } })
+    expect(tool.inputSchema.safeParse({}).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ count: 0 }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ count: 2, species: 'mangrove' }).success).toBe(false)
   })
 })
 

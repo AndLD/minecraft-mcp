@@ -2,7 +2,9 @@ import { z } from 'zod'
 import type { Position } from '../../core/position.types.js'
 import type { ItemCount } from '../../core/recipes.port.js'
 import { err } from '../../core/result.js'
-import type { SkillContext } from '../../core/skill.types.js'
+import type { SkillContext, SkillResult } from '../../core/skill.types.js'
+import type { CollectSaplingsSkill } from '../../skills/farming/collect-saplings-skill.js'
+import { isSaplingName, speciesOfBlocks } from '../../skills/farming/tree-table.js'
 import type { CollectBlocksSkill } from '../../skills/gathering/collect-blocks-skill.js'
 import { BLOCK_ALIAS_NAMES } from '../../skills/gathering/block-aliases.js'
 import { isTerrainBlock } from '../../skills/gathering/structured-gather.js'
@@ -56,6 +58,15 @@ const schema = z.object({
     .describe(
       `Only with layout: "auto". The block count at or above which a bulk terrain request switches to a structured dig (default ${String(DEFAULT_STRUCTURED_THRESHOLD)}).`,
     ),
+  saplings: z
+    .number()
+    .int()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe(
+      'Only when asked for: also collect this many tree saplings once the blocks are done, by breaking leaves (a leaf drops one about 1 time in 20, so it takes many leaves). From a single kind of log ("oak_log") the same species\' saplings, from a group such as "logs" any species; saplings the block run already gained count. Running short does not fail the request: the result has a "saplings" section saying how many it got and why it stopped.',
+    ),
   on_inventory_full: z
     .enum(INVENTORY_FULL_KINDS)
     .optional()
@@ -74,6 +85,17 @@ interface GatherResult {
   readonly origin?: Position
   /** Set when a structured dig was tried and the site was not suitable, so it fell back to a scattered dig. */
   readonly structuredFallbackReason?: string
+  /** Only with `saplings` asked for. */
+  readonly saplings?: SaplingsSection
+}
+
+interface SaplingsSection {
+  readonly requested: number
+  readonly gained: number
+  /** Leaves broken for them. */
+  readonly leaves: number
+  /** `enough`, or why it stopped short (`leaf_budget`, `no_leaves`, ...). */
+  readonly stoppedBecause: string
 }
 
 export class CollectBlockTool implements ToolDefinition<typeof schema> {
@@ -93,6 +115,7 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     private readonly skill: CollectBlocksSkill,
     private readonly structured: StructuredGatherSkill | undefined,
     private readonly launcher: TaskLauncher,
+    private readonly saplings?: CollectSaplingsSkill,
   ) {}
 
   execute(input: z.output<typeof schema>, context: ToolContext) {
@@ -108,10 +131,14 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
         resume: {
           tool: this.name,
           get arguments() {
-            return { ...base, count: Math.max(1, progress.remaining) }
+            return {
+              ...base,
+              count: Math.max(1, progress.remaining),
+              ...(input.saplings === undefined ? {} : { saplings: input.saplings }),
+            }
           },
         },
-        run: (ctx) => this.gather(structuredBlock, input, progress, ctx),
+        run: async (ctx) => this.withSaplings(await this.gather(structuredBlock, input, progress, ctx), input, ctx),
       },
       {
         replace: input.replace,
@@ -136,7 +163,7 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     input: z.output<typeof schema>,
     progress: { remaining: number },
     ctx: SkillContext,
-  ) {
+  ): Promise<SkillResult<GatherResult>> {
     if (structuredBlock === undefined) return this.scattered(input, progress, ctx)
 
     const structured = await this.structured?.run(
@@ -158,11 +185,71 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     }
   }
 
+  /** With `saplings` asked for, collects the saplings the block run did not already bring, and reports on them. */
+  private async withSaplings<T extends { readonly gained: readonly ItemCount[] }>(
+    ran: SkillResult<T>,
+    input: z.output<typeof schema>,
+    ctx: SkillContext,
+  ) {
+    if (!ran.ok || input.saplings === undefined || this.saplings === undefined) return ran
+    const species = speciesOfBlocks(input.blocks)
+    const already = ran.value.gained
+      .filter((item) => isSaplingName(item.name) && (species === undefined || item.name === species.sapling))
+      .reduce((sum, item) => sum + item.count, 0)
+    const missing = input.saplings - already
+    if (missing <= 0)
+      return {
+        ok: true as const,
+        value: {
+          ...ran.value,
+          saplings: { requested: input.saplings, gained: already, leaves: 0, stoppedBecause: 'enough' },
+        },
+      }
+
+    const collected = await this.saplings.run(
+      {
+        species: species?.name,
+        count: missing,
+        maxLeaves: undefined,
+        maxDistance: input.max_distance,
+        onInventoryFull: input.on_inventory_full,
+      },
+      ctx,
+    )
+    if (collected.ok)
+      return {
+        ok: true as const,
+        value: {
+          ...ran.value,
+          saplings: {
+            requested: input.saplings,
+            gained: already + collected.value.saplings,
+            leaves: collected.value.leaves,
+            stoppedBecause: 'enough',
+          },
+        },
+      }
+    if (collected.error.reason === 'aborted') return collected
+    const detail = collected.error.detail
+    return {
+      ok: true as const,
+      value: {
+        ...ran.value,
+        saplings: {
+          requested: input.saplings,
+          gained: already + (typeof detail?.saplings === 'number' ? detail.saplings : 0),
+          leaves: typeof detail?.leaves === 'number' ? detail.leaves : 0,
+          stoppedBecause: collected.error.reason,
+        },
+      },
+    }
+  }
+
   private async scattered(
     input: z.output<typeof schema>,
     progress: { remaining: number },
     ctx: SkillContext,
-  ) {
+  ): Promise<SkillResult<GatherResult>> {
     const ran = await this.skill.run(
       {
         names: input.blocks,
