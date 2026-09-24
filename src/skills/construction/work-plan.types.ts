@@ -23,6 +23,16 @@ export type WorkStep =
       /** The chain this step belongs to: it is skipped when a hazard ends that chain. */
       readonly branch?: string
       /**
+       * The block has no collision (a rail, a torch): the bot can stand in its cell while it is placed, so the cell is
+       * not kept free for it. Without this a line of rails through a tunnel keeps the bot out of the tunnel it is digging.
+       */
+      readonly passable?: boolean
+      /**
+       * The plan clears this cell with a `break` step of its own: wait for that instead of breaking whatever is in the
+       * cell as part of placing (which would dig without the hazard rule and out of order).
+       */
+      readonly clearedFirst?: boolean
+      /**
        * A best-effort placement (a door): counted in `needs`, fetched from storage and crafted from what the bot
        * carries when possible, but never blocks the plan from running or finishing when it cannot be had — unlike an
        * ordinary `place` step, whose material is required.

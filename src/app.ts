@@ -30,6 +30,8 @@ import { MineflayerDoorAccess } from './bot/mineflayer-door-access.js'
 import { MineflayerSwitchAccess } from './bot/mineflayer-switch-access.js'
 import { MineflayerCropAccess } from './bot/mineflayer-crop-access.js'
 import { MineflayerTiller } from './bot/mineflayer-tiller.js'
+import { MineflayerRailAccess } from './bot/mineflayer-rail-access.js'
+import { MineflayerMinecarts } from './bot/mineflayer-minecarts.js'
 import { MineflayerAnimalInteraction } from './bot/mineflayer-animal-interaction.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
@@ -147,6 +149,7 @@ import {
   SetEggPolicyTool,
   TendFarmTool,
 } from './mcp/tools/farming-tools.js'
+import { BuildRailwayTool, PlaceMinecartTool, PlanRailwayTool } from './mcp/tools/railway-tools.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -180,6 +183,7 @@ import { ContainerIndex } from './state/container-index.js'
 import { EggPolicy } from './state/egg-policy.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
+import { RailwayLog } from './state/railway-log.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
 import { SwitchPolicy } from './state/switch-policy.js'
@@ -246,6 +250,10 @@ import { PlantTreesSkill } from './skills/farming/plant-trees-skill.js'
 import { AnimalPenProvider } from './skills/farming/providers/animal-pen.js'
 import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
+import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
+import { PlaceMinecartSkill } from './skills/railway/place-minecart-skill.js'
+import { RailRoutePlanner } from './skills/railway/rail-route-planner.js'
+import { RailVerifier } from './skills/railway/rail-verifier.js'
 import { CraftItemSkill } from './skills/crafting/craft-item-skill.js'
 import { PlacementSpotFinder } from './skills/crafting/placement-spot.js'
 import { RecipePlanner } from './skills/crafting/recipe-planner.js'
@@ -390,6 +398,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const containerIndex = new ContainerIndex(clock)
   const farmRegistry = new FarmRegistry(clock)
   const eggPolicy = new EggPolicy()
+  const railwayLog = new RailwayLog(clock)
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
   const dropRecords = new DropRecords(clock)
@@ -413,6 +422,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       containerIndex,
       farmRegistry,
       eggPolicy,
+      railwayLog,
       storageRules,
       storagePolicy,
       dropRecords,
@@ -872,6 +882,30 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     fetcher: materialFetcher,
     plant: plantCrops,
   })
+  // Railways: the route and its plan are pure reading of the world; the shared plan executor lays them.
+  const buildRailway = new BuildRailwaySkill({
+    planner: new RailRoutePlanner({ blocks, guard: protectedAreas }),
+    blocks,
+    executor: planExecutor,
+    vitals,
+    entities,
+    verifier: new RailVerifier({
+      rails: new MineflayerRailAccess(connection),
+      blocks,
+      navigator,
+      digger: constructionDigger,
+      placer: constructionPlacer,
+      scheduler,
+    }),
+    log: railwayLog,
+    fetcher: materialFetcher,
+  })
+  const placeMinecart = new PlaceMinecartSkill({
+    blocks,
+    navigator,
+    minecarts: new MineflayerMinecarts(connection),
+    log: railwayLog,
+  })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -1046,6 +1080,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new DiscoverFarmTool(discoverFarm))
     .register(new ListFarmsTool(farmRegistry))
     .register(new RegisterFarmTool(farmRegistry))
+    .register(new PlanRailwayTool(buildRailway))
+    .register(new BuildRailwayTool(buildRailway, launcher))
+    .register(new PlaceMinecartTool(placeMinecart, launcher))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))

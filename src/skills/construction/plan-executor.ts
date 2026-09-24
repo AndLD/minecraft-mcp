@@ -377,10 +377,7 @@ export class PlanExecutor {
           const tried = (attempts.get(keyOf(step)) ?? 0) + 1
           attempts.set(keyOf(step), tried)
           if (tried < MAX_ATTEMPTS) pending.push(step)
-          else if (
-            (step.kind === 'break' || step.kind === 'place') &&
-            step.optional === true
-          )
+          else if ((step.kind === 'break' || step.kind === 'place') && step.optional === true)
             skipped.add(keyOf(step))
           else {
             failed.set(keyOf(step), outcome.why)
@@ -499,7 +496,10 @@ export class PlanExecutor {
   private available(step: WorkStep): boolean {
     switch (step.kind) {
       case 'place':
-        return this.support(step.at, step.against) !== undefined
+        return (
+          this.support(step.at, step.against) !== undefined &&
+          (step.clearedFirst !== true || isReplaceable(this.deps.blocks.blockAt(step.at)))
+        )
       case 'break':
         return step.needs === undefined || this.isOpening(this.deps.blocks.blockAt(step.needs))
       case 'light':
@@ -961,7 +961,9 @@ export class PlanExecutor {
     const here = deps.vitals.read()?.position
     if (here === undefined)
       return stop(err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' }))
-    const reserved = new Set(pending.filter((s) => s.kind === 'place').map((s) => cellKey(s.at)))
+    const reserved = new Set(
+      pending.filter((s) => s.kind === 'place' && s.passable !== true).map((s) => cellKey(s.at)),
+    )
     reserved.add(cellKey(step.at))
     const spot = deps.spots.choose({
       target: step.at,
