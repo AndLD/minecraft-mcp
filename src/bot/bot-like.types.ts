@@ -17,6 +17,8 @@ export interface BotEvents {
   messagestr: (message: string) => void
   /** A line shown above the hotbar (sleeping refusals such as "monsters nearby" arrive this way). Its text is `String(message)`. */
   actionBar: (message: unknown) => void
+  /** The server opened a sign's text editor for the bot (after placing a sign, or right-clicking one that is not waxed). */
+  signOpen: (block: BlockLike | null) => void
 }
 
 export interface EntityLike {
@@ -65,6 +67,10 @@ export interface BlockLike {
   readonly light?: number | undefined
   /** Block-state properties (doors, gates, and trapdoors carry `open: boolean`). */
   getProperties?(): Readonly<Record<string, unknown>>
+  /** Signs: the text of the front and the back, each side's lines joined with newlines. */
+  getSignText?(): readonly (string | undefined)[]
+  /** Signs: the block entity data as plain values (`is_waxed` is 0 or 1). */
+  readonly blockEntity?: unknown
 }
 
 /** A crafting recipe as Mineflayer builds it. `delta` lists what changes in the inventory (ingredients negative). */
@@ -184,7 +190,7 @@ export interface BotLike {
     count: number
   }): readonly Position[]
   clearControlStates(): void
-  setControlState(control: 'jump' | 'sprint', active: boolean): void
+  setControlState(control: 'jump' | 'sprint' | 'sneak', active: boolean): void
   /** Puts the item type (an id from `registry.itemsByName`) into the slot. */
   equip(itemType: number, destination: EquipSlot): Promise<void>
   /** Eats or drinks the item in hand. */
@@ -205,6 +211,8 @@ export interface BotLike {
   activateBlock(block: BlockLike): Promise<void>
   /** Right-clicks an entity with whatever is in hand (feeding or breeding an animal is done this way). */
   activateEntity(entity: EntityLike): Promise<void>
+  /** Sends new text for a sign the server opened for editing (lines joined with newlines; back is the reverse side). */
+  updateSign(block: BlockLike, text: string, back?: boolean): void
   /** Lies down in a bed block returned by `blockAt`. Rejects when the game refuses (not night, monsters, too far). */
   sleep(bed: BlockLike): Promise<void>
   wake(): Promise<void>
