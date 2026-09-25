@@ -89,6 +89,16 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Junctions**: joining a new line to an existing one, a branch off a main line, and crossings. Today an existing rail blocks a route (`existing_rail`), so lines never touch. Needs a way to reuse the existing rails as part of the route and to set the switch or junction layout (powered rails and the way a cart is steered).
 - **Detector and activator rails**: for stations (a cart stops at a powered rail with no power, and a detector rail can trigger something when a cart arrives). Not part of a plain line; belongs with stations and junctions.
 
+## Known issues from live sessions
+
+Bugs and gaps found while playing, each written up with the cause and fix ideas under "Known issues" in the feature's own document. Each one moves into the plan (with a `fix/<name>` or `feature/<name>` branch) when it is picked.
+
+- **`lure_animals` reports `penFull` when nothing could be led** and loses chickens that the bot outruns: [Animal farming, known issues](features/farming/animal-farming.md).
+- **Extra grass inside a freshly built pen** leaves cells that are not free, and the pen's own protected area stops the bot from clearing them: [Animal farming, known issues](features/farming/animal-farming.md).
+- **A crop field's single water source leaves the far rows dry** on a 7x7 field: [Animal farming, known issues](features/farming/animal-farming.md).
+- **Gravel and sand stop a dig for good** (`falling_blocks`): [Excavation, known issues](features/world/excavation.md).
+- **No way to dig a route to a specific ore** (`dig_to`): [Excavation, known issues](features/world/excavation.md).
+
 ## Maintenance
 - **`npm audit`** reports moderate issues in Mineflayer's authentication dependencies. They are upstream and unused in offline mode; revisit when Mineflayer updates them.
 - **Node and testcontainers**: `testcontainers` is pinned to 11 because 12 needs Node 22.28 or newer. Revisit when the Node baseline moves.
