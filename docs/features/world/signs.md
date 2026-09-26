@@ -42,6 +42,13 @@ Branch `feature/signs`. A sign is how a label becomes visible in the world: "put
 
 Hanging signs, colour and glow, waxing or dyeing, and `edit_sign` on a sign found only by `beside` (name it by position, text, or look).
 
+## Known issues
+
+Found in a live session, not yet fixed.
+
+- **`place_sign` on top of a fence: the walk to the standing spot fails through an unrelated gate.** Asked for a standing sign on top of a fence beside a field gate (`at` the fence, `face: top`), the bot was already in the corridor next to it, and `goto` to the cell in front of the sign succeeded at once. `place_sign` still failed three times with `unreachable`: "Could not walk to the spot: The oak_fence_gate at 69, 87, 48 would not open", a gate of the chicken pen about 9 blocks away, which the player confirmed was unlocked. The cause is not known. Suspects: the standing spot the `StandingSpotChooser` picks for a fence top lies on the far side of the fence line (inside a pen or field), so the route goes round through the pen gate; or `DoorOpeningNavigator` fails to open a gate the bot is not facing. Next step: log the chosen spot and the route in the failure, and add a unit test with a fence line and a gate.
+- **A torch on top of the fence blocks a standing sign, and the failure gives no way out.** The cell above the fence was taken by a torch (`blocked`), which is the right refusal (the bot never breaks a player's blocks unasked), but the reply only names the torch. Ideas: name the nearest free fence top or wall face in the message, and let the agent pass `replace_block: true` after the player agrees, so it can swap the torch for the sign.
+
 ## Exit criteria
 
 "Put a sign 'Iron' on this chest" (looking at the chest) hangs a wall sign with that text; "change it to 'Ores'" edits it; "take that sign down" removes exactly that sign and picks it up; "what do the signs here say?" lists their text.
