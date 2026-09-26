@@ -97,6 +97,7 @@ Bugs and gaps found while playing, each written up with the cause and fix ideas 
 - **Extra grass inside a freshly built pen** leaves cells that are not free, and the pen's own protected area stops the bot from clearing them: [Animal farming, known issues](features/farming/animal-farming.md).
 - **A crop field's single water source leaves the far rows dry** on a 7x7 field: [Animal farming, known issues](features/farming/animal-farming.md).
 - **`place_sign` on a fence top fails to walk to the spot** (routes through an unrelated gate), and a torch on the fence gives no alternative: [Signs, known issues](features/world/signs.md).
+- **No tool breaks one block at exact coordinates**: `collect_block` always takes the nearest match, so replacing a single stair block in a player's build (found while placing a door) cannot be done safely; the player had to break it by hand. A `break_block` at x y z (respecting protected areas) would fit.
 - **Gravel and sand stop a dig for good** (`falling_blocks`): [Excavation, known issues](features/world/excavation.md).
 - **No way to dig a route to a specific ore** (`dig_to`): [Excavation, known issues](features/world/excavation.md).
 
