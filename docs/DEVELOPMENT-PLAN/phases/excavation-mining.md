@@ -3,7 +3,7 @@
 _Estimate: 3.25 sessions._
 
 **Depends on:** [13 Construction engine and building](construction-building.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (optional), [9 Storage and containers](storage-containers.md) (optional).  
-**Needed by:** [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [19 Railways](railways.md), [26 World discovery, including caves and canyons](world-discovery.md) (optional), [28 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [19 Railways](railways.md), [26 World discovery, including caves and canyons](world-discovery.md) (optional).
 
 `collect_block` is deliberately conservative: it only digs blocks that touch open air, never tunnels, and never digs straight down (that is why "dig a 3×3×2 pit" is refused). Digging pits, quarries, tunnels, and mines needs its own tool, with its own rules and a plan you can preview.
 

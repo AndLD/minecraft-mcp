@@ -3,7 +3,7 @@
 _Estimate: 1.5 sessions._
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [5 Persistent state](persistent-state.md).  
-**Needed by:** [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [11 Drop recovery](drop-recovery.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md) (optional), [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md), [18 Farming, crops, animals, and trees](farming.md), [28 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [11 Drop recovery](drop-recovery.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md) (optional), [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md), [18 Farming, crops, animals, and trees](farming.md).
 
 - Ports: `Digger`, `InventoryReader/Writer`, `Crafter`.
 - Skills: `CollectBlocks` (find, path, dig, pick up drops, tool selection; own implementation, cancellable via `AbortSignal`, honors protected areas, returns typed failure reasons), `PickupItems`, `CraftItem` (recipe resolution with automatic sub-crafts, crafting table placement when needed), `SmeltItems` (furnace placement, fuel handling).

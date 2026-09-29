@@ -3,7 +3,7 @@
 _Estimate: 1 session._
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [6 Survival reflexes](survival-reflexes.md), [11 Drop recovery](drop-recovery.md) (optional), [12 Server commands and teleport](server-commands-teleport.md) (optional), [13 Construction engine and building](construction-building.md) (optional).  
-**Needed by:** [28 Autonomy, the bot's own will](autonomy.md) (optional).
+**Needed by:** no later phase depends on it directly.
 
 Two reasons to sleep: a bed sets the bot's respawn point (after a death it wakes up at home instead of at the far-away world spawn, which also makes drop recovery quicker and safer), and sleeping skips the night.
 
