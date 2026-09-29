@@ -196,4 +196,50 @@ describe('animal farming through the MCP server', () => {
       result: { components: [{ kind: 'pen', herdSizeBefore: 2, herdAction: 'bred' }] },
     })
   })
+
+  describe('a pen gate left open', () => {
+    const gate = at(12, 64, -2)
+    const openPen = (bot: FakeBot): void => {
+      place(bot, creature('cow', at(11, 64, -5)))
+      place(bot, creature('cow', at(12, 64, -5)))
+      bot.setBlock(gate, 'oak_fence_gate')
+      bot.setDoorOpen(gate, true)
+    }
+    const isOpen = (h: Harness): unknown => h.bot.blockAt(toVec3(gate))?.getProperties?.()['open']
+    const register = (h: Harness) =>
+      h.call('register_farm', {
+        kind: 'pen',
+        species: 'cow',
+        herd_target: 4,
+        from: at(9, 64, -7),
+        to: at(15, 64, -3),
+        label: 'cow pen',
+      })
+
+    it('is shut again when tend_farm has worked in the pen', async () => {
+      const h = await start(openPen)
+      expect((await register(h)).isError).toBe(false)
+      expect(isOpen(h)).toBe(true)
+
+      const tended = await call(h, 'tend_farm', { farm: 'cow pen', wait_seconds: 30 })
+
+      expect(task(tended)).toMatchObject({ status: 'succeeded' })
+      expect(isOpen(h)).toBe(false)
+    })
+
+    it('is shut again when breed_animals has worked in the pen', async () => {
+      const h = await start(openPen)
+      expect((await register(h)).isError).toBe(false)
+
+      const bred = await call(h, 'breed_animals', {
+        species: 'cow',
+        farm: 'cow pen',
+        target_count: 4,
+        wait_seconds: 30,
+      })
+
+      expect(task(bred)).toMatchObject({ status: 'succeeded' })
+      expect(isOpen(h)).toBe(false)
+    })
+  })
 })

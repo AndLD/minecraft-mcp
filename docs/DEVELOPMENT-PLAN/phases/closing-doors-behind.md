@@ -1,6 +1,7 @@
 # Phase 26: Closing gates and doors behind the bot
 
-_Estimate: ½ session._
+_Estimate: ½ session._  
+**Status:** done on `feature/closing-doors-behind` (the branch is named after the feature, not `fix/close-doors-behind`). Decision: a door found open is not closed by the navigator; a pen's gate is shut by `PenGateGuard`. Details in [Opening ordinary doors](../../features/world/opening-ordinary-doors.md).
 
 **Depends on:** [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md) (`DoorOpeningNavigator`, `DoorAccess`).  
 **Optional:** [18 Farming, crops, animals, and trees](farming.md) (pens are where an open gate costs the most).  

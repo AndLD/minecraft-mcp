@@ -1,3 +1,5 @@
+import { penGateSetup } from '../../../fakes/pen-gate-fakes.js'
+import type { PenGateGuard } from '../../../../src/skills/farming/pen-gate-guard.js'
 import { describe, expect, it } from '@jest/globals'
 import type { AnimalInfo, AnimalScanner } from '../../../../src/core/animal-scanner.port.js'
 import type { InventoryWriter } from '../../../../src/core/inventory-writer.port.js'
@@ -72,7 +74,7 @@ class FakeDepositor implements ItemDepositor {
   }
 }
 
-async function setup(here: Position = at(0, 64, 0)) {
+async function setup(here: Position = at(0, 64, 0), gates?: PenGateGuard) {
   const clock = new FakeClock(0)
   const drops = new FakeDroppedItems()
   const navigator = new InstantNavigator()
@@ -122,6 +124,7 @@ async function setup(here: Position = at(0, 64, 0)) {
     thrower,
     policy,
     farms,
+    gates,
   })
   return { drops, navigator, inventory, vitals, animals, guard, depositor, writer, thrower, policy, farms, skill }
 }
@@ -262,5 +265,48 @@ describe('CollectEggsSkill', () => {
     )
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'not_connected' } })
+  })
+
+  describe('the pen gate', () => {
+    const gate = at(5, 65, 11)
+    const input = (farm: string) => ({
+      farm,
+      area: undefined,
+      storeFraction: undefined,
+      release: undefined,
+      maxChickens: undefined,
+    })
+
+    it('shuts an open pen gate at the end of the visit', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      const s = await setup(at(0, 64, 0), g.guard)
+      const farm = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 20, bounds: bounds(0, 0, 10, 10) })
+      if (!farm.ok) throw new Error(farm.error)
+
+      const result = await s.skill.run(input(farm.value.id), skillContext().context)
+
+      expect(result.ok).toBe(true)
+      expect(g.doors.stateAt(gate)?.open).toBe(false)
+    })
+
+    it('adds gateLeftOpen to the result when the gate could not be shut', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      g.doors.farFrom.add('5,65,11')
+      const s = await setup(at(0, 64, 0), g.guard)
+      const farm = s.farms.register({ kind: 'pen', species: 'chicken', herdTarget: 20, bounds: bounds(0, 0, 10, 10) })
+      if (!farm.ok) throw new Error(farm.error)
+      const stopped = new AbortController()
+
+      const run = s.skill.run(input(farm.value.id), {
+        signal: stopped.signal,
+        progress: () => undefined,
+      })
+      stopped.abort()
+      const result = await run
+
+      expect(result).toMatchObject({ ok: true, value: { gateLeftOpen: expect.stringContaining('still open') } })
+    })
   })
 })

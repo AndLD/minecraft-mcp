@@ -258,6 +258,7 @@ import { HarvestTreesSkill } from './skills/farming/harvest-trees-skill.js'
 import { HerdManager } from './skills/farming/herd-manager.js'
 import { InspectFarmSkill } from './skills/farming/inspect-farm-skill.js'
 import { LureAnimalsSkill } from './skills/farming/lure-animals-skill.js'
+import { PenGateGuard } from './skills/farming/pen-gate-guard.js'
 import { PlantCropsSkill } from './skills/farming/plant-crops-skill.js'
 import { PlantTreesSkill } from './skills/farming/plant-trees-skill.js'
 import { AnimalPenProvider } from './skills/farming/providers/animal-pen.js'
@@ -1095,7 +1096,9 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   // Animal farming: pens (build_farm kind: pen), luring wild animals in, and breeding. Tending a pen's herd
   // (breeding up, culling down) is HerdManager, reused by tend_farm/inspect_farm above and TendFarmSkill's pen branch.
   const animalInteraction = new MineflayerAnimalInteraction(connection)
+  const penGates = new PenGateGuard({ blocks, doors, navigator, logger })
   const lureAnimals = new LureAnimalsSkill({
+    gates: penGates,
     animals,
     interaction: animalInteraction,
     navigator,
@@ -1104,6 +1107,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
   })
   const breedAnimals = new BreedAnimalsSkill({
+    gates: penGates,
     animals,
     interaction: animalInteraction,
     navigator,
@@ -1118,6 +1122,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
   })
   const collectEggs = new CollectEggsSkill({
+    gates: penGates,
     drops: dropCollector,
     inventory,
     vitals,
@@ -1135,6 +1140,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     herd: herdManager,
     collectEggs,
     plantTrees,
+    gates: penGates,
   })
   const discoverFarm = new DiscoverFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry, vitals })
   const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })

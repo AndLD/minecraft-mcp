@@ -1,3 +1,5 @@
+import { penGateSetup } from '../../../fakes/pen-gate-fakes.js'
+import type { PenGateGuard } from '../../../../src/skills/farming/pen-gate-guard.js'
 import { describe, expect, it } from '@jest/globals'
 import type { AnimalInfo, AnimalScanner } from '../../../../src/core/animal-scanner.port.js'
 import type {
@@ -97,7 +99,10 @@ class FakeVitals {
   }
 }
 
-async function setup(start: Position = { x: 0, y: 64, z: 0 }) {
+async function setup(
+  start: Position = { x: 0, y: 64, z: 0 },
+  gates?: PenGateGuard,
+) {
   const animals = new FakeAnimalScanner()
   const interaction = new FakeInteraction()
   const navigator = new FakeNavigator(start)
@@ -106,7 +111,15 @@ async function setup(start: Position = { x: 0, y: 64, z: 0 }) {
   const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
   const scheduler = new AutoScheduler(clock)
-  const skill = new LureAnimalsSkill({ animals, interaction, navigator, vitals, farms, scheduler })
+  const skill = new LureAnimalsSkill({
+    animals,
+    interaction,
+    navigator,
+    vitals,
+    farms,
+    scheduler,
+    gates,
+  })
   return { animals, interaction, navigator, vitals, farms, skill, clock }
 }
 
@@ -511,6 +524,48 @@ describe('LureAnimalsSkill', () => {
       )
 
       expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    })
+  })
+
+  describe('the pen gate', () => {
+    const pen = { from: at(10, 64, 10), to: at(14, 65, 14) }
+    const gate = at(12, 65, 15)
+
+    it('shuts an open pen gate when nothing could be led, and still reports the failure', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      const s = await setup(undefined, g.guard)
+      const entry = s.farms.register({ kind: 'pen', species: 'cow', bounds: pen })
+      if (!entry.ok) throw new Error(entry.error)
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: entry.value.id, destination: undefined, maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: false, error: { reason: 'no_animals_nearby' } })
+      expect(g.doors.stateAt(gate)?.open).toBe(false)
+    })
+
+    it('says so in the result when the gate could not be shut', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      g.doors.farFrom.add('12,65,15')
+      const s = await setup(undefined, g.guard)
+      const entry = s.farms.register({ kind: 'pen', species: 'cow', bounds: pen })
+      if (!entry.ok) throw new Error(entry.error)
+      s.animals.animals = [
+        ...Array.from({ length: 25 }, (_, i) => animal({ id: i + 1, species: 'cow', position: at(12, 64, 12) })),
+      ]
+      const stopped = new AbortController()
+      stopped.abort()
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: entry.value.id, destination: undefined, maxDistance: 32 },
+        { signal: stopped.signal, progress: () => undefined },
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { penFull: true, gateLeftOpen: expect.stringContaining('still open') } })
     })
   })
 })

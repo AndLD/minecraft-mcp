@@ -143,6 +143,74 @@ describe('opening doors on a real Minecraft server', () => {
     expect(await isOpen(gatePos, 'oak_fence_gate')).toBe(false)
   })
 
+  /** A pen of fences, `length` long, with an oak_fence_gate in the middle of the south side (z = z0). */
+  async function pen(x0: number, z0: number, length: number, gateOpen: boolean): Promise<Position> {
+    const z1 = z0 + length - 1
+    await world.fill({ x: x0, y: GROUND_Y - 1, z: z0 }, { x: x0 + 4, y: GROUND_Y - 1, z: z1 }, 'grass_block')
+    await world.fill({ x: x0, y: GROUND_Y, z: z0 }, { x: x0 + 4, y: GROUND_Y + 2, z: z1 }, 'air')
+    await world.fill({ x: x0, y: GROUND_Y, z: z0 }, { x: x0 + 4, y: GROUND_Y, z: z0 }, 'oak_fence')
+    await world.fill({ x: x0, y: GROUND_Y, z: z1 }, { x: x0 + 4, y: GROUND_Y, z: z1 }, 'oak_fence')
+    await world.fill({ x: x0, y: GROUND_Y, z: z0 }, { x: x0, y: GROUND_Y, z: z1 }, 'oak_fence')
+    await world.fill({ x: x0 + 4, y: GROUND_Y, z: z0 }, { x: x0 + 4, y: GROUND_Y, z: z1 }, 'oak_fence')
+    const gatePos = { x: x0 + 2, y: GROUND_Y, z: z0 }
+    await world.command(
+      `setblock ${String(gatePos.x)} ${String(gatePos.y)} ${String(gatePos.z)} oak_fence_gate[facing=north,open=${String(gateOpen)}]`,
+    )
+    return gatePos
+  }
+
+  it('closes the gate when the trip through it is stopped in the middle of the pen', async () => {
+    const gatePos = await pen(20, 0, 14, false)
+    await world.teleport(session.bot.username, { x: gatePos.x + 0.5, y: GROUND_Y, z: gatePos.z - 3.5 })
+    await untilBotSees(['oak_fence_gate'], 1)
+
+    // A far target inside the pen, so the trip is still under way when the gate has opened.
+    const started = session.bot.call('goto', {
+      x: gatePos.x,
+      y: GROUND_Y,
+      z: gatePos.z + 12,
+      within: 1,
+      wait_seconds: 40,
+    })
+    const outcome = started.then((r) => r.text)
+    await waitUntil(async () => ((await isOpen(gatePos, 'oak_fence_gate')) ? true : undefined), {
+      description: 'the gate to open',
+    }).catch(async (error: unknown) => {
+      throw new Error(`${String(error)}; goto ended with ${await outcome}`, { cause: error })
+    })
+    await session.bot.call('stop')
+    await started
+
+    await waitUntil(async () => ((await isOpen(gatePos, 'oak_fence_gate')) ? undefined : true), {
+      description: 'the gate to be closed after the stop',
+    })
+  })
+
+  it('shuts a pen gate that was left open when a task in the pen ends', async () => {
+    const gatePos = await pen(20, 0, 8, true)
+    await world.teleport(session.bot.username, { x: gatePos.x + 0.5, y: GROUND_Y, z: gatePos.z - 6.5 })
+    await untilBotSees(['oak_fence_gate'], 1)
+    const registered = await session.bot.call('register_farm', {
+      kind: 'pen',
+      species: 'cow',
+      herd_target: 2,
+      from: { x: gatePos.x - 2, y: GROUND_Y, z: gatePos.z },
+      to: { x: gatePos.x + 2, y: GROUND_Y, z: gatePos.z + 7 },
+      label: 'open pen',
+    })
+    if (registered.isError) throw new Error(`register_farm failed: ${registered.text}`)
+
+    // No cows: the breeding itself finds nothing to do, and the gate is still shut when it ends.
+    await session.bot.call('breed_animals', {
+      species: 'cow',
+      farm: 'open pen',
+      target_count: 2,
+      wait_seconds: 40,
+    })
+
+    expect(await isOpen(gatePos, 'oak_fence_gate')).toBe(false)
+  })
+
   it('reports needs_switch for an iron door, without trying it', async () => {
     const doorPos = await house(0, 20, 'iron_door')
     await world.teleport(session.bot.username, { x: 1.5, y: GROUND_Y, z: 16.5 })

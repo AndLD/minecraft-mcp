@@ -22,6 +22,8 @@ class FakeDoorAccess implements DoorAccess {
   stuckAt: string | undefined
   /** A position that opens normally but refuses to close again. */
   wontCloseAt: string | undefined
+  /** A position that ignores clicks until the bot walks up to it. */
+  outOfReachAt: string | undefined
 
   set(position: Position, name: string, open: boolean): void {
     this.states.set(key(position), { name, open })
@@ -35,7 +37,7 @@ class FakeDoorAccess implements DoorAccess {
     this.toggled.push(position)
     const k = key(position)
     const current = this.states.get(k)
-    if (k === this.stuckAt || current === undefined) return Promise.resolve(ok(undefined))
+    if (k === this.stuckAt || k === this.outOfReachAt || current === undefined) return Promise.resolve(ok(undefined))
     if (k === this.wontCloseAt && current.open) return Promise.resolve(ok(undefined))
     this.states.set(k, { ...current, open: !current.open })
     return Promise.resolve(ok(undefined))
@@ -48,6 +50,8 @@ class SequenceNavigator implements Navigator {
   readonly goToPlayerCalls: { player: string; within: number }[] = []
   readonly followCalls: { player: string; distance: number }[] = []
   private results: Result<Position, NavigationFailure>[] = []
+  /** Runs at the start of every goToPosition call (a test's way to abort, throw, or move the bot). */
+  onGoToPosition: ((target: Position, within: number) => void) | undefined
 
   queue(...results: Result<Position, NavigationFailure>[]): void {
     this.results.push(...results)
@@ -59,6 +63,7 @@ class SequenceNavigator implements Navigator {
     _options: NavigationOptions,
   ): Promise<Result<Position, NavigationFailure>> {
     this.goToPositionCalls.push({ target, within })
+    this.onGoToPosition?.(target, within)
     return Promise.resolve(this.results.shift() ?? ok(target))
   }
 
@@ -188,8 +193,27 @@ describe('DoorOpeningNavigator', () => {
       ok: false,
       error: { reason: 'door_stuck', message: expect.stringContaining('oak_trapdoor') as unknown as string },
     })
-    expect(s.doors.toggled).toEqual([doorAt, doorAt]) // two tries
-    expect(s.inner.goToPositionCalls).toHaveLength(1) // never retried the trip itself
+    expect(s.doors.toggled).toEqual([doorAt, doorAt, doorAt, doorAt]) // two tries, then two more after walking up
+    expect(s.inner.goToPositionCalls).toHaveLength(2) // the trip, then the walk up to the door; the trip is not retried
+    expect(s.inner.goToPositionCalls[1]).toEqual({ target: doorAt, within: 2 })
+  })
+
+  it('walks up to a door it cannot reach from where the failed trip ended, then opens it', async () => {
+    const s = setup()
+    const doorAt = at(5, 64, 5)
+    s.doors.set(doorAt, 'oak_fence_gate', false)
+    s.doors.outOfReachAt = key(doorAt)
+    s.blocks.blocks = [{ name: 'oak_fence_gate', position: doorAt, distance: 12 }]
+    s.inner.queue(err(unreachable), ok(at(5, 64, 6)), ok(target))
+    s.inner.onGoToPosition = (_target, within) => {
+      if (within === 2) s.doors.outOfReachAt = undefined
+    }
+
+    const result = await s.navigator.goToPosition(target, 3, options())
+
+    expect(result).toEqual({ ok: true, value: target })
+    expect(s.doors.stateAt(doorAt)?.open).toBe(false) // closed again behind the bot
+    expect(s.inner.goToPositionCalls.map((c) => c.within)).toEqual([3, 2, 3])
   })
 
   it('leaves an unrelated failure (no door nearby) unchanged', async () => {
@@ -365,6 +389,145 @@ describe('DoorOpeningNavigator', () => {
     expect(result).toEqual({
       ok: false,
       error: { reason: 'needs_switch', message: expect.stringContaining('iron_trapdoor') as unknown as string },
+    })
+  })
+  describe('closing on every path', () => {
+    const doorAt = at(5, 64, 5)
+    const withDoor = () => {
+      const s = setup()
+      s.doors.set(doorAt, 'oak_fence_gate', false)
+      s.blocks.blocks = [{ name: 'oak_fence_gate', position: doorAt, distance: 3 }]
+      return s
+    }
+    const isOpen = (s: ReturnType<typeof setup>): boolean | undefined => s.doors.stateAt(doorAt)?.open
+
+    it('closes the gate when the trip fails after opening it', async () => {
+      const s = withDoor()
+      s.inner.queue(err(unreachable), err({ reason: 'timeout', message: 'Too slow.' }))
+
+      const result = await s.navigator.goToPosition(target, 2, options())
+
+      expect(result).toMatchObject({ ok: false, error: { reason: 'timeout' } })
+      expect(isOpen(s)).toBe(false)
+    })
+
+    it('closes the gate when the trip is cancelled after opening it, without walking back', async () => {
+      const s = withDoor()
+      const controller = new AbortController()
+      s.inner.queue(err(unreachable), err({ reason: 'aborted', message: 'Stopped.' }))
+      s.inner.onGoToPosition = () => {
+        if (s.inner.goToPositionCalls.length === 2) controller.abort()
+      }
+
+      await s.navigator.goToPosition(target, 2, { signal: controller.signal })
+
+      expect(isOpen(s)).toBe(false)
+      expect(s.inner.goToPositionCalls).toHaveLength(2)
+    })
+
+    it('closes the gate when the trip throws', async () => {
+      const s = withDoor()
+      s.inner.queue(err(unreachable))
+      s.inner.onGoToPosition = () => {
+        if (s.inner.goToPositionCalls.length === 2) throw new Error('boom')
+      }
+
+      await expect(s.navigator.goToPosition(target, 2, options())).rejects.toThrow('boom')
+
+      expect(isOpen(s)).toBe(false)
+    })
+
+    it('walks back to a gate it ended too far from, and closes it', async () => {
+      const s = withDoor()
+      s.doors.wontCloseAt = key(doorAt)
+      s.inner.queue(err(unreachable), ok(target))
+      s.inner.onGoToPosition = (_target, within) => {
+        if (within === 2 && s.inner.goToPositionCalls.length === 3) s.doors.wontCloseAt = undefined
+      }
+
+      const result = await s.navigator.goToPosition(target, 2, options())
+
+      expect(result).toEqual({ ok: true, value: target })
+      expect(s.inner.goToPositionCalls.at(-1)).toEqual({ target: doorAt, within: 2 })
+      expect(isOpen(s)).toBe(false)
+      expect(s.navigator.leftovers()).toEqual([])
+    })
+
+    it('remembers a gate it could not close and closes it at the start of the next trip', async () => {
+      const s = withDoor()
+      s.doors.wontCloseAt = key(doorAt)
+      s.inner.queue(err(unreachable), ok(target))
+
+      await s.navigator.goToPosition(target, 2, options())
+
+      expect(isOpen(s)).toBe(true)
+      expect(s.navigator.leftovers()).toEqual([doorAt])
+      expect(s.logger.entries.filter((e) => e.level === 'warn')).toHaveLength(1)
+
+      s.doors.wontCloseAt = undefined
+      s.inner.queue(ok(target))
+      await s.navigator.goToPosition(target, 2, options())
+
+      expect(isOpen(s)).toBe(false)
+      expect(s.navigator.leftovers()).toEqual([])
+    })
+
+    it('closes leftovers on request, and reports the ones that stay open', async () => {
+      const s = withDoor()
+      s.doors.wontCloseAt = key(doorAt)
+      s.inner.queue(err(unreachable), ok(target))
+      await s.navigator.goToPosition(target, 2, options())
+
+      const still = await s.navigator.closeLeftovers(new AbortController().signal)
+      expect(still).toEqual([doorAt])
+
+      s.doors.wontCloseAt = undefined
+      expect(await s.navigator.closeLeftovers(new AbortController().signal)).toEqual([])
+      expect(isOpen(s)).toBe(false)
+    })
+
+    it('forgets a leftover that somebody else closed meanwhile', async () => {
+      const s = withDoor()
+      s.doors.wontCloseAt = key(doorAt)
+      s.inner.queue(err(unreachable), ok(target))
+      await s.navigator.goToPosition(target, 2, options())
+      s.doors.set(doorAt, 'oak_fence_gate', false)
+
+      expect(await s.navigator.closeLeftovers(new AbortController().signal)).toEqual([])
+    })
+
+    it('closes leftovers before following a player', async () => {
+      const s = withDoor()
+      s.doors.wontCloseAt = key(doorAt)
+      s.inner.queue(err(unreachable), ok(target))
+      await s.navigator.goToPosition(target, 2, options())
+      s.doors.wontCloseAt = undefined
+
+      await s.navigator.follow('Steve', 3, options())
+
+      expect(isOpen(s)).toBe(false)
+      expect(s.inner.followCalls).toHaveLength(1)
+    })
+
+    it('leaves a door it was told to leave open, and does not remember it', async () => {
+      const s = withDoor()
+      s.inner.queue(err(unreachable), ok(target))
+
+      await s.navigator.goToPosition(target, 2, { ...options(), closeDoors: false })
+
+      expect(isOpen(s)).toBe(true)
+      expect(s.navigator.leftovers()).toEqual([])
+    })
+
+    it('does not touch a door that was already open when the trip began', async () => {
+      const s = withDoor()
+      s.doors.set(doorAt, 'oak_fence_gate', true)
+      s.inner.queue(ok(target))
+
+      await s.navigator.goToPosition(target, 2, options())
+
+      expect(isOpen(s)).toBe(true)
+      expect(s.doors.toggled).toEqual([])
     })
   })
 })

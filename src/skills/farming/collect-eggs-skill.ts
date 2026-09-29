@@ -9,6 +9,7 @@ import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { EggPolicy, EggRelease } from '../../state/egg-policy.js'
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
+import type { PenGateGuard } from './pen-gate-guard.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
 import type { ItemDepositor } from '../storage/deposit-items-skill.js'
 import type { EggThrower } from './egg-thrower.js'
@@ -28,6 +29,8 @@ export interface CollectEggsInput {
 }
 
 export interface CollectEggsOutput {
+  /** Set when the pen's gate could not be shut at the end. */
+  readonly gateLeftOpen?: string
   readonly pickedUp: number
   readonly stored: number
   readonly released: number
@@ -36,6 +39,8 @@ export interface CollectEggsOutput {
 }
 
 export interface CollectEggsDeps {
+  /** Shuts the pen's gate when the task ends, however it ended. */
+  readonly gates?: PenGateGuard
   readonly drops: DropCollector
   readonly inventory: InventoryReader
   readonly vitals: VitalsReader
@@ -65,6 +70,12 @@ export class CollectEggsSkill implements Skill<CollectEggsInput, CollectEggsOutp
   constructor(private readonly deps: CollectEggsDeps) {}
 
   async run(input: CollectEggsInput, context: SkillContext): Promise<SkillResult<CollectEggsOutput>> {
+    const result = await this.work(input, context)
+    const farm = input.farm === undefined ? undefined : this.deps.farms.resolve(input.farm)
+    return this.deps.gates?.finish(input.area ?? farm?.bounds, result, context.signal) ?? result
+  }
+
+  private async work(input: CollectEggsInput, context: SkillContext): Promise<SkillResult<CollectEggsOutput>> {
     const farm = input.farm === undefined ? undefined : this.deps.farms.resolve(input.farm)
     const bounds = input.area ?? farm?.bounds
     if (bounds === undefined)

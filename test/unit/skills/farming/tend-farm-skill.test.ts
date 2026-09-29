@@ -1,3 +1,5 @@
+import { penGateSetup } from '../../../fakes/pen-gate-fakes.js'
+import type { PenGateGuard } from '../../../../src/skills/farming/pen-gate-guard.js'
 import { describe, expect, it } from '@jest/globals'
 import { err, ok } from '../../../../src/core/result.js'
 import type { CollectEggsSkill } from '../../../../src/skills/farming/collect-eggs-skill.js'
@@ -85,7 +87,7 @@ class FakePlantTrees implements Pick<PlantTreesSkill, 'run'> {
   }
 }
 
-async function setup(withCollectEggs = false, withPlantTrees = false) {
+async function setup(withCollectEggs = false, withPlantTrees = false, gates?: PenGateGuard) {
   const farms = new FarmRegistry(new FakeClock(0))
   await farms.attach(new InMemoryStateStore())
   const harvest = new FakeHarvest()
@@ -100,6 +102,7 @@ async function setup(withCollectEggs = false, withPlantTrees = false) {
     herd: herd as unknown as HerdManager,
     collectEggs: withCollectEggs ? (collectEggs as unknown as CollectEggsSkill) : undefined,
     plantTrees: withPlantTrees ? (plantTrees as unknown as PlantTreesSkill) : undefined,
+    gates,
   })
   return { farms, harvest, plant, herd, collectEggs, plantTrees, skill }
 }
@@ -439,5 +442,38 @@ describe('TendFarmSkill', () => {
     const result = await s.skill.run({ farm: 'nothing-here' }, context())
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_farm' } })
+  })
+
+  describe('the pen gate', () => {
+    const gate = { x: 1, y: 65, z: 3 }
+
+    it('shuts an open pen gate after tending a pen', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      const s = await setup(false, false, g.guard)
+      const entry = s.farms.register({ kind: 'pen', species: 'cow', herdTarget: 6, bounds })
+      if (!entry.ok) throw new Error(entry.error)
+
+      const result = await s.skill.run({ farm: entry.value.id }, context())
+
+      expect(result).toMatchObject({ ok: true, value: { components: [{ problem: undefined }] } })
+      expect(g.doors.stateAt(gate)?.open).toBe(false)
+    })
+
+    it('puts a gate it could not shut into the component problem, after any other problem', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      g.doors.stuck.add('1,65,3')
+      const s = await setup(false, false, g.guard)
+      const entry = s.farms.register({ kind: 'pen', species: 'cow', herdTarget: 6, bounds })
+      if (!entry.ok) throw new Error(entry.error)
+
+      const result = await s.skill.run({ farm: entry.value.id }, context())
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { components: [{ problem: expect.stringContaining('still open') }] },
+      })
+    })
   })
 })

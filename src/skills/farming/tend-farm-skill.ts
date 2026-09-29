@@ -4,6 +4,7 @@ import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
 import type { CollectEggsSkill } from './collect-eggs-skill.js'
 import type { HarvestCropsSkill } from './harvest-crops-skill.js'
 import type { HerdManager } from './herd-manager.js'
+import type { PenGateGuard } from './pen-gate-guard.js'
 import type { PlantCropsSkill } from './plant-crops-skill.js'
 import type { PlantTreesSkill } from './plant-trees-skill.js'
 
@@ -45,6 +46,8 @@ export interface TendFarmDeps {
   readonly collectEggs?: CollectEggsSkill
   /** Refills the empty spots of a grove; without it a grove is reported as not tended. */
   readonly plantTrees?: PlantTreesSkill
+  /** Shuts a pen's gate at the end of tending it (culling walks in and out of the pen). */
+  readonly gates?: PenGateGuard
 }
 
 /**
@@ -178,6 +181,13 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
   }
 
   private async tendPen(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
+    const tended = await this.tendPenInside(entry, context)
+    const open = await this.deps.gates?.ensureShut(entry.bounds, context.signal)
+    if (open === undefined) return tended
+    return { ...tended, problem: tended.problem === undefined ? open : `${tended.problem} ${open}` }
+  }
+
+  private async tendPenInside(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
     const base = {
       id: entry.id,
       kind: entry.kind,

@@ -8,6 +8,7 @@ import type { Scheduler } from '../../core/scheduler.port.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import { sleep } from '../../core/sleep.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
+import type { PenGateGuard } from './pen-gate-guard.js'
 import type { FarmRegistry } from '../../state/farm-registry.js'
 import { individualProtection } from '../hunting/animal-catalog.js'
 import { foodFor } from './animal-table.js'
@@ -47,6 +48,8 @@ export interface AbandonedAnimal {
 }
 
 export interface LureAnimalsOutput {
+  /** Set when the pen's gate could not be shut at the end. */
+  readonly gateLeftOpen?: string
   readonly led: number
   readonly requested: number
   /** How many the destination could still take: the request, or less when a pen has little room left. */
@@ -59,6 +62,8 @@ export interface LureAnimalsOutput {
 }
 
 export interface LureAnimalsDeps {
+  /** Shuts the pen's gate when the task ends, however it ended. */
+  readonly gates?: PenGateGuard
   readonly animals: AnimalScanner
   readonly interaction: AnimalInteraction
   readonly navigator: Navigator
@@ -84,6 +89,15 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
   constructor(private readonly deps: LureAnimalsDeps) {}
 
   async run(
+    input: LureAnimalsInput,
+    context: SkillContext,
+  ): Promise<SkillResult<LureAnimalsOutput>> {
+    const result = await this.work(input, context)
+    const pen = input.farm === undefined ? undefined : this.deps.farms.resolve(input.farm)
+    return this.deps.gates?.finish(pen?.bounds, result, context.signal) ?? result
+  }
+
+  private async work(
     input: LureAnimalsInput,
     context: SkillContext,
   ): Promise<SkillResult<LureAnimalsOutput>> {
