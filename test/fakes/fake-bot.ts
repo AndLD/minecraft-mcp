@@ -363,6 +363,7 @@ export class FakeBot implements BotLike {
     this.blocks.set(key(position), name)
     // Any change to the block starts a fresh growth stage (a freshly placed crop is not still the old one's age).
     this.cropAges.delete(key(position))
+    this.liquidLevels.delete(key(position))
     if (!FakeBot.isSign(name)) this.signs.delete(key(position))
   }
 
@@ -442,6 +443,8 @@ export class FakeBot implements BotLike {
         const sign = this.signs.get(cellKey)
         if (sign?.facing !== undefined) props['facing'] = sign.facing
         if (sign?.rotation !== undefined) props['rotation'] = String(sign.rotation)
+        if (name === 'water' || name === 'lava')
+          props['level'] = String(this.liquidLevels.get(cellKey) ?? 0)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
         if (classifySwitch(name) !== undefined)
           props['powered'] = this.switchPowered.get(cellKey) ?? false
@@ -554,6 +557,48 @@ export class FakeBot implements BotLike {
   linkSwitch(switchPosition: Position, doorPosition: Position): void {
     this.switchLinks.set(key(switchPosition), key(doorPosition))
   }
+
+  /** Water and lava levels (0 is a source, 1 to 7 flowing, 8 and up falling); a liquid cell not listed is a source. */
+  private readonly liquidLevels = new Map<string, number>()
+  setLiquidLevel(position: Position, level: number): void {
+    this.liquidLevels.set(key(position), level)
+  }
+
+  /** Whether a cell holds a water source. */
+  private isWaterSource(position: Position): boolean {
+    return (
+      this.blocks.get(key(position)) === 'water' && (this.liquidLevels.get(key(position)) ?? 0) === 0
+    )
+  }
+
+  /**
+   * Takes the liquid source the bot looks at into an empty bucket. Like the game, a water cell with two water sources
+   * beside it (and ground or water below) becomes a source again.
+   */
+  private fillBucketAt(point: Position): void {
+    const cell = { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z) }
+    const name = this.blocks.get(key(cell))
+    if ((name !== 'water' && name !== 'lava') || (this.liquidLevels.get(key(cell)) ?? 0) !== 0)
+      return
+    const filled = `${name}_bucket`
+    if (name === 'water') {
+      const beside = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ].filter(([dx, dz]) =>
+        this.isWaterSource({ x: cell.x + (dx ?? 0), y: cell.y, z: cell.z + (dz ?? 0) }),
+      ).length
+      if (beside < 2) this.setBlock(cell, 'air')
+    } else this.setBlock(cell, 'air')
+    this.bucketsFilled.push(cell)
+    this.removeItems('bucket', 1)
+    this.addItems(filled, 1)
+    this.heldItem = this.count('bucket') > 0 ? { name: 'bucket', count: this.count('bucket') } : null
+  }
+  /** The liquid cells taken into a bucket, in order. */
+  readonly bucketsFilled: Position[] = []
 
   /** A crop block's growth stage. */
   private readonly cropAges = new Map<string, number>()
@@ -951,6 +996,7 @@ export class FakeBot implements BotLike {
     this.activated.push(held)
     const fluid = held === 'water_bucket' ? 'water' : held === 'lava_bucket' ? 'lava' : undefined
     const point = this.lookedAt.at(-1)
+    if (held === 'bucket' && point !== undefined) this.fillBucketAt(point)
     if (fluid === undefined || point === undefined) return
     const eps = 0.001
     for (const dx of [-eps, eps])

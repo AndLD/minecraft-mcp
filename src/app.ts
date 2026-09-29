@@ -32,6 +32,7 @@ import { MineflayerCropAccess } from './bot/mineflayer-crop-access.js'
 import { MineflayerTiller } from './bot/mineflayer-tiller.js'
 import { MineflayerRailAccess } from './bot/mineflayer-rail-access.js'
 import { MineflayerMinecarts } from './bot/mineflayer-minecarts.js'
+import { MineflayerBucketFiller } from './bot/mineflayer-bucket-filler.js'
 import { MineflayerAnimalInteraction } from './bot/mineflayer-animal-interaction.js'
 import { MineflayerNavigator } from './bot/mineflayer-navigator.js'
 import { MineflayerLightReader } from './bot/mineflayer-light-reader.js'
@@ -157,6 +158,7 @@ import {
   TendFarmTool,
 } from './mcp/tools/farming-tools.js'
 import { BuildRailwayTool, PlaceMinecartTool, PlanRailwayTool } from './mcp/tools/railway-tools.js'
+import { FillBucketTool } from './mcp/tools/fill-bucket-tool.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -262,6 +264,8 @@ import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
 import { PlaceMinecartSkill } from './skills/railway/place-minecart-skill.js'
+import { FillBucketSkill } from './skills/buckets/fill-bucket-skill.js'
+import { LiquidSpotFinder } from './skills/buckets/liquid-spot.js'
 import { MineflayerBedAccess } from './bot/mineflayer-bed-access.js'
 import { MineflayerSignAccess } from './bot/mineflayer-sign-access.js'
 import { EditSignSkill } from './skills/signs/edit-sign-skill.js'
@@ -1038,6 +1042,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     minecarts: new MineflayerMinecarts(connection),
     log: railwayLog,
   })
+  const bucketFiller = new MineflayerBucketFiller(connection)
+  const fillBucket = new FillBucketSkill({
+    vitals,
+    blocks,
+    liquids: bucketFiller,
+    filler: bucketFiller,
+    inventory,
+    navigator,
+    guard: protectedAreas,
+    spots: new LiquidSpotFinder(blocks),
+  })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -1226,6 +1241,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PlanRailwayTool(buildRailway))
     .register(new BuildRailwayTool(buildRailway, launcher))
     .register(new PlaceMinecartTool(placeMinecart, launcher))
+    .register(new FillBucketTool(fillBucket, launcher))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))

@@ -1,7 +1,7 @@
 # Tasks
 
 **Depends on:** nothing (a base feature).  
-**Used by:** [Chat and events](chat-and-events.md), [Survival reflexes](../survival/survival-reflexes.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md), [Storage](../storage/storage.md), [Server commands and teleporting](../world/server-commands-and-teleporting.md), [Opening ordinary doors](../world/opening-ordinary-doors.md).
+**Used by:** [Chat and events](chat-and-events.md), [Survival reflexes](../survival/survival-reflexes.md), [Gathering, crafting, smelting](../gathering/gathering-crafting-smelting.md), [Storage](../storage/storage.md), [Server commands and teleporting](../world/server-commands-and-teleporting.md), [Opening ordinary doors](../world/opening-ordinary-doors.md), [Filling buckets](../world/buckets.md).
 
 - The `TaskManager` (also the default `StopHandler`) runs **one** active task at a time; a task waiting for input still holds the slot. Starting a new one requires cancelling or queueing the current one explicitly.
 - Every task gets an `AbortSignal`; skills must check it between steps and inside loops.
