@@ -3,7 +3,7 @@
 _Estimate: 1 session._
 
 **Depends on:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md), [3 Movement and perception](movement-perception.md).  
-**Needed by:** [8 Hunting and food](hunting-food.md), [11 Drop recovery](drop-recovery.md), [20 Sleeping and respawn point](sleeping-respawn.md), [22 World discovery, including caves and canyons](world-discovery.md), [24 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [8 Hunting and food](hunting-food.md), [11 Drop recovery](drop-recovery.md), [20 Sleeping and respawn point](sleeping-respawn.md), [26 World discovery, including caves and canyons](world-discovery.md), [28 Autonomy, the bot's own will](autonomy.md).
 
 - Reflex engine: priority arbitration, preemption/resume of the current task, event log.
 - Reflexes: `AutoEat`, `ThreatResponse`, `AvoidLava`, `Drowning` (surface for air). `FallDamageGuard` and `NightShelter` are deferred: the pathfinder's default maximum drop already avoids large falls, and both need placing blocks or buckets, which fits better after the building work.

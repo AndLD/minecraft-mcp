@@ -3,7 +3,7 @@
 _Estimate: 1 session._
 
 **Depends on:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md).  
-**Needed by:** [4 E2E test harness](e2e-harness.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [10 Item handover](item-handover.md), [12 Server commands and teleport](server-commands-teleport.md), [13 Construction engine and building](construction-building.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [20 Sleeping and respawn point](sleeping-respawn.md), [22 World discovery, including caves and canyons](world-discovery.md), [23 Leading a player](leading-a-player.md).
+**Needed by:** [4 E2E test harness](e2e-harness.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [10 Item handover](item-handover.md), [12 Server commands and teleport](server-commands-teleport.md), [13 Construction engine and building](construction-building.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [20 Sleeping and respawn point](sleeping-respawn.md), [26 World discovery, including caves and canyons](world-discovery.md), [27 Leading a player](leading-a-player.md).
 
 - Ports: `Navigator`, `BlockScanner`, `EntityScanner`. Adapters over pathfinder and Mineflayer.
 - `Navigator` features: goto position/player/block, follow, stop, stuck detection, timeouts, safe movement profile (no digging through player builds, no lava).

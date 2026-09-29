@@ -3,7 +3,7 @@
 _Estimate: 1 session._
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [5 Persistent state](persistent-state.md) (optional).  
-**Needed by:** [18 Farming, crops, animals, and trees](farming.md), [24 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [18 Farming, crops, animals, and trees](farming.md), [28 Autonomy, the bot's own will](autonomy.md).
 
 The tools before this phase cannot hunt: perception can list entities and the reflexes only fight hostile mobs on their own, so there is no way to attack a specific passive animal, chase it, and collect the drops. This phase adds that flow.
 

@@ -1,8 +1,8 @@
-# Phase 24: Autonomy, the bot's own will
+# Phase 28: Autonomy, the bot's own will
 
 _Estimate: 2.5 sessions._
 
-**Depends on:** [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md) (optional), [20 Sleeping and respawn point](sleeping-respawn.md) (optional), [22 World discovery, including caves and canyons](world-discovery.md) (optional).  
+**Depends on:** [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md) (optional), [20 Sleeping and respawn point](sleeping-respawn.md) (optional), [26 World discovery, including caves and canyons](world-discovery.md) (optional).  
 **Needed by:** no later phase depends on it directly.
 
 A switch that turns the bot from a helper that waits for orders into something closer to a real player: it decides for itself what to do next (gather, craft, build, dig, farm, look after and extend the home) and keeps going, while the player can still talk to it and stop it at any moment. **The agent is the brain that writes the intentions; the bot's own code is the body that carries them out.** The agent generates a *will* and attaches it to the bot; the autonomy engine then works through it with no agent round trip per step, like `LowFoodResponder` already does for food, so it also costs no model usage while it runs.

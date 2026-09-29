@@ -1,4 +1,4 @@
-# Phase 26: Breaking a block at exact coordinates
+# Phase 23: Breaking a block at exact coordinates
 
 _Estimate: ½ session._
 

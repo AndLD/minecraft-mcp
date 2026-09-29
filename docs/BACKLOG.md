@@ -91,7 +91,7 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 
 ## Known issues from live sessions
 
-Bugs and gaps found while playing, each written up with the cause and fix ideas under "Known issues" in the feature's own document. Each one moves into the plan (with a `fix/<name>` or `feature/<name>` branch) when it is picked. Already picked: breaking a block at exact coordinates ([Phase 26](DEVELOPMENT-PLAN/phases/break-block.md)); the crop field gate side and pumpkin fields ([Phase 27](DEVELOPMENT-PLAN/phases/crop-field-options.md)); filling buckets ([Phase 25](DEVELOPMENT-PLAN/phases/buckets.md)); excavating upward and continuing an existing dig ([Phase 28](DEVELOPMENT-PLAN/phases/excavation-upward.md)).
+Bugs and gaps found while playing, each written up with the cause and fix ideas under "Known issues" in the feature's own document. Each one moves into the plan (with a `fix/<name>` or `feature/<name>` branch) when it is picked. Already picked: breaking a block at exact coordinates ([Phase 23](DEVELOPMENT-PLAN/phases/break-block.md)); the crop field gate side and pumpkin fields ([Phase 24](DEVELOPMENT-PLAN/phases/crop-field-options.md)); filling buckets ([Phase 22](DEVELOPMENT-PLAN/phases/buckets.md)); excavating upward and continuing an existing dig ([Phase 25](DEVELOPMENT-PLAN/phases/excavation-upward.md)).
 
 - **`lure_animals` reports `penFull` when nothing could be led** and loses chickens that the bot outruns: [Animal farming, known issues](features/farming/animal-farming.md).
 - **Extra grass inside a freshly built pen** leaves cells that are not free, and the pen's own protected area stops the bot from clearing them: [Animal farming, known issues](features/farming/animal-farming.md).

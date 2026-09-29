@@ -1,4 +1,4 @@
-# Phase 28: Excavating upward and continuing an existing dig
+# Phase 25: Excavating upward and continuing an existing dig
 
 _Estimate: 1 session._
 

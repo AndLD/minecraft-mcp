@@ -1,4 +1,4 @@
-# Phase 25: Filling buckets with water and lava
+# Phase 22: Filling buckets with water and lava
 
 _Estimate: ½ session._
 

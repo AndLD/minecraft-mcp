@@ -1,9 +1,9 @@
-# Phase 27: Crop field options: gate side and pumpkin fields
+# Phase 24: Crop field options: gate side and pumpkin fields
 
 _Estimate: 1 session._
 
 **Depends on:** [18 Farming, crops, animals, and trees](farming.md) (`CropFieldProvider`, `fenceRingSteps`, `crop-table.ts`, `harvest_crops`, `inspect_farm`).  
-**Optional:** [25 Filling buckets with water and lava](buckets.md) (a field's water buckets could then be filled by the bot).  
+**Optional:** [22 Filling buckets with water and lava](buckets.md) (a field's water buckets could then be filled by the bot).  
 **Needed by:** no later phase depends on it directly.
 
 Two additions to `build_farm` and the crop tools, both asked for after live sessions with the first field. They belong in one branch because they touch the same files (`fence-ring.ts`, `crop-field.ts`, `crop-table.ts`).
