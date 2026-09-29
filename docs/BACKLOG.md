@@ -39,7 +39,7 @@ One agent running N bots in the same world. Left for later on purpose; the analy
 
 ### Farming extras
 
-Left out of the farming feature in the plan: shearing sheep, milking cows, honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, melons, pumpkins, cocoa, nether wart; composters; redstone auto-farms (observers, pistons, hoppers).
+Left out of the farming feature in the plan: shearing sheep, milking cows, honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, melons, cocoa, nether wart; composters; redstone auto-farms (observers, pistons, hoppers).
 
 ### Several connected rooms in one request
 
@@ -91,13 +91,16 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 
 ## Known issues from live sessions
 
-Bugs and gaps found while playing, each written up with the cause and fix ideas under "Known issues" in the feature's own document. Each one moves into the plan (with a `fix/<name>` or `feature/<name>` branch) when it is picked.
+Bugs and gaps found while playing, each written up with the cause and fix ideas under "Known issues" in the feature's own document. Each one moves into the plan (with a `fix/<name>` or `feature/<name>` branch) when it is picked. Already picked: breaking a block at exact coordinates ([Phase 26](DEVELOPMENT-PLAN/phases/break-block.md)); the crop field gate side and pumpkin fields ([Phase 27](DEVELOPMENT-PLAN/phases/crop-field-options.md)); filling buckets ([Phase 25](DEVELOPMENT-PLAN/phases/buckets.md)); excavating upward and continuing an existing dig ([Phase 28](DEVELOPMENT-PLAN/phases/excavation-upward.md)).
 
 - **`lure_animals` reports `penFull` when nothing could be led** and loses chickens that the bot outruns: [Animal farming, known issues](features/farming/animal-farming.md).
 - **Extra grass inside a freshly built pen** leaves cells that are not free, and the pen's own protected area stops the bot from clearing them: [Animal farming, known issues](features/farming/animal-farming.md).
-- **A crop field's single water source leaves the far rows dry** on a 7x7 field: [Animal farming, known issues](features/farming/animal-farming.md).
+- **A crop field's water is at the field's edge and too little:** one source in the first row leaves far rows dry (a 7x7 field hydrated 5 of 7 rows), and a trench of water (or one block per 9x9 part, at its centre, on request) is the way it should work: [Crop farming, known issues](features/farming/crop-farming.md).
+- **The crop field gate is placed a quarter turn wrong** (perpendicular to the fence), and so is a pen's: [Crop farming, known issues](features/farming/crop-farming.md).
+- **The bot leaves gates and doors open behind it** (chickens walked out of a pen): the rule should be to close every gate or door after passing, on every path: [Opening ordinary doors, known issues](features/world/opening-ordinary-doors.md), with the pen side in [Animal farming, known issues](features/farming/animal-farming.md).
+- **Cave sealing put cobblestone inside a quarry's space**, and an excavation is never verified against its plan (no shape, seal, or extra-block check): [Excavation, known issues](features/world/excavation.md).
+- **Several furnaces cannot be placed above the bot's feet level** (agent's diagnosis: no placing higher than its own feet): [Construction and building, known issues](features/world/construction-and-building.md).
 - **`place_sign` on a fence top fails to walk to the spot** (routes through an unrelated gate), and a torch on the fence gives no alternative: [Signs, known issues](features/world/signs.md).
-- **No tool breaks one block at exact coordinates**: `collect_block` always takes the nearest match, so replacing a single stair block in a player's build (found while placing a door) cannot be done safely; the player had to break it by hand. A `break_block` at x y z (respecting protected areas) would fit.
 - **Gravel and sand stop a dig for good** (`falling_blocks`): [Excavation, known issues](features/world/excavation.md).
 - **No way to dig a route to a specific ore** (`dig_to`): [Excavation, known issues](features/world/excavation.md).
 
