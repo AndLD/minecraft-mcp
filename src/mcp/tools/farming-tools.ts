@@ -47,8 +47,9 @@ const buildFarmSchema = z.object({
     .record(z.string(), z.unknown())
     .default({})
     .describe(
-      'The kind\'s own parameters (for "field": width, length, crop, fence, torches; for "pen": width, length, ' +
-        "species, water, torches). Work them out from the player's words; when unclear, ask.",
+      'The kind\'s own parameters (for "field": width, length, crop, fence, torches, water ("trench" by default, ' +
+        '"spots" for separate water blocks); for "pen": width, length, species, water, torches). Work them out from ' +
+        "the player's words; when unclear, ask.",
     ),
   origin: positionSchema
     .optional()
@@ -66,6 +67,12 @@ const buildFarmSchema = z.object({
     .min(1)
     .optional()
     .describe('For a pen: the herd size tend_farm breeds up to and culls down to.'),
+  preview: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Only report what the build would do (steps, materials needed and missing, water buckets, warnings such as blocks in a pen it will not clear); change nothing.',
+    ),
   fetch_from_storage: z
     .boolean()
     .default(true)
@@ -83,8 +90,11 @@ export class BuildFarmTool implements ToolDefinition<typeof buildFarmSchema> {
     'Lays out a farm component: a tilled, watered, fenced field planted with a crop (kind: "field"), or a fenced ' +
     'pen for one animal species (kind: "pen"). Needs a hoe, seeds (or carrots/potatoes/beetroot), water buckets, ' +
     'and fence; fetch_from_storage brings what is missing from known containers. On success the component is ' +
-    'remembered (list_farms) and its footprint is protected from other tasks. Runs in the background: poll ' +
-    'get_task_status when the reply has status "running".'
+    'remembered (list_farms) and its footprint is protected from other tasks. A field is watered by a trench ' +
+    'down the middle or by separate water blocks (params.water); every water block takes one filled water ' +
+    'bucket (fill_bucket makes them), so use preview first to see how many are needed. A pen has its interior ' +
+    'cleared of natural blocks left at fence level, and the gate is set in line with the fence. Runs in the ' +
+    'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = buildFarmSchema
 
   constructor(
@@ -102,6 +112,12 @@ export class BuildFarmTool implements ToolDefinition<typeof buildFarmSchema> {
       herdTarget: input.herd_target,
       fetchFromStorage: input.fetch_from_storage,
       onInventoryFull: input.on_inventory_full,
+    }
+    if (input.preview) {
+      const preview = this.skill.preview(toInput)
+      return preview.ok
+        ? toolOk(preview.value)
+        : toolFail(`${preview.error.message} (reason: ${preview.error.reason})`)
     }
     return this.launcher.launch(
       {
@@ -219,10 +235,14 @@ export class LureAnimalsTool implements ToolDefinition<typeof lureAnimalsSchema>
   readonly description =
     'Finds nearby wild animals of a species and leads them, one at a time, into a pen or to a position, holding ' +
     'the food that species follows. Never tamed, named, saddled, or ridden animals. One that falls behind or ' +
-    'loses interest is abandoned (recorded, not chased) and the next nearest is tried. Fails no_animals_nearby ' +
-    'when nothing is found, or no_food when the bot runs out; reports penFull (a shortfall, not a failure) when ' +
-    'the destination pen is already at capacity. Runs in the background: poll get_task_status when the reply has ' +
-    'status "running".'
+    'loses interest is abandoned (recorded, not chased) and the next nearest is tried. The bot walks up to the ' +
+    'animal first (a far flock in legs, trying again from where the animal is now), then leads it in short hops, ' +
+    'waiting for it to catch up. Fails no_animals_nearby when nothing is found, or no_food when the bot runs out. ' +
+    'Reply: led, requested, shortfall (requested minus led, whatever the reason), room (how many the pen could still ' +
+    'take), abandoned (each animal given up on, with unreachable or lost_interest). penFull is true ONLY when the ' +
+    'destination pen already held its capacity before anything was tried; led 0 with abandoned entries means ' +
+    'nothing could be led, not that the pen is full. Runs in the background: poll get_task_status when the reply ' +
+    'has status "running".'
   readonly inputSchema = lureAnimalsSchema
 
   constructor(

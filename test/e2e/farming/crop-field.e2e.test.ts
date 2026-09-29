@@ -67,11 +67,16 @@ describe('crop farming on a real Minecraft server', () => {
         if (result.isError) return undefined
         const blocks = (result.data as { blocks: { position: Position }[] }).blocks
         const seen = blocks.some(
-          (b) => b.position.x === position.x && b.position.y === position.y && b.position.z === position.z,
+          (b) =>
+            b.position.x === position.x &&
+            b.position.y === position.y &&
+            b.position.z === position.z,
         )
         return seen ? true : undefined
       },
-      { description: `the bot to see ${name} at ${String(position.x)}, ${String(position.y)}, ${String(position.z)}` },
+      {
+        description: `the bot to see ${name} at ${String(position.x)}, ${String(position.y)}, ${String(position.z)}`,
+      },
     )
 
   async function run(tool: string, args: Record<string, unknown>) {
@@ -95,7 +100,7 @@ describe('crop farming on a real Minecraft server', () => {
   it('builds a tilled, watered, fenced field and plants it', async () => {
     await world.give(bot(), 'wooden_hoe', 1)
     await world.give(bot(), 'wheat_seeds', 10)
-    await world.give(bot(), 'water_bucket', 2)
+    await world.give(bot(), 'water_bucket', 3)
     await world.give(bot(), 'oak_fence', 20)
     await world.give(bot(), 'oak_fence_gate', 1)
     await world.give(bot(), 'torch', 5)
@@ -114,8 +119,9 @@ describe('crop farming on a real Minecraft server', () => {
     expect(built.task.result).toMatchObject({ kind: 'wheat field 3x3' })
     expect(await is(origin, 'farmland')).toBe(true)
     expect(await is({ ...origin, y: origin.y + 1 }, 'wheat')).toBe(true)
-    // The water channel sits at the centre column, x0 + 1.
-    expect(await is({ x: origin.x + 1, y: origin.y, z: origin.z }, 'water')).toBe(true)
+    // The water trench is the whole centre column, x0 + 1.
+    for (const dz of [0, 1, 2])
+      expect(await is({ x: origin.x + 1, y: origin.y, z: origin.z + dz }, 'water')).toBe(true)
     // The fence ring is one cell outside the 3x3 footprint on every side.
     expect(await is({ x: origin.x - 1, y: origin.y + 1, z: origin.z }, 'oak_fence')).toBe(true)
     expect(await is({ x: origin.x + 3, y: origin.y + 1, z: origin.z }, 'oak_fence')).toBe(true)
@@ -123,8 +129,106 @@ describe('crop farming on a real Minecraft server', () => {
     const list = dataOf<{ farms: { label: string; crop: string }[] }>(
       await session.bot.call('list_farms'),
     )
-    expect(list.farms).toContainEqual(expect.objectContaining({ label: 'wheat field', crop: 'wheat' }))
+    expect(list.farms).toContainEqual(
+      expect.objectContaining({ label: 'wheat field', crop: 'wheat' }),
+    )
   })
+
+  /** Every farmland cell of the field reads back as fully moist (the game only moistens on random ticks: speed them up). */
+  async function untilAllMoist(from: Position, width: number, length: number): Promise<void> {
+    await world.setGameRule('randomTickSpeed', 300)
+    let dry = 'none'
+    try {
+      await waitUntil(
+        async () => {
+          for (let i = 0; i < width; i += 1)
+            for (let j = 0; j < length; j += 1) {
+              const plot = { x: from.x + i, y: from.y, z: from.z + j }
+              if (await is(plot, 'water')) continue
+              if (!(await is(plot, 'farmland[moisture=7]'))) {
+                dry = `${String(i)},${String(j)}`
+                return undefined
+              }
+            }
+          return true
+        },
+        { timeoutMs: 60_000, description: 'every farmland cell to be moist' },
+      )
+    } catch (error) {
+      // A picture of the field (W water, M moist farmland, F drier farmland, D dirt, G grass), for the failure message.
+      const rows: string[] = []
+      for (let j = 0; j < length; j += 1) {
+        let row = ''
+        for (let i = 0; i < width; i += 1) {
+          const plot = { x: from.x + i, y: from.y, z: from.z + j }
+          if (await is(plot, 'water')) row += 'W'
+          else if (await is(plot, 'farmland[moisture=7]')) row += 'M'
+          else if (await is(plot, 'farmland')) row += 'F'
+          else if (await is(plot, 'dirt')) row += 'D'
+          else if (await is(plot, 'grass_block')) row += 'G'
+          else row += '?'
+        }
+        rows.push(row)
+      }
+      throw new Error(`${String(error)}; last dry plot ${dry}:\n${rows.join('\n')}`, {
+        cause: error,
+      })
+    } finally {
+      await world.setGameRule('randomTickSpeed', 3)
+    }
+  }
+
+  it('waters a whole 7x7 field from one block at its centre, and the gate lies along the fence', async () => {
+    await world.give(bot(), 'wooden_hoe', 1)
+    await world.give(bot(), 'wheat_seeds', 50)
+    await world.give(bot(), 'water_bucket', 1)
+    await world.give(bot(), 'oak_fence', 40)
+    await world.give(bot(), 'oak_fence_gate', 1)
+    await untilBotCarries('wooden_hoe')
+    const origin = cell(2, -1, -12)
+
+    const built = await run('build_farm', {
+      kind: 'field',
+      params: { width: 7, length: 7, crop: 'wheat', fence: true, torches: false, water: 'spots' },
+      origin,
+      label: 'big field',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    // One water block, at the middle of the field, and none anywhere else.
+    expect(await is({ x: origin.x + 3, y: origin.y, z: origin.z + 3 }, 'water')).toBe(true)
+    let water = 0
+    for (let i = 0; i < 7; i += 1)
+      for (let j = 0; j < 7; j += 1)
+        if (await is({ x: origin.x + i, y: origin.y, z: origin.z + j }, 'water')) water += 1
+    expect(water).toBe(1)
+    await untilAllMoist(origin, 7, 7)
+    // The gate is in the south side (z = z0 + 7), which runs along x: it faces north or south, never east or west.
+    const gate = { x: origin.x + 3, y: origin.y + 1, z: origin.z + 7 }
+    expect(await is(gate, 'oak_fence_gate')).toBe(true)
+    const facesAlong =
+      (await is(gate, 'oak_fence_gate[facing=north]')) ||
+      (await is(gate, 'oak_fence_gate[facing=south]'))
+    expect(facesAlong).toBe(true)
+  }, 240_000)
+
+  it('waters the far end of a long field too', async () => {
+    await world.give(bot(), 'diamond_hoe', 1) // a wooden hoe lasts only 59 uses
+    await world.give(bot(), 'wheat_seeds', 64)
+    await world.give(bot(), 'water_bucket', 2) // a 12-long field has two 6-long parts
+    await untilBotCarries('diamond_hoe')
+    const origin = cell(-12, -1, -14)
+
+    const built = await run('build_farm', {
+      kind: 'field',
+      params: { width: 3, length: 12, crop: 'wheat', fence: false, torches: false, water: 'spots' },
+      origin,
+      label: 'long field',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    await untilAllMoist(origin, 3, 12)
+  }, 240_000)
 
   it('harvests only ripe crops, replants, and inspect_farm reports before and after', async () => {
     const a = cell(2, 0, -10)
@@ -149,7 +253,9 @@ describe('crop farming on a real Minecraft server', () => {
     const before = dataOf<{ components: { ripe: number; growing: number }[] }>(
       await session.bot.call('inspect_farm', { farm: 'test field' }),
     )
-    expect(before.components).toMatchObject([{ ripe: 1, growing: 1, empty: 0, kind: 'field', crop: 'wheat' }])
+    expect(before.components).toMatchObject([
+      { ripe: 1, growing: 1, empty: 0, kind: 'field', crop: 'wheat' },
+    ])
 
     const harvested = await run('harvest_crops', { farm: 'test field' })
 
@@ -170,6 +276,9 @@ describe('crop farming on a real Minecraft server', () => {
     await world.setBlock(a, 'farmland')
     await world.setBlock({ ...a, y: a.y + 1 }, 'wheat[age=7]')
     await world.setBlock(b, 'farmland') // left empty on purpose
+    // Water at the level of the plots keeps them farmland. Dry farmland with no crop on it turns back into dirt on a
+    // random tick, which made this test fail now and then (the bot has no hoe here, so it could not till it again).
+    await world.setBlock(cell(4, 0, -10), 'water')
     await world.give(bot(), 'wheat_seeds', 5)
     await untilBotCarries('wheat_seeds')
     await untilBotSeesAt('wheat', { ...a, y: a.y + 1 })

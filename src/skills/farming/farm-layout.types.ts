@@ -5,6 +5,11 @@ import type { WorkPlan } from '../construction/work-plan.types.js'
 export interface FarmLayoutContext {
   /** Where the layout starts; see each kind for what that cell is. */
   readonly origin: Position
+  /**
+   * What the world holds in a cell right now (undefined when not loaded), for layouts that must react to the ground
+   * they are built on. Absent where nothing can be read (a plain unit test of a layout).
+   */
+  readonly blockAt?: (position: Position) => string | undefined
 }
 
 /**

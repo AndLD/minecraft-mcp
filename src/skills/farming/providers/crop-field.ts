@@ -6,12 +6,48 @@ import type { FarmLayoutContext, FarmLayoutProvider } from '../farm-layout.types
 import { CROP_NAMES, classifyCrop } from '../crop-table.js'
 
 const MIN_WIDTH = 3
-/** A single water channel down the centre column hydrates farmland up to 4 blocks either side: 9 wide reaches both edges. */
-const MAX_WIDTH = 9
+/** Water hydrates farmland up to 4 blocks away in every direction: one water line (or spot) serves 9 blocks across. */
+export const HYDRATION_SPAN = 9
+/** Two bands of 9 across: each has its own trench (or its own spots), so a wider field is still watered everywhere. */
+const MAX_WIDTH = 2 * HYDRATION_SPAN
 const MIN_LENGTH = 3
 const MAX_LENGTH = 32
-/** How far apart the water sources are set into the channel; each hydrates farmland up to 4 blocks away along it too. */
-const CHANNEL_SPACING = 8
+
+export const WATER_LAYOUTS = ['trench', 'spots'] as const
+export type WaterLayout = (typeof WATER_LAYOUTS)[number]
+
+/**
+ * The middle of each part a side is cut into, so no part is wider than the reach of one water block. The parts are
+ * as equal as they can be (10 cells make two of 5, not 9 and 1), and the centre is the middle cell of a part.
+ */
+export function waterCentres(size: number): number[] {
+  const parts = Math.ceil(size / HYDRATION_SPAN)
+  const centres: number[] = []
+  for (let part = 0; part < parts; part += 1) {
+    const start = Math.floor((part * size) / parts)
+    const end = Math.floor(((part + 1) * size) / parts) - 1
+    centres.push(start + Math.floor((end - start) / 2))
+  }
+  return centres
+}
+
+/**
+ * The plots of a `width` by `length` field (0-based, x across, z along) that hold water. `trench`: a line down the
+ * middle of every 9-wide band, over the whole length, so every plot is within 4 blocks of water however long the field
+ * is. `spots`: one block at the centre of each 9 by 9 part. Neither ever puts a lone block at the edge of the field.
+ */
+export function waterPlots(
+  width: number,
+  length: number,
+  layout: WaterLayout,
+): { readonly i: number; readonly j: number }[] {
+  const across = waterCentres(width)
+  if (layout === 'spots') {
+    const along = waterCentres(length)
+    return across.flatMap((i) => along.map((j) => ({ i, j })))
+  }
+  return across.flatMap((i) => Array.from({ length }, (_, j) => ({ i, j })))
+}
 
 const cropFieldParams = z.object({
   width: z
@@ -20,7 +56,7 @@ const cropFieldParams = z.object({
     .min(MIN_WIDTH)
     .max(MAX_WIDTH)
     .describe(
-      `Across the field, x axis (${String(MIN_WIDTH)} to ${String(MAX_WIDTH)}): capped so a single water channel down the middle reaches every row.`,
+      `Across the field, x axis (${String(MIN_WIDTH)} to ${String(MAX_WIDTH)}): every ${String(HYDRATION_SPAN)} blocks across get their own water.`,
     ),
   length: z
     .number()
@@ -34,6 +70,12 @@ const cropFieldParams = z.object({
     .boolean()
     .default(true)
     .describe('Light the fence posts so mobs cannot spawn on the field at night.'),
+  water: z
+    .enum(WATER_LAYOUTS)
+    .default('trench')
+    .describe(
+      '"trench" (default): a line of water blocks down the middle over the whole length (one line per 9 blocks of width), so every plot is within 4 blocks of water; it takes one water bucket per block of it. "spots": one water block at the centre of each 9 by 9 part of the field, far fewer buckets (a field up to 9x9 needs one).',
+    ),
 })
 
 type CropFieldParams = z.output<typeof cropFieldParams>
@@ -51,8 +93,10 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
   readonly kind = 'field'
   readonly description =
     'A tilled, watered, fenced crop field: `width` (x) by `length` (z), starting at the lowest x/z corner (by ' +
-    'default the ground block two blocks east of the bot). A water source is set into the field every ' +
-    `${String(CHANNEL_SPACING)} rows down the centre column so every plot is within 4 blocks of water. ` +
+    'default the ground block two blocks east of the bot). `water` picks the layout: "trench" (default) is a line ' +
+    'of water down the middle (one line per 9 blocks of width), "spots" one block at the centre of each 9x9 part; ' +
+    'either way every plot is within 4 blocks of water, and no lone block goes at an edge. Each water block takes ' +
+    'one filled water bucket (fill_bucket makes them), so the preview says how many are needed. ' +
     'build_farm plants the chosen crop over the field right after building it. Needs a hoe, water buckets, and fence.'
   readonly params = cropFieldParams
 
@@ -65,18 +109,26 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
   }
 
   generate(p: CropFieldParams, context: FarmLayoutContext): WorkPlan | { error: string } {
-    if (classifyCrop(p.crop) === undefined) return { error: `${p.crop} is not a crop this can plant.` }
+    if (classifyCrop(p.crop) === undefined)
+      return { error: `${p.crop} is not a crop this can plant.` }
     const { x: x0, y: y0, z: z0 } = context.origin
-    const centerX = Math.floor((p.width - 1) / 2)
-    const steps: WorkStep[] = []
+    const water = new Set(
+      waterPlots(p.width, p.length, p.water).map(({ i, j }) => `${String(i)},${String(j)}`),
+    )
+    // Water first: the executor takes the first step it can do, and farmland tilled before there is water near it
+    // turns back into dirt on a random tick (about once a minute), which on a big field happens before the last plots
+    // are tilled.
+    const wet: WorkStep[] = []
+    const tilled: WorkStep[] = []
     for (let i = 0; i < p.width; i += 1) {
       for (let j = 0; j < p.length; j += 1) {
         const ground = { x: x0 + i, y: y0, z: z0 + j }
-        if (i === centerX && j % CHANNEL_SPACING === 0)
-          steps.push({ kind: 'place', at: ground, block: 'water_bucket', branch: 'channel' })
-        else steps.push({ kind: 'till', at: ground, branch: 'field' })
+        if (water.has(`${String(i)},${String(j)}`))
+          wet.push({ kind: 'place', at: ground, block: 'water_bucket', branch: 'channel' })
+        else tilled.push({ kind: 'till', at: ground, branch: 'field' })
       }
     }
+    const steps: WorkStep[] = [...wet, ...tilled]
     if (p.fence)
       steps.push(
         ...fenceRingSteps({ x0, y0, z0, width: p.width, length: p.length, torches: p.torches }),

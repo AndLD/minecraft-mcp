@@ -93,7 +93,15 @@ async function setup() {
     placer: new FakeSeedPlacer(world),
     farms,
   })
-  const skill = new BuildFarmSkill({ registry, executor, vitals: world, farms, protectedAreas, plant })
+  const skill = new BuildFarmSkill({
+    registry,
+    executor,
+    vitals: world,
+    farms,
+    protectedAreas,
+    blocks: world,
+    plant,
+  })
   return { world, skill, farms, protectedAreas }
 }
 
@@ -101,7 +109,7 @@ describe('BuildFarmSkill', () => {
   it('builds a field, registers it, and protects its footprint', async () => {
     const s = await setup()
     s.world.give('wheat_seeds', 8)
-    s.world.give('water_bucket', 1)
+    s.world.give('water_bucket', 3) // a trench of three blocks
 
     const result = await s.skill.run(
       {
@@ -125,7 +133,7 @@ describe('BuildFarmSkill', () => {
       builtByBot: true,
     })
     expect(result.value.protectedArea).toBe(true)
-    expect(result.value.planted).toBe(8) // every interior plot but the water channel
+    expect(result.value.planted).toBe(6) // every plot but the three of the water trench
     expect(s.farms.all()).toHaveLength(1)
     expect(s.protectedAreas.list()).toMatchObject({ ok: true, value: [{ label: 'wheat field' }] })
     expect(s.world.blockAt({ x: 0, y: 63, z: 0 })).toBe('farmland')
@@ -203,5 +211,106 @@ describe('BuildFarmSkill', () => {
     expect(preview).toMatchObject({ ok: true, value: { defaultOrigin: false } })
     expect(s.farms.all()).toHaveLength(0)
     expect(s.world.blockAt({ x: 0, y: 63, z: 0 })).not.toBe('farmland')
+  })
+  it('builds a field with water spots from a single bucket', async () => {
+    const s = await setup()
+    s.world.give('wheat_seeds', 8)
+    s.world.give('water_bucket', 1)
+
+    const result = await s.skill.run(
+      {
+        kind: 'field',
+        params: {
+          width: 3,
+          length: 3,
+          crop: 'wheat',
+          fence: false,
+          torches: false,
+          water: 'spots',
+        },
+        origin: { x: 0, y: 63, z: 0 },
+        fetchFromStorage: false,
+      },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { planted: 8 } })
+    expect(s.world.blockAt({ x: 1, y: 63, z: 1 })).toBe('water')
+    expect(s.world.blockAt({ x: 0, y: 63, z: 0 })).toBe('farmland')
+  })
+
+  it('counts the water buckets a field needs in the preview', async () => {
+    const s = await setup()
+    const params = { width: 7, length: 12, crop: 'wheat', fence: false, torches: false }
+    const preview = (water: string) =>
+      s.skill.preview({
+        kind: 'field',
+        params: { ...params, water },
+        origin: { x: 0, y: 63, z: 0 },
+        fetchFromStorage: false,
+      })
+
+    const trench = preview('trench')
+    const spots = preview('spots')
+
+    expect(trench).toMatchObject({ ok: true })
+    expect(trench.ok && trench.value.needs).toContainEqual({ name: 'water_bucket', count: 12 })
+    expect(spots.ok && spots.value.needs).toContainEqual({ name: 'water_bucket', count: 2 })
+    expect(trench.ok && trench.value.missing).toContainEqual({ name: 'water_bucket', count: 12 })
+  })
+
+  it('clears the natural blocks left at fence level inside a pen on bumpy ground, before the pen is protected', async () => {
+    const s = await setup()
+    s.world.give('oak_fence', 20)
+    s.world.give('oak_fence_gate', 1)
+    // Bumps: grass and dirt one and two blocks above the pen's ground (63), and a flower.
+    s.world.setBlock({ x: 1, y: 64, z: 1 }, 'grass_block')
+    s.world.setBlock({ x: 2, y: 64, z: 2 }, 'dirt')
+    s.world.setBlock({ x: 2, y: 65, z: 2 }, 'dirt')
+    s.world.setBlock({ x: 3, y: 64, z: 0 }, 'dandelion')
+    s.world.setBlock({ x: 0, y: 64, z: 3 }, 'short_grass')
+
+    const result = await s.skill.run(
+      {
+        kind: 'pen',
+        params: { width: 4, length: 4, species: 'cow', water: false, torches: false },
+        origin: { x: 0, y: 63, z: 0 },
+        fetchFromStorage: false,
+      },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { protectedArea: true } })
+    for (const at of [
+      { x: 1, y: 64, z: 1 },
+      { x: 2, y: 64, z: 2 },
+      { x: 2, y: 65, z: 2 },
+      { x: 3, y: 64, z: 0 },
+    ])
+      expect(s.world.blockAt(at)).toBe('air')
+    // The dig happened before the protection: the plan was allowed to break inside its own footprint.
+    expect(s.world.log.filter((line) => line.startsWith('dig')).length).toBeGreaterThanOrEqual(4)
+    expect(s.protectedAreas.list()).toMatchObject({
+      ok: true,
+      value: [{ label: expect.any(String) }],
+    })
+  })
+
+  it('leaves a chest inside the pen alone and says so in the preview', async () => {
+    const s = await setup()
+    s.world.setBlock({ x: 1, y: 64, z: 1 }, 'chest')
+    s.world.setBlock({ x: 2, y: 64, z: 1 }, 'grass_block')
+
+    const preview = s.skill.preview({
+      kind: 'pen',
+      params: { width: 4, length: 4, species: 'cow', water: false, torches: false },
+      origin: { x: 0, y: 63, z: 0 },
+      fetchFromStorage: false,
+    })
+
+    expect(preview).toMatchObject({ ok: true })
+    if (!preview.ok) return
+    expect(preview.value.warnings.join(' ')).toContain('chest')
+    expect(preview.value.toBreak).toBe(1) // only the grass
   })
 })

@@ -445,6 +445,8 @@ export class FakeBot implements BotLike {
         if (sign?.rotation !== undefined) props['rotation'] = String(sign.rotation)
         if (name === 'water' || name === 'lava')
           props['level'] = String(this.liquidLevels.get(cellKey) ?? 0)
+        if (name.endsWith('_fence_gate') && this.gateFacings.has(cellKey))
+          props['facing'] = this.gateFacings.get(cellKey)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
         if (classifySwitch(name) !== undefined)
           props['powered'] = this.switchPowered.get(cellKey) ?? false
@@ -905,11 +907,25 @@ export class FakeBot implements BotLike {
     this.removeItems(name, 1)
     this.heldItem = this.count(name) > 0 ? { name, count: this.count(name) } : null
     if (FakeBot.isSign(name)) this.placeSign(name, target, face)
-    else this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
+    else {
+      this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
+      if (name.endsWith('_fence_gate')) this.gateFacings.set(key(target), this.facingTowards(target))
+    }
     this.placed.push({ name, position: target })
     this.settle()
     return Promise.resolve()
   }
+
+  /** The way a fence gate faces: like the game, the horizontal direction the placing player looks, here towards the cell. */
+  private facingTowards(target: Position): string {
+    const from = this.entity?.position ?? target
+    const dx = target.x + 0.5 - from.x
+    const dz = target.z + 0.5 - from.z
+    if (Math.abs(dz) >= Math.abs(dx)) return dz > 0 ? 'south' : 'north'
+    return dx > 0 ? 'east' : 'west'
+  }
+  /** Fence gates by cell: the direction each was placed facing. */
+  private readonly gateFacings = new Map<string, string>()
 
   /** A sign item on a top face is a standing sign (turned like the server turns it, to face the bot); on a side, a wall sign. */
   private placeSign(name: string, target: Position, face: Position): void {

@@ -10,11 +10,14 @@ import { err, ok, type Result } from '../../../../src/core/result.js'
 import { LureAnimalsSkill } from '../../../../src/skills/farming/lure-animals-skill.js'
 import { FarmRegistry } from '../../../../src/state/farm-registry.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
+import { AutoScheduler } from '../../../fakes/gathering-fakes.js'
 import { InMemoryStateStore } from '../../../fakes/state-fakes.js'
 
 const context = () => ({ signal: new AbortController().signal, progress: () => undefined })
 
-const animal = (overrides: Partial<AnimalInfo> & { id: number; species: string; position: Position }): AnimalInfo => ({
+const animal = (
+  overrides: Partial<AnimalInfo> & { id: number; species: string; position: Position },
+): AnimalInfo => ({
   distance: 1,
   baby: false,
   named: false,
@@ -99,10 +102,12 @@ async function setup(start: Position = { x: 0, y: 64, z: 0 }) {
   const interaction = new FakeInteraction()
   const navigator = new FakeNavigator(start)
   const vitals = new FakeVitals(navigator)
-  const farms = new FarmRegistry(new FakeClock(0))
+  const clock = new FakeClock(0)
+  const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
-  const skill = new LureAnimalsSkill({ animals, interaction, navigator, vitals, farms })
-  return { animals, interaction, navigator, vitals, farms, skill }
+  const scheduler = new AutoScheduler(clock)
+  const skill = new LureAnimalsSkill({ animals, interaction, navigator, vitals, farms, scheduler })
+  return { animals, interaction, navigator, vitals, farms, skill, clock }
 }
 
 const at = (x: number, y: number, z: number): Position => ({ x, y, z })
@@ -117,7 +122,10 @@ describe('LureAnimalsSkill', () => {
       context(),
     )
 
-    expect(result).toEqual({ ok: true, value: { led: 1, requested: 1, abandoned: [], penFull: false } })
+    expect(result).toEqual({
+      ok: true,
+      value: { led: 1, requested: 1, room: 1, shortfall: 0, abandoned: [], penFull: false },
+    })
     expect(s.interaction.held).toEqual(['wheat'])
   })
 
@@ -150,7 +158,14 @@ describe('LureAnimalsSkill', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { led: 0, requested: 1, abandoned: [{ id: 1, reason: 'unreachable' }], penFull: false },
+      value: {
+        led: 0,
+        requested: 1,
+        room: 1,
+        shortfall: 1,
+        abandoned: [{ id: 1, reason: 'unreachable' }],
+        penFull: false,
+      },
     })
   })
 
@@ -166,7 +181,14 @@ describe('LureAnimalsSkill', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { led: 0, requested: 1, abandoned: [{ id: 1, reason: 'lost_interest' }], penFull: false },
+      value: {
+        led: 0,
+        requested: 1,
+        room: 1,
+        shortfall: 1,
+        abandoned: [{ id: 1, reason: 'lost_interest' }],
+        penFull: false,
+      },
     })
   })
 
@@ -185,7 +207,14 @@ describe('LureAnimalsSkill', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { led: 1, requested: 1, abandoned: [{ id: 1, reason: 'unreachable' }], penFull: false },
+      value: {
+        led: 1,
+        requested: 1,
+        room: 1,
+        shortfall: 0,
+        abandoned: [{ id: 1, reason: 'unreachable' }],
+        penFull: false,
+      },
     })
   })
 
@@ -276,6 +305,212 @@ describe('LureAnimalsSkill', () => {
       context(),
     )
 
-    expect(result).toEqual({ ok: true, value: { led: 0, requested: 1, abandoned: [], penFull: true } })
+    expect(result).toEqual({
+      ok: true,
+      value: { led: 0, requested: 1, room: 0, shortfall: 1, abandoned: [], penFull: true },
+    })
+  })
+  it('does not call the pen full when it has room for some but not all: it reports the room and the shortfall', async () => {
+    const s = await setup()
+    const registered = s.farms.register({
+      kind: 'pen',
+      species: 'cow',
+      bounds: { from: at(0, 64, 0), to: at(1, 64, 1) }, // capacity 4
+      label: 'cow pen',
+    })
+    if (!registered.ok) throw new Error(registered.error)
+    s.animals.animals = [
+      animal({ id: 1, species: 'cow', position: at(0, 64, 0) }),
+      animal({ id: 2, species: 'cow', position: at(0, 64, 1) }),
+      animal({ id: 3, species: 'cow', position: at(1, 64, 0) }),
+      animal({ id: 4, species: 'cow', position: at(3, 64, 0) }),
+      animal({ id: 5, species: 'cow', position: at(4, 64, 0) }),
+    ]
+
+    const result = await s.skill.run(
+      { species: 'cow', count: 3, farm: 'cow pen', destination: undefined, maxDistance: 32 },
+      context(),
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { led: 1, requested: 3, room: 1, shortfall: 2, penFull: false },
+    })
+  })
+
+  it('does not call the pen full when nothing could be led although it has room', async () => {
+    const s = await setup()
+    const registered = s.farms.register({
+      kind: 'pen',
+      species: 'chicken',
+      bounds: { from: at(0, 64, 0), to: at(4, 64, 4) },
+      label: 'hen house',
+    })
+    if (!registered.ok) throw new Error(registered.error)
+    s.animals.animals = [animal({ id: 1, species: 'chicken', position: at(60, 64, 0) })]
+    s.animals.vanished.add(1)
+
+    const result = await s.skill.run(
+      { species: 'chicken', count: 2, farm: 'hen house', destination: undefined, maxDistance: 64 },
+      context(),
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        led: 0,
+        requested: 2,
+        room: 2,
+        shortfall: 2,
+        penFull: false,
+        abandoned: [{ id: 1, reason: 'unreachable' }],
+      },
+    })
+  })
+
+  describe('approaching and leading', () => {
+    it('waits between hops for an animal that lags behind, and leads it in when it catches up', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(5, 64, 0) })]
+      // The cow starts 8 blocks behind the bot and closes in by a block for every half second the bot waits.
+      s.animals.find = (id: number) => {
+        const lag = Math.max(2, 8 - s.clock.now() / 500)
+        return animal({ id, species: 'cow', position: at(s.navigator.position.x - lag, 64, 0) })
+      }
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(16, 64, 0), maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { led: 1, abandoned: [] } })
+      // It really waited for the cow: two half seconds bring an 8-block lag down to 6.
+      expect(s.clock.now()).toBe(1000)
+    })
+
+    it('gives up on an animal that does not catch up within the wait, as lost_interest', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(5, 64, 0) })]
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(50, 64, 0), maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { led: 0, abandoned: [{ id: 1, reason: 'lost_interest' }] },
+      })
+      expect(s.clock.now()).toBeGreaterThanOrEqual(5000)
+    })
+
+    it('does not wait for an animal that is far beyond following range', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(5, 64, 0) })]
+      // Seen close by while approaching, then left far behind at once (a burst of speed, or a gate it cannot pass).
+      let reads = 0
+      s.animals.find = (id: number) => {
+        reads += 1
+        return animal({ id, species: 'cow', position: reads === 1 ? at(5, 64, 0) : at(-30, 64, 0) })
+      }
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(50, 64, 0), maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { abandoned: [{ reason: 'lost_interest' }] },
+      })
+      expect(s.clock.now()).toBe(0)
+    })
+
+    it('tries the approach again from where the animal is now when the walk fails', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(20, 64, 0) })]
+      s.navigator.failNextCall = { reason: 'unreachable', message: 'no path' }
+      let reads = 0
+      s.animals.find = (id: number) => {
+        reads += 1
+        // The cow wandered on after the first failed walk.
+        return animal({ id, species: 'cow', position: reads === 1 ? at(20, 64, 0) : at(22, 64, 3) })
+      }
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(23, 64, 3), maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { led: 1 } })
+      expect(s.navigator.calls[0]).toEqual(at(20, 64, 0))
+      expect(s.navigator.calls[1]).toEqual(at(22, 64, 3))
+    })
+
+    it('gives up after three failed approaches, as unreachable', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(20, 64, 0) })]
+      s.navigator.goToPosition = (target: Position) => {
+        s.navigator.calls.push(target)
+        return Promise.resolve(err({ reason: 'unreachable', message: 'no path' }))
+      }
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(23, 64, 3), maxDistance: 32 },
+        context(),
+      )
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { led: 0, abandoned: [{ id: 1, reason: 'unreachable' }] },
+      })
+      expect(s.navigator.calls).toHaveLength(3)
+    })
+
+    it('walks to a far flock in legs of at most 30 blocks, then next to the animal, before leading', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'chicken', position: at(100, 64, 0) })]
+
+      const result = await s.skill.run(
+        {
+          species: 'chicken',
+          count: 1,
+          farm: undefined,
+          destination: at(98, 64, 0),
+          maxDistance: 128,
+        },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { led: 1 } })
+      const legs = s.navigator.calls
+      // Each step is at most 30 blocks from the one before it, and the last approach lands on the animal.
+      let last = at(0, 64, 0)
+      for (const call of legs) {
+        expect(Math.hypot(call.x - last.x, call.z - last.z)).toBeLessThanOrEqual(30.001)
+        last = call
+      }
+      expect(s.navigator.calls).toContainEqual(at(100, 64, 0))
+      expect(s.navigator.calls.length).toBeGreaterThanOrEqual(4)
+    })
+
+    it('is cancelled while waiting for the animal', async () => {
+      const s = await setup()
+      s.animals.animals = [animal({ id: 1, species: 'cow', position: at(5, 64, 0) })]
+      const controller = new AbortController()
+      const original = s.navigator.goToPosition.bind(s.navigator)
+      s.navigator.goToPosition = (target: Position) => {
+        const result = original(target)
+        if (s.navigator.calls.length === 2) controller.abort()
+        return result
+      }
+
+      const result = await s.skill.run(
+        { species: 'cow', count: 1, farm: undefined, destination: at(50, 64, 0), maxDistance: 32 },
+        { signal: controller.signal, progress: () => undefined },
+      )
+
+      expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    })
   })
 })

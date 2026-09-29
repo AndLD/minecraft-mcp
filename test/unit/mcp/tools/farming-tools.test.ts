@@ -24,7 +24,11 @@ import type {
   BreedAnimalsOutput,
   BreedAnimalsSkill,
 } from '../../../../src/skills/farming/breed-animals-skill.js'
-import type { BuildFarmInput, BuildFarmOutput, BuildFarmSkill } from '../../../../src/skills/farming/build-farm-skill.js'
+import type {
+  BuildFarmInput,
+  BuildFarmOutput,
+  BuildFarmSkill,
+} from '../../../../src/skills/farming/build-farm-skill.js'
 import type {
   HarvestCropsInput,
   HarvestCropsOutput,
@@ -36,7 +40,11 @@ import type {
   LureAnimalsOutput,
   LureAnimalsSkill,
 } from '../../../../src/skills/farming/lure-animals-skill.js'
-import type { PlantCropsInput, PlantCropsOutput, PlantCropsSkill } from '../../../../src/skills/farming/plant-crops-skill.js'
+import type {
+  PlantCropsInput,
+  PlantCropsOutput,
+  PlantCropsSkill,
+} from '../../../../src/skills/farming/plant-crops-skill.js'
 import type {
   HarvestTreesInput,
   HarvestTreesSkill,
@@ -46,7 +54,10 @@ import type {
   CollectSaplingsInput,
   CollectSaplingsSkill,
 } from '../../../../src/skills/farming/collect-saplings-skill.js'
-import type { PlantTreesInput, PlantTreesSkill } from '../../../../src/skills/farming/plant-trees-skill.js'
+import type {
+  PlantTreesInput,
+  PlantTreesSkill,
+} from '../../../../src/skills/farming/plant-trees-skill.js'
 import type { TendFarmSkill } from '../../../../src/skills/farming/tend-farm-skill.js'
 import type {
   CollectEggsInput,
@@ -66,7 +77,11 @@ const context = { signal: new AbortController().signal }
 
 function launching() {
   const clock = new FakeClock(Date.UTC(2026, 8, 19, 12, 0, 0))
-  const tasks = new TaskManager({ clock, scheduler: new FakeScheduler(clock), logger: new FakeLogger() })
+  const tasks = new TaskManager({
+    clock,
+    scheduler: new FakeScheduler(clock),
+    logger: new FakeLogger(),
+  })
   return { tasks, launcher: new TaskLauncher(tasks, clock) }
 }
 
@@ -132,7 +147,13 @@ describe('PlantCropsTool', () => {
   it('passes the farm, area, crop, and max_plants through', async () => {
     const { launcher } = launching()
     const runs: PlantCropsInput[] = []
-    const outcome: SkillResult<PlantCropsOutput> = ok({ planted: 2, tilled: 1, skipped: 0 })
+    const outcome: SkillResult<PlantCropsOutput> = ok({
+      planted: 2,
+      tilled: 1,
+      skipped: 0,
+      repaired: 0,
+      stillBare: 0,
+    })
     const skill = {
       name: 'plant_crops',
       run: (input: PlantCropsInput) => {
@@ -177,7 +198,14 @@ describe('LureAnimalsTool', () => {
   it('translates input and runs the skill through the task launcher', async () => {
     const { launcher } = launching()
     const runs: LureAnimalsInput[] = []
-    const outcome: SkillResult<LureAnimalsOutput> = ok({ led: 1, requested: 2, abandoned: [], penFull: false })
+    const outcome: SkillResult<LureAnimalsOutput> = ok({
+      led: 1,
+      requested: 2,
+      room: 2,
+      shortfall: 1,
+      abandoned: [],
+      penFull: false,
+    })
     const skill = {
       name: 'lure_animals',
       run: (input: LureAnimalsInput) => {
@@ -252,7 +280,12 @@ describe('CollectEggsTool', () => {
     const tool = new CollectEggsTool(skill, launcher)
 
     const result = await tool.execute(
-      tool.inputSchema.parse({ farm: 'coop', store_fraction: 0.2, release: 'store', max_chickens: 12 }),
+      tool.inputSchema.parse({
+        farm: 'coop',
+        store_fraction: 0.2,
+        release: 'store',
+        max_chickens: 12,
+      }),
       context,
     )
 
@@ -263,7 +296,10 @@ describe('CollectEggsTool', () => {
       release: 'store',
       maxChickens: 12,
     })
-    expect(result).toMatchObject({ ok: true, data: { result: { pickedUp: 10, stored: 1, released: 9 } } })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { result: { pickedUp: 10, stored: 1, released: 9 } },
+    })
   })
 })
 
@@ -362,11 +398,19 @@ describe('PlantTreesTool', () => {
       }),
       context,
     )
-    await tool.execute(tool.inputSchema.parse({ farm: 'wood' }), { signal: new AbortController().signal, ...{} })
+    await tool.execute(tool.inputSchema.parse({ farm: 'wood' }), {
+      signal: new AbortController().signal,
+      ...{},
+    })
 
     expect(runs[0]).toMatchObject({
       species: 'birch',
-      around: { from: { x: 1, y: 64, z: 1 }, to: { x: 5, y: 64, z: 5 }, distance: 3, depth: undefined },
+      around: {
+        from: { x: 1, y: 64, z: 1 },
+        to: { x: 5, y: 64, z: 5 },
+        distance: 3,
+        depth: undefined,
+      },
       preview: true,
     })
     expect(runs[1]).toMatchObject({ farm: 'wood', count: undefined, species: undefined })
@@ -400,7 +444,12 @@ describe('CollectSaplingsTool', () => {
     const tool = new CollectSaplingsTool(skill, launcher)
 
     const result = await tool.execute(
-      tool.inputSchema.parse({ species: 'birch', count: 3, max_leaves: 90, on_inventory_full: 'stop' }),
+      tool.inputSchema.parse({
+        species: 'birch',
+        count: 3,
+        max_leaves: 90,
+        on_inventory_full: 'stop',
+      }),
       context,
     )
 
@@ -440,7 +489,9 @@ describe('HarvestTreesTool', () => {
       name: 'harvest_trees',
       run: (input: HarvestTreesInput) => {
         runs.push(input)
-        return Promise.resolve(ok({ trees: 2, logs: 9, left: 0, replanted: 2, saplingsMissing: 0, gained: [] }))
+        return Promise.resolve(
+          ok({ trees: 2, logs: 9, left: 0, replanted: 2, saplingsMissing: 0, gained: [] }),
+        )
       },
     } as unknown as HarvestTreesSkill
     const tool = new HarvestTreesTool(skill, launcher)
@@ -543,7 +594,10 @@ describe('DiscoverFarmTool', () => {
 
   it('reports a failure', async () => {
     const skill = {
-      run: () => Promise.resolve(err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })),
+      run: () =>
+        Promise.resolve(
+          err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' }),
+        ),
     } as unknown as DiscoverFarmSkill
     const tool = new DiscoverFarmTool(skill)
 
@@ -568,13 +622,20 @@ describe('RegisterFarmTool', () => {
       }),
     )
 
-    expect(result).toMatchObject({ ok: true, data: { farm: { label: 'wheat field', crop: 'wheat' } } })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { farm: { label: 'wheat field', crop: 'wheat' } },
+    })
     expect(farms.all()).toHaveLength(1)
   })
 
   it('reports a registry failure', async () => {
     const farms = await registry()
-    farms.register({ kind: 'field', bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 0, y: 64, z: 0 } }, label: 'a' })
+    farms.register({
+      kind: 'field',
+      bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 0, y: 64, z: 0 } },
+      label: 'a',
+    })
     const tool = new RegisterFarmTool(farms)
 
     const result = tool.execute(
@@ -593,7 +654,11 @@ describe('RegisterFarmTool', () => {
 describe('ListFarmsTool', () => {
   it('lists what is registered', async () => {
     const farms = await registry()
-    farms.register({ kind: 'field', crop: 'wheat', bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 1, y: 64, z: 1 } } })
+    farms.register({
+      kind: 'field',
+      crop: 'wheat',
+      bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 1, y: 64, z: 1 } },
+    })
     const tool = new ListFarmsTool(farms)
 
     const result = tool.execute()

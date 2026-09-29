@@ -23,7 +23,13 @@ class FakeHarvest implements Pick<HarvestCropsSkill, 'run'> {
 
 class FakePlant implements Pick<PlantCropsSkill, 'run'> {
   readonly calls: unknown[] = []
-  result: Awaited<ReturnType<PlantCropsSkill['run']>> = ok({ planted: 1, tilled: 0, skipped: 0 })
+  result: Awaited<ReturnType<PlantCropsSkill['run']>> = ok({
+    planted: 1,
+    tilled: 0,
+    skipped: 0,
+    repaired: 0,
+    stillBare: 0,
+  })
   run(input: unknown) {
     this.calls.push(input)
     return Promise.resolve(this.result)
@@ -118,6 +124,8 @@ describe('TendFarmSkill', () => {
             harvested: 3,
             replanted: 2,
             planted: 1,
+            repaired: 0,
+            stillBare: 0,
             herdSizeBefore: undefined,
             herdAction: undefined,
             eggsPickedUp: undefined,
@@ -198,7 +206,13 @@ describe('TendFarmSkill', () => {
       problem: undefined,
     })
     expect(s.collectEggs.calls).toEqual([
-      { farm: entry.value.id, area: undefined, storeFraction: undefined, release: undefined, maxChickens: 6 },
+      {
+        farm: entry.value.id,
+        area: undefined,
+        storeFraction: undefined,
+        release: undefined,
+        maxChickens: 6,
+      },
     ])
   })
 
@@ -317,7 +331,12 @@ describe('TendFarmSkill', () => {
       },
     })
     expect(s.plantTrees.calls).toEqual([
-      expect.objectContaining({ farm: entry.value.id, count: undefined, area: undefined, preview: false }),
+      expect.objectContaining({
+        farm: entry.value.id,
+        count: undefined,
+        area: undefined,
+        preview: false,
+      }),
     ])
   })
 
@@ -337,6 +356,51 @@ describe('TendFarmSkill', () => {
       problem: 'Say how many trees to plant.',
     })
     expect(result.value.components.find((c) => c.kind === 'field')?.harvested).toBe(3)
+  })
+
+  it('reports the plots that were lost and replanted, and the ones still bare after the final check', async () => {
+    const s = await setup()
+    const entry = s.farms.register({ kind: 'field', crop: 'wheat', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+    s.plant.result = ok({ planted: 5, tilled: 2, skipped: 0, repaired: 2, stillBare: 3 })
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({ planted: 5, repaired: 2, stillBare: 3 })
+    expect(result.value.components[0]?.problem).toContain('3 plot(s) are still bare')
+  })
+
+  it('says why planting failed instead of showing a bare zero (no hoe, no seeds)', async () => {
+    const s = await setup()
+    const entry = s.farms.register({ kind: 'field', crop: 'wheat', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+    s.plant.result = err({ reason: 'no_hoe', message: 'The bot has no hoe to till with.' })
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]).toMatchObject({
+      harvested: 3,
+      planted: 0,
+      problem: 'The bot has no hoe to till with.',
+    })
+  })
+
+  it('keeps the harvest problem and adds the planting one', async () => {
+    const s = await setup()
+    const entry = s.farms.register({ kind: 'field', crop: 'wheat', bounds })
+    if (!entry.ok) throw new Error(entry.error)
+    s.harvest.result = err({ reason: 'no_area', message: 'nothing to harvest' })
+    s.plant.result = err({ reason: 'no_seeds', message: 'no seeds left' })
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.components[0]?.problem).toBe('nothing to harvest no seeds left')
   })
 
   it('does not plant when the field has no crop set', async () => {
@@ -362,7 +426,11 @@ describe('TendFarmSkill', () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.value.components[0]).toMatchObject({ harvested: 0, replanted: 0, problem: 'no area' })
+    expect(result.value.components[0]).toMatchObject({
+      harvested: 0,
+      replanted: 0,
+      problem: 'no area',
+    })
   })
 
   it('fails with unknown_farm for an unrecognised id, label, or group', async () => {
