@@ -12,6 +12,19 @@ import { ConstructionWorld } from '../../../fakes/construction-fakes.js'
 const at = (x: number, y: number, z: number): Position => ({ x, y, z })
 
 describe('StandingSpotChooser', () => {
+  it('does not stand on the cell it is asked to keep intact under its feet', () => {
+    const world = new ConstructionWorld()
+    const from = at(2.5, 64, 2.5)
+    const chooser = new StandingSpotChooser(world)
+
+    expect(chooser.choose({ target: at(2, 63, 2), from, reserved: new Set() })).toBe(from)
+    const moved = chooser.choose({ target: at(2, 63, 2), from, reserved: new Set(), notOn: at(2, 63, 2) })
+
+    expect(moved).toBeDefined()
+    expect(moved).not.toBe(from)
+    expect(Math.floor(moved?.x ?? 0) === 2 && Math.floor(moved?.z ?? 0) === 2).toBe(false)
+  })
+
   it('keeps the bot where it is when it already reaches the cell', () => {
     const world = new ConstructionWorld()
     const from = at(2.5, 64, 2.5)

@@ -84,16 +84,8 @@ export class HazardRule {
     if (here === 'spawner') return { reason: 'spawner', at }
     if (LEFT_ALONE.has(here)) return { reason: 'player_block', at }
 
-    for (const around of [{ x: 0, y: 0, z: 0 }, ...NEIGHBOURS]) {
-      const cell = { x: at.x + around.x, y: at.y + around.y, z: at.z + around.z }
-      const name = this.blocks.blockAt(cell)
-      if (name === 'lava') return { reason: 'hit_lava', at: cell }
-      if (name === 'water') return { reason: 'hit_water', at: cell }
-    }
-
-    const above = { x: at.x, y: at.y + 1, z: at.z }
-    // Sand or gravel above would fall into the opening, even when that cell is itself still to be dug.
-    if (isFalling(this.blocks.blockAt(above))) return { reason: 'falling_blocks', at: above }
+    const near = this.fluidNear(at) ?? this.fallingAbove(at)
+    if (near !== undefined) return near
 
     if (plan.cavityCheck === true) {
       for (const offset of step.probe ?? []) {
@@ -104,6 +96,23 @@ export class HazardRule {
       }
     }
     return undefined
+  }
+
+  /** Lava or water in the cell or in any of the six blocks that touch it: breaking the block would let it flow in. */
+  fluidNear(at: Position): Hazard | undefined {
+    for (const around of [{ x: 0, y: 0, z: 0 }, ...NEIGHBOURS]) {
+      const cell = { x: at.x + around.x, y: at.y + around.y, z: at.z + around.z }
+      const name = this.blocks.blockAt(cell)
+      if (name === 'lava') return { reason: 'hit_lava', at: cell }
+      if (name === 'water') return { reason: 'hit_water', at: cell }
+    }
+    return undefined
+  }
+
+  /** Sand or gravel above would fall into the opening, even when that cell is itself still to be dug. */
+  fallingAbove(at: Position): Hazard | undefined {
+    const above = { x: at.x, y: at.y + 1, z: at.z }
+    return isFalling(this.blocks.blockAt(above)) ? { reason: 'falling_blocks', at: above } : undefined
   }
 
   /** An opening the dig itself made or has already worked through (an earlier cell of the plan, a mined ore). */

@@ -199,3 +199,28 @@ describe('HazardRule: cave breakthrough', () => {
     )
   })
 })
+
+describe('HazardRule: the checks on their own', () => {
+  it('fluidNear finds lava or water in the cell or beside it, whatever the cell holds', () => {
+    const { world, rule } = rock()
+    world.setBlock(at(10, 50, 10), 'chest')
+    expect(rule.fluidNear(at(10, 50, 10))).toBeUndefined()
+
+    world.setBlock(at(11, 50, 10), 'lava')
+    expect(rule.fluidNear(at(10, 50, 10))).toEqual({ reason: 'hit_lava', at: at(11, 50, 10) })
+    world.setBlock(at(11, 50, 10), 'water')
+    expect(rule.fluidNear(at(10, 50, 10))).toEqual({ reason: 'hit_water', at: at(11, 50, 10) })
+  })
+
+  it('fallingAbove finds sand, gravel, and concrete powder right above', () => {
+    const { world, rule } = rock()
+    expect(rule.fallingAbove(at(10, 50, 10))).toBeUndefined()
+
+    world.setBlock(at(10, 51, 10), 'white_concrete_powder')
+    expect(rule.fallingAbove(at(10, 50, 10))).toEqual({
+      reason: 'falling_blocks',
+      at: at(10, 51, 10),
+    })
+    expect(rule.fallingAbove(at(10, 49, 10))).toBeUndefined()
+  })
+})
