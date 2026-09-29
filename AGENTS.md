@@ -215,7 +215,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Drop recovery | `set_drop_recovery_policy`, `skip_drop_recovery`, `recover_drops`, `list_death_records` |
 | Storage | `register_container`, `label_container`, `list_containers`, `scan_containers`, `set_storage_rule`, `list_storage_rules`, `remove_storage_rule`, `deposit_items`, `withdraw_items`, `find_items`, `set_storage_policy` |
 | Building | `build`, `list_blueprints`, `place_block`, `preview_build` (blueprints: floor, walls, box, solid, block, house, shelter, custom) |
-| Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down, room, dig_to a target block; `stair_width`/`stair_height`, `seal_caves`/`seal_block`, `falling_blocks: clear`; every shape is read back and its stray blocks cleared, see `shapeCheck`), `preview_excavation`, `list_excavations` |
+| Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down, room, dig_to a target block; `stair_width`/`stair_height`, `seal_caves`/`seal_block`, `falling_blocks: clear`, `continue_existing` to deepen a pit/shaft/quarry the bot dug, `order: bottom_up`; every shape is read back and its stray blocks cleared, see `shapeCheck`), `preview_excavation`, `list_excavations` |
 | Breaking | `break_block` (exactly one block at coordinates or the one the player looks at; `override_protection` only on the player's own direct words) |
 | Buckets | `fill_bucket` (water or lava into empty buckets; source blocks only; lava refused in protected areas and beside player builds unless the block is named with `at`) |
 | Signs | `place_sign`, `edit_sign`, `remove_sign`, `read_signs` (wall and standing signs; plain text of 4 lines of 15 characters) |

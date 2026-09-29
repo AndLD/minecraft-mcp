@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { err, ok, type Result } from '../../core/result.js'
 import { DIRECTIONS } from '../../skills/excavation/providers/geometry.js'
 import type { ExcavationRegistry } from '../../skills/excavation/excavation-registry.js'
+import type { ExcavationRecords } from '../../state/excavation-records.js'
 import type { ExcavateInput, ExcavateSkill } from '../../skills/excavation/excavate-skill.js'
 import type { WallResolver } from '../../skills/excavation/wall-target.js'
 import { INVENTORY_FULL_KINDS } from '../../state/storage-policy.js'
@@ -32,6 +33,12 @@ const shape = {
         'Work the numbers out from the player\'s words yourself ("1 wide, 5 high, 50 deep" is width 1, height 5, length 50); when it is unclear which number is which, ask the player. preview_excavation echoes what was understood. ' +
         'For "room": at and direction (both, or neither) override reading the wall from the player\'s own look, and for_player says whose look and standing level to use (defaults to the owner).',
     ),
+  continue_existing: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Continue a pit, shaft, or quarry the bot dug before ("make this quarry deeper"): the recorded footprint, origin, and way out (stairs or ladders) are reused, and only what is missing is dug, down to the target in params (`to_y`, `above_bedrock`, or `depth`). Without a target it re-checks the hole at its old depth (for example to cut the stair walls with `exit` and `order: "bottom_up"` in params). The reply names what was found and what is added (`continuing` in preview_excavation, `continued` in the result). It refuses (not_recognised) when no recorded dig is under or around the bot, or the record no longer matches the world: then give `origin` of the dig, or dig it again with its own size over the same origin, which digs only what is missing. Dug by hand or before records were kept: not recognised.',
+    ),
   origin: positionSchema
     .optional()
     .describe(
@@ -47,6 +54,7 @@ const toInput = (input: {
   spoil_policy?: ExcavateInput['spoilPolicy']
   on_inventory_full?: ExcavateInput['onInventoryFull']
   falling_blocks?: ExcavateInput['fallingBlocks']
+  continue_existing?: boolean
 }): ExcavateInput => ({
   shape: input.shape,
   params: input.params,
@@ -55,6 +63,7 @@ const toInput = (input: {
   spoilPolicy: input.spoil_policy,
   onInventoryFull: input.on_inventory_full,
   fallingBlocks: input.falling_blocks,
+  continueExisting: input.continue_existing,
 })
 
 /**
@@ -164,6 +173,7 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
             fetch_from_storage: input.fetch_from_storage,
             spoil_policy: input.spoil_policy,
             falling_blocks: input.falling_blocks,
+            continue_existing: input.continue_existing,
           },
         },
         run: (ctx) => this.skill.run(toInput({ ...input, origin, params }), ctx),
@@ -209,12 +219,16 @@ export class ListExcavationsTool implements ToolDefinition<typeof listSchema> {
   readonly name = 'list_excavations'
   readonly description =
     'Lists the shapes excavate can dig, each with what it digs, what its origin is, and a JSON schema of its parameters ' +
-    '(sizes are numbers in blocks). Read-only.'
+    '(sizes are numbers in blocks), and `dug`: the pits, shafts, and quarries the bot dug in this world (where, size, ' +
+    'depth, way out), which excavate can continue with continue_existing. Read-only.'
   readonly inputSchema = listSchema
 
-  constructor(private readonly registry: ExcavationRegistry) {}
+  constructor(
+    private readonly registry: ExcavationRegistry,
+    private readonly records?: ExcavationRecords,
+  ) {}
 
   execute() {
-    return toolOk({ shapes: this.registry.list() })
+    return toolOk({ shapes: this.registry.list(), dug: this.records?.all() ?? [] })
   }
 }

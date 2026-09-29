@@ -355,7 +355,7 @@ describe('excavating through the MCP server', () => {
     bot.rayHit = { name: 'stone', position: at(20, 65, 10), face: 2 }
   }
 
-  it("digs a room into the wall the player looks at, with an entrance, torches, and a door", async () => {
+  it('digs a room into the wall the player looks at, with an entrance, torches, and a door', async () => {
     const h = await start((bot) => {
       hill(bot)
       darkness(bot, [17, 63, 9], [23, 68, 15])
@@ -523,6 +523,98 @@ describe('excavating through the MCP server', () => {
       expect(task(result)).toMatchObject({ status: 'succeeded', result: { ended: [] } })
       expect(nameAt(h, 18, 52, 5)).toBe('air')
       expect(nameAt(h, 17, 52, 5)).toBe('air') // the cell it was dug from
+    })
+  })
+  describe('continuing a dig', () => {
+    it('deepens a quarry the bot dug: the hole and its stairs carry on, and list_excavations shows the record', async () => {
+      const h = await start()
+      const first = await call(h, 'excavate', {
+        shape: 'quarry',
+        params: { width: 3, length: 3, to_y: 62, exit: 'stairs' },
+        wait_seconds: 55,
+      })
+      expect(task(first)).toMatchObject({ status: 'succeeded' })
+      const listed = await h.call('list_excavations')
+      expect(task(listed)).toMatchObject({
+        dug: [
+          {
+            shape: 'quarry',
+            origin: at(12, 63, 5),
+            width: 3,
+            length: 3,
+            bottom: 62,
+            exit: 'stairs',
+          },
+        ],
+      })
+      h.bot.entity = { position: at(13.5, 62, 6.5) }
+
+      const preview = await h.call('preview_excavation', {
+        shape: 'quarry',
+        params: { to_y: 60 },
+        continue_existing: true,
+      })
+      expect(task(preview)).toMatchObject({
+        continuing: { existingLayers: 2, addLayers: 2, targetBottom: 60 },
+      })
+
+      const deeper = await call(h, 'excavate', {
+        shape: 'quarry',
+        params: { to_y: 60 },
+        continue_existing: true,
+        wait_seconds: 55,
+      })
+
+      expect(task(deeper)).toMatchObject({
+        status: 'succeeded',
+        result: { continued: { existingLayers: 2, addLayers: 2 } },
+      })
+      for (const y of [63, 62, 61, 60]) expect(nameAt(h, 13, y, 6)).toBe('air')
+      // The stair band goes on one block lower per layer: layer 2 (y 61) and 3 (y 60) are new steps.
+      expect(nameAt(h, 13, 61, 4)).toBe('air')
+      expect(nameAt(h, 14, 60, 4)).toBe('air')
+      expect(nameAt(h, 13, 59, 6)).toBe('dirt')
+    })
+
+    it('refuses to continue where nothing was dug by the bot, and says how to go on', async () => {
+      const h = await start()
+
+      const result = await h.call('excavate', {
+        shape: 'quarry',
+        params: { to_y: 60 },
+        continue_existing: true,
+      })
+
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('not_recognised')
+    })
+
+    it('cuts the stair walls of a finished quarry from its bottom with order: bottom_up', async () => {
+      const h = await start()
+      const first = await call(h, 'excavate', {
+        shape: 'quarry',
+        params: { width: 3, length: 3, to_y: 60, exit: 'none' },
+        wait_seconds: 55,
+      })
+      expect(task(first)).toMatchObject({ status: 'succeeded' })
+      h.bot.entity = { position: at(13.5, 60, 6.5) } // at the bottom
+
+      const walls = await call(h, 'excavate', {
+        shape: 'quarry',
+        params: { exit: 'stairs', order: 'bottom_up' },
+        continue_existing: true,
+        wait_seconds: 55,
+      })
+
+      expect(task(walls)).toMatchObject({ status: 'succeeded', result: { ended: [] } })
+      // Four steps around the outside, each one block lower: (11,63,4), (12,62,4), (13,61,4), (14,60,4).
+      for (const [x, y] of [
+        [11, 63],
+        [12, 62],
+        [13, 61],
+        [14, 60],
+      ] as const)
+        for (const dy of [0, 1, 2, 3]) expect(nameAt(h, x, y + dy, 4)).toBe('air')
     })
   })
 })

@@ -1,6 +1,7 @@
 # Phase 28: Excavating upward and continuing an existing dig
 
-_Estimate: 1 session._
+_Estimate: 1 session._  
+**Status:** done on `feature/excavation-upward`. Decision: continuing uses a saved record of the bot's own digs, not a footprint read out of the blocks (a hand-dug hole is not recognised: give its origin, or dig it again over the same origin). Details in [Excavation](../../features/world/excavation.md).
 
 **Depends on:** [14 Excavation and mining](excavation-mining.md), [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md).  
 **Optional:** [27 Excavation reliability](excavation-reliability.md) (the verification pass).  

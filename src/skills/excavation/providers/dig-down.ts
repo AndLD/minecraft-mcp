@@ -27,7 +27,12 @@ interface DigDown {
   readonly stairHeight?: number
   /** Seal a cave the dig finds instead of leaving it open; see `WorkPlan.seal`. Off (undefined) by default. */
   readonly seal?: { readonly block: string; readonly fallback: string } | undefined
+  /** `top_down` (default) plans from the top layer down; `bottom_up` from the bottom layer up, for a bot at the bottom. */
+  readonly order?: DigOrder
 }
+
+export const DIG_ORDERS = ['top_down', 'bottom_up'] as const
+export type DigOrder = (typeof DIG_ORDERS)[number]
 
 /** A cell of the ring around a footprint, with the unit step back towards the footprint (used to widen the ring). */
 export interface RingCell {
@@ -76,10 +81,13 @@ function stairStep(
   stairWidth: number,
   stairHeight: number,
   seal: { readonly block: string; readonly fallback: string } | undefined,
+  upward = false,
+  deepest = 0,
 ): WorkStep[] {
   const at = ring[layer % ring.length]
   const previous = ring[(layer - 1 + ring.length) % ring.length]
-  if (at === undefined || previous === undefined) return []
+  const next = ring[(layer + 1) % ring.length]
+  if (at === undefined || previous === undefined || next === undefined) return []
   const foot = y0 - layer
   const steps: WorkStep[] = []
   for (let d = 0; d < stairWidth; d += 1) {
@@ -93,9 +101,14 @@ function stairStep(
           ? { x, y: foot + j - 1, z }
           : d > 0
             ? { x: at.x, y: foot, z: at.z }
-            : layer > 0
-              ? { x: previous.x, y: foot + 1, z: previous.z }
-              : undefined
+            : upward
+              ? // Cut from the bottom: the step below is dug first, and this one starts beside its second cell.
+                layer < deepest
+                ? { x: next.x, y: foot, z: next.z }
+                : undefined
+              : layer > 0
+                ? { x: previous.x, y: foot + 1, z: previous.z }
+                : undefined
       steps.push({
         kind: 'break',
         at: { x, y: foot + j, z },
@@ -142,23 +155,41 @@ export function digDown(spec: DigDown): WorkPlan {
   // The ring is computed at the outer edge of the walkway (margin = stairWidth); stairStep widens inward from there.
   const ring =
     spec.exit === 'stairs' ? ringAround(spec.x0, spec.z0, spec.width, spec.length, stairWidth) : []
-  const probe = spec.cavities ? probeAllBut({ x: 0, y: 1, z: 0 }) : undefined
-  for (let layer = 0; layer < spec.depth; layer += 1) {
+  const upward = spec.order === 'bottom_up'
+  // Coming from above, the cell above is the way in; cutting upward from the bottom, the cell below is.
+  const cameFrom = upward ? { x: 0, y: -1, z: 0 } : { x: 0, y: 1, z: 0 }
+  const probe = spec.cavities ? probeAllBut(cameFrom) : undefined
+  const layers = Array.from({ length: spec.depth }, (_, i) => (upward ? spec.depth - 1 - i : i))
+  for (const layer of layers) {
     const y = spec.y0 - layer
     for (let i = 0; i < spec.width; i += 1) {
       // Snake along z, so the bot does not walk back after every row.
       for (let n = 0; n < spec.length; n += 1) {
         const j = i % 2 === 0 ? n : spec.length - 1 - n
+        const at = { x: spec.x0 + i, y, z: spec.z0 + j }
         steps.push({
           kind: 'break',
-          at: { x: spec.x0 + i, y, z: spec.z0 + j },
+          at,
           branch: `column-${String(i)}-${String(j)}`,
           ...(probe === undefined ? {} : { probe }),
+          // Cutting upward, a cell is only dug once the one below it is open (the bot stands on what it has dug).
+          ...(upward && layer < spec.depth - 1 ? { needs: { x: at.x, y: y - 1, z: at.z } } : {}),
         })
       }
     }
     if (spec.exit === 'stairs')
-      steps.push(...stairStep(spec.y0, layer, ring, stairWidth, stairHeight, spec.seal))
+      steps.push(
+        ...stairStep(
+          spec.y0,
+          layer,
+          ring,
+          stairWidth,
+          stairHeight,
+          spec.seal,
+          upward,
+          spec.depth - 1,
+        ),
+      )
     if (spec.exit === 'ladder') {
       const ladderColumn = `column-0-${String(Math.floor(spec.length / 2))}`
       const reference = { x: spec.x0 - 1, y, z: ladderZ }
@@ -224,6 +255,15 @@ const stairSizeParams = {
     .describe('Only with exit: stairs. How many cells tall each step is. Default 4.'),
 }
 
+const orderParam = {
+  order: z
+    .enum(DIG_ORDERS)
+    .default('top_down')
+    .describe(
+      '"top_down" (default): planned from the top layer down. "bottom_up": planned from the bottom layer up, for a bot standing at the bottom of an existing hole (for example to cut the stair walls of a finished quarry): each cell is dug only once the one below it is open, and the stairs are cut from the lowest step upward, so the bot climbs what it cuts. Sand or gravel above still stops a chain.',
+    ),
+}
+
 /** Whether, and with what, a cave the dig finds is closed instead of left open. */
 const sealParams = {
   seal_caves: z
@@ -263,6 +303,7 @@ const pitParams = z.object({
     .describe(`How many layers deep (1 to ${String(MAX_DEPTH)}).`),
   exit: exitParam,
   ...stairSizeParams,
+  ...orderParam,
   ...sealParams,
 })
 
@@ -293,6 +334,7 @@ export class PitProvider implements ExcavationProvider<z.output<typeof pitParams
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
       seal: sealFor(p),
+      order: p.order,
     })
   }
 }
@@ -308,6 +350,7 @@ const shaftParams = z.object({
   length: side('Size along z').default(1),
   exit: exitParam,
   ...stairSizeParams,
+  ...orderParam,
   ...sealParams,
 })
 
@@ -338,6 +381,7 @@ export class ShaftProvider implements ExcavationProvider<z.output<typeof shaftPa
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
       seal: sealFor(p),
+      order: p.order,
     })
   }
 }
@@ -368,6 +412,7 @@ const quarryParams = z
         'Off by default. When true: a 2×2×2 pit is dug in the far (south-east) corner below the quarry floor and filled with water from two water buckets, so you can jump in from the top and land unhurt (the exit ladder or stairs is on the other side). Needs 2 water_bucket and a footprint of at least 2×2.',
       ),
     ...stairSizeParams,
+    ...orderParam,
     ...sealParams,
   })
   .refine((p) => p.to_y === undefined || p.above_bedrock === undefined, {
@@ -425,6 +470,7 @@ export class QuarryProvider implements ExcavationProvider<z.output<typeof quarry
       stairWidth: p.stair_width,
       stairHeight: p.stair_height,
       seal: sealFor(p),
+      order: p.order,
     })
   }
 }
