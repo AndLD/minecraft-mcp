@@ -1,4 +1,4 @@
-# Phase 25: Hardening and polish
+# Phase 32: Hardening and polish
 
 _Estimate: 1 session._
 
@@ -7,7 +7,7 @@ _Estimate: 1 session._
 
 - Reconnect logic and clean shutdown, timeouts on every I/O boundary, error messages written for the agent.
 - Tool description review: each is short, states units and failure modes.
-- Review of the shared safety rules (hazard envelope, light, drops) across excavation, site preparation, signs, railways, cave exploration, and autonomy (the limits and the kill switch).
+- Review of the shared safety rules (hazard envelope, light, drops) across excavation, site preparation, signs, railways, and cave exploration.
 - Branch: `feature/hardening`.
 - Tests: reconnect and shutdown behavior (unit and integration with fake `Connection`), timeouts on all I/O boundaries, coverage gap review.
   - e2e: server restart mid-session leads to reconnect; abrupt disconnect leaves no stuck task; a long-running scenario chaining gather → craft → build

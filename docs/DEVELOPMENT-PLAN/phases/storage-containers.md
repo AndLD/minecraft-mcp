@@ -3,7 +3,7 @@
 _Estimate: 1.5 sessions._
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [5 Persistent state](persistent-state.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md).  
-**Needed by:** [10 Item handover](item-handover.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md) (optional), [17 Iron doors and switches](iron-doors-switches.md) (optional), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md) (optional), [21 Signs](signs.md), [24 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [10 Item handover](item-handover.md), [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md) (optional), [17 Iron doors and switches](iron-doors-switches.md) (optional), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md) (optional), [21 Signs](signs.md).
 
 - Branch: `feature/storage-containers`.
 - **As built:** everything in this phase except `OrganizeStorage` and "craft and place a new chest" (both in [the backlog](../../BACKLOG.md)), plus `remove_container`, `ItemFacts` and `LookTarget` ports, and `WindowTransfer` (moving items by clicking, because Mineflayer's `deposit`/`withdraw` are unreliable on 1.21, like `bot.craft`). Container memory is `ContainerIndex` (persisted through `StateStore`); there is no separate `WorldKnowledgeStore` yet, which the discovery feature can introduce. `waiting_for_input` is a `TaskManager` status with `context.ask` and `TaskManager.answer`. Building integration comes with the building phase.

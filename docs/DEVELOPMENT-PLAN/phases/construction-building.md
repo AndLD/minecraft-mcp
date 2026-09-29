@@ -3,7 +3,7 @@
 _Estimate: 2 sessions._
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [9 Storage and containers](storage-containers.md), [5 Persistent state](persistent-state.md) (optional).  
-**Needed by:** [14 Excavation and mining](excavation-mining.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md), [20 Sleeping and respawn point](sleeping-respawn.md) (optional), [21 Signs](signs.md), [24 Autonomy, the bot's own will](autonomy.md).
+**Needed by:** [14 Excavation and mining](excavation-mining.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md), [18 Farming, crops, animals, and trees](farming.md), [19 Railways](railways.md), [20 Sleeping and respawn point](sleeping-respawn.md) (optional), [21 Signs](signs.md).
 
 **Design decision: one shared engine, not one big feature.** Building, excavation, and railways all do the same thing: turn a shape into an ordered list of block operations (break here, place there, light there), then carry it out safely, resumably, and within the bot's means (tools, materials, light, hazards). Their differences (what shape, what stops it) are small. Merging them into one feature would make one huge, untestable branch; keeping them apart would build the same executor three times. So this phase builds the engine and delivers **building** as its first client, and the excavation and railway phases are further clients that add only their shape generators and rules.
 
