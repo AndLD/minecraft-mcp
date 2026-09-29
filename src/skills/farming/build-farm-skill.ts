@@ -1,3 +1,4 @@
+import type { BlockScanner } from '../../core/block-scanner.port.js'
 import type { ItemCount } from '../../core/recipes.port.js'
 import type { Position } from '../../core/position.types.js'
 import { err, ok } from '../../core/result.js'
@@ -61,6 +62,8 @@ export interface BuildFarmDeps {
   readonly vitals: VitalsReader
   readonly farms: FarmRegistry
   readonly protectedAreas: ProtectedAreas
+  /** Lets a layout look at the ground it is built on (the pen clears its interior). */
+  readonly blocks?: BlockScanner
   readonly fetcher?: MaterialFetcher
   /** Plants the field right after building it, when the kind grows a crop. */
   readonly plant?: PlantCropsSkill
@@ -121,8 +124,7 @@ export class BuildFarmSkill implements Skill<BuildFarmInput, BuildFarmOutput> {
     }
 
     const done = await executor.run(plan, options, context)
-    if (!done.ok)
-      return err({ ...done.error, detail: { ...done.error.detail, origin } })
+    if (!done.ok) return err({ ...done.error, detail: { ...done.error.detail, origin } })
 
     if (!isFarmKind(provider.kind))
       return err({
@@ -207,8 +209,21 @@ export class BuildFarmSkill implements Skill<BuildFarmInput, BuildFarmOutput> {
 
     const defaultOrigin = input.origin === undefined
     const origin = input.origin ?? provider.defaultOrigin(vitals.position, parsed.data)
-    const plan = provider.generate(parsed.data, { origin })
+    const blocks = this.deps.blocks
+    const plan = provider.generate(parsed.data, {
+      origin,
+      ...(blocks === undefined
+        ? {}
+        : { blockAt: (position: Position) => blocks.blockAt(position) }),
+    })
     if ('error' in plan) return err({ reason: 'invalid_shape', message: plan.error })
-    return ok({ plan, origin, defaultOrigin, interpreted: parsed.data, provider, params: parsed.data })
+    return ok({
+      plan,
+      origin,
+      defaultOrigin,
+      interpreted: parsed.data,
+      provider,
+      params: parsed.data,
+    })
   }
 }

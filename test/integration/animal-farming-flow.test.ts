@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from '@jest/globals'
 import type { EntityLike } from '../../src/bot/bot-like.types.js'
+import { toVec3 } from '../../src/bot/vec3.js'
 import { ANIMAL_KEYS, FakeBot } from '../fakes/fake-bot.js'
 import { createHarness, type Harness } from './support/app-harness.js'
 
@@ -29,7 +30,13 @@ function creature(
   keys: readonly string[] = ANIMAL_KEYS,
 ): EntityLike {
   nextId += 1
-  return { id: nextId, type: 'animal', name: species, position, metadata: keys.map((key) => values[key]) }
+  return {
+    id: nextId,
+    type: 'animal',
+    name: species,
+    position,
+    metadata: keys.map((key) => values[key]),
+  }
 }
 
 /** Places an entity in the fake world's entity table, keyed by its own id (as the real bot.entities is). */
@@ -69,7 +76,8 @@ async function pumped<T>(h: Harness, promise: Promise<T>): Promise<T> {
 
 const call = (h: Harness, name: string, args: Record<string, unknown> = {}) =>
   pumped(h, h.call(name, args))
-const task = (result: { data: unknown }): Record<string, unknown> => result.data as Record<string, unknown>
+const task = (result: { data: unknown }): Record<string, unknown> =>
+  result.data as Record<string, unknown>
 
 describe('animal farming through the MCP server', () => {
   it('builds a fenced pen and registers it under kind "pen" with its species', async () => {
@@ -89,6 +97,31 @@ describe('animal farming through the MCP server', () => {
     expect(task(list)).toMatchObject({
       farms: [{ kind: 'pen', species: 'cow', herdTarget: 6, label: 'cow pen' }],
     })
+  })
+
+  it('builds a pen on bumpy ground: the interior is cleared and the gate is in line with the fence', async () => {
+    const h = await start((bot) => {
+      bot.setBlock(at(3, 64, 1), 'grass_block')
+      bot.setBlock(at(4, 64, 2), 'dirt')
+      bot.setBlock(at(4, 65, 2), 'dirt')
+    })
+
+    const result = await call(h, 'build_farm', {
+      kind: 'pen',
+      params: { width: 4, length: 4, species: 'cow', water: false, torches: false },
+      origin: at(2, 63, 0),
+      label: 'cow pen',
+      wait_seconds: 30,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded' })
+    for (const cell of [at(3, 64, 1), at(4, 64, 2), at(4, 65, 2)])
+      expect(h.bot.blockAt(toVec3(cell))?.name).toBe('air')
+    // The gate is in the south side (z = 4), which runs along x.
+    expect(h.bot.blockAt(toVec3(at(3, 64, 4)))?.name).toBe('oak_fence_gate')
+    expect(['north', 'south']).toContain(
+      h.bot.blockAt(toVec3(at(3, 64, 4)))?.getProperties?.()['facing'],
+    )
   })
 
   it('leads a nearby wild cow toward a registered pen', async () => {
@@ -133,7 +166,9 @@ describe('animal farming through the MCP server', () => {
     const outcome = task(result)
     expect(outcome).toMatchObject({ status: 'succeeded' })
     expect((outcome.result as { pairsFed: number }).pairsFed).toBe(1)
-    expect(h.bot.activatedEntities.sort((a, b) => a - b)).toEqual([cowA.id, cowB.id].sort((a, b) => a - b))
+    expect(h.bot.activatedEntities.sort((a, b) => a - b)).toEqual(
+      [cowA.id, cowB.id].sort((a, b) => a - b),
+    )
   })
 
   it('tend_farm keeps a pen at its herd target through HerdManager, inspect_farm reports the herd', async () => {

@@ -43,9 +43,13 @@ class FakeTiller implements Tiller {
 class FakePlacer implements Placer {
   readonly placed: { item: string; at: Position }[] = []
   failure: PlaceFailure | undefined
+  constructor(private readonly blocks: FakeBlockScanner) {}
   placeAt(itemName: string, target: Position): Promise<Result<void, PlaceFailure>> {
     this.placed.push({ item: itemName, at: target })
-    return Promise.resolve(this.failure === undefined ? ok(undefined) : err(this.failure))
+    if (this.failure !== undefined) return Promise.resolve(err(this.failure))
+    // The crop stands in the cell afterwards, as in the world (a later sweep must find the plot taken).
+    this.blocks.blockNames.set(key(target), 'wheat')
+    return Promise.resolve(ok(undefined))
   }
   placeAgainst(): Promise<Result<void, PlaceFailure>> {
     return Promise.resolve(ok(undefined))
@@ -56,7 +60,7 @@ function setup() {
   const blocks = new FakeBlockScanner()
   const navigator = new AutoNavigator()
   const tiller = new FakeTiller(blocks)
-  const placer = new FakePlacer()
+  const placer = new FakePlacer(blocks)
   const farms = new FarmRegistry(new FakeClock(0))
   const skill = new PlantCropsSkill({ blocks, navigator, tiller, placer, farms })
   return { blocks, navigator, tiller, placer, farms, skill }
@@ -70,9 +74,15 @@ describe('PlantCropsSkill', () => {
     s.blocks.blockNames.set(key({ x: 0, y: 64, z: 0 }), 'dirt')
     s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'farmland')
 
-    const result = await s.skill.run({ farm: undefined, area, crop: 'wheat', maxPlants: undefined }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area, crop: 'wheat', maxPlants: undefined },
+      context(),
+    )
 
-    expect(result).toEqual({ ok: true, value: { planted: 2, tilled: 1, skipped: 0 } })
+    expect(result).toEqual({
+      ok: true,
+      value: { planted: 2, tilled: 1, skipped: 0, repaired: 0, stillBare: 0 },
+    })
     expect(s.tiller.calls).toEqual([{ x: 0, y: 64, z: 0 }])
     expect(s.placer.placed).toEqual([
       { item: 'wheat_seeds', at: { x: 0, y: 65, z: 0 } },
@@ -86,9 +96,15 @@ describe('PlantCropsSkill', () => {
     s.blocks.blockNames.set(key({ x: 0, y: 65, z: 0 }), 'wheat')
     s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'farmland')
 
-    const result = await s.skill.run({ farm: undefined, area, crop: 'wheat', maxPlants: undefined }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area, crop: 'wheat', maxPlants: undefined },
+      context(),
+    )
 
-    expect(result).toEqual({ ok: true, value: { planted: 1, tilled: 0, skipped: 1 } })
+    expect(result).toEqual({
+      ok: true,
+      value: { planted: 1, tilled: 0, skipped: 1, repaired: 0, stillBare: 0 },
+    })
   })
 
   it('skips a plot that is neither farmland nor tillable', async () => {
@@ -96,9 +112,15 @@ describe('PlantCropsSkill', () => {
     s.blocks.blockNames.set(key({ x: 0, y: 64, z: 0 }), 'stone')
     s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'farmland')
 
-    const result = await s.skill.run({ farm: undefined, area, crop: 'wheat', maxPlants: undefined }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area, crop: 'wheat', maxPlants: undefined },
+      context(),
+    )
 
-    expect(result).toEqual({ ok: true, value: { planted: 1, tilled: 0, skipped: 1 } })
+    expect(result).toEqual({
+      ok: true,
+      value: { planted: 1, tilled: 0, skipped: 1, repaired: 0, stillBare: 0 },
+    })
   })
 
   it('stops after max_plants', async () => {
@@ -106,9 +128,15 @@ describe('PlantCropsSkill', () => {
     s.blocks.blockNames.set(key({ x: 0, y: 64, z: 0 }), 'farmland')
     s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'farmland')
 
-    const result = await s.skill.run({ farm: undefined, area, crop: 'wheat', maxPlants: 1 }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area, crop: 'wheat', maxPlants: 1 },
+      context(),
+    )
 
-    expect(result).toEqual({ ok: true, value: { planted: 1, tilled: 0, skipped: 0 } })
+    expect(result).toEqual({
+      ok: true,
+      value: { planted: 1, tilled: 0, skipped: 0, repaired: 0, stillBare: 0 },
+    })
   })
 
   it('fails with no_hoe when tilling fails for want of a hoe', async () => {
@@ -117,11 +145,19 @@ describe('PlantCropsSkill', () => {
     s.tiller.failure = { reason: 'no_hoe', message: 'no hoe' }
 
     const result = await s.skill.run(
-      { farm: undefined, area: { from: area.from, to: area.from }, crop: 'wheat', maxPlants: undefined },
+      {
+        farm: undefined,
+        area: { from: area.from, to: area.from },
+        crop: 'wheat',
+        maxPlants: undefined,
+      },
       context(),
     )
 
-    expect(result).toEqual({ ok: false, error: { reason: 'no_hoe', message: 'The bot has no hoe to till with.' } })
+    expect(result).toEqual({
+      ok: false,
+      error: { reason: 'no_hoe', message: 'The bot has no hoe to till with.' },
+    })
   })
 
   it('fails with no_seeds when the bot runs out', async () => {
@@ -130,7 +166,12 @@ describe('PlantCropsSkill', () => {
     s.placer.failure = { reason: 'no_item', message: 'none' }
 
     const result = await s.skill.run(
-      { farm: undefined, area: { from: area.from, to: area.from }, crop: 'wheat', maxPlants: undefined },
+      {
+        farm: undefined,
+        area: { from: area.from, to: area.from },
+        crop: 'wheat',
+        maxPlants: undefined,
+      },
       context(),
     )
 
@@ -140,7 +181,10 @@ describe('PlantCropsSkill', () => {
   it('rejects an unknown crop', async () => {
     const s = setup()
 
-    const result = await s.skill.run({ farm: undefined, area, crop: 'nonsense', maxPlants: undefined }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area, crop: 'nonsense', maxPlants: undefined },
+      context(),
+    )
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_crop' } })
   })
@@ -158,14 +202,129 @@ describe('PlantCropsSkill', () => {
       context(),
     )
 
-    expect(result).toEqual({ ok: true, value: { planted: 2, tilled: 0, skipped: 0 } })
+    expect(result).toEqual({
+      ok: true,
+      value: { planted: 2, tilled: 0, skipped: 0, repaired: 0, stillBare: 0 },
+    })
   })
 
   it('fails with no_area when neither a farm nor an area is given', async () => {
     const s = setup()
 
-    const result = await s.skill.run({ farm: undefined, area: undefined, crop: 'wheat', maxPlants: undefined }, context())
+    const result = await s.skill.run(
+      { farm: undefined, area: undefined, crop: 'wheat', maxPlants: undefined },
+      context(),
+    )
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'no_area' } })
+  })
+
+  describe('plots lost while planting', () => {
+    it('plants again a plot that was trampled back to dirt during the run, in a later sweep', async () => {
+      const s = setup()
+      const three = { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 64, z: 0 } }
+      for (const x of [0, 1, 2]) s.blocks.blockNames.set(key({ x, y: 64, z: 0 }), 'farmland')
+      const place = s.placer.placeAt.bind(s.placer)
+      let trampled = false
+      s.placer.placeAt = async (item, target) => {
+        const result = await place(item, target)
+        // Planting the last plot: the bot's crossing has turned the middle one back into dirt, and its crop broke.
+        if (!trampled && target.x === 2) {
+          trampled = true
+          s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'dirt')
+          s.blocks.blockNames.set(key({ x: 1, y: 65, z: 0 }), 'air')
+        }
+        return result
+      }
+
+      const result = await s.skill.run(
+        { farm: undefined, area: three, crop: 'wheat', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        value: { planted: 4, tilled: 1, skipped: 0, repaired: 1, stillBare: 0 },
+      })
+      expect(s.tiller.calls).toEqual([{ x: 1, y: 64, z: 0 }])
+      expect(s.blocks.blockNames.get(key({ x: 1, y: 65, z: 0 }))).toBe('wheat')
+    })
+
+    it('stops after three sweeps even when the ground keeps being lost', async () => {
+      const s = setup()
+      s.blocks.blockNames.set(key({ x: 0, y: 64, z: 0 }), 'farmland')
+      const place = s.placer.placeAt.bind(s.placer)
+      s.placer.placeAt = async (item, target) => {
+        const result = await place(item, target)
+        s.blocks.blockNames.set(key(target), 'air')
+        return result
+      }
+
+      const result = await s.skill.run(
+        {
+          farm: undefined,
+          area: { from: area.from, to: area.from },
+          crop: 'wheat',
+          maxPlants: undefined,
+        },
+        context(),
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        value: { planted: 3, tilled: 0, skipped: 0, repaired: 2, stillBare: 1 },
+      })
+    })
+
+    it('reports the plots it could not reach as still bare, from the final check', async () => {
+      const s = setup()
+      for (const x of [0, 1]) {
+        s.blocks.blockNames.set(key({ x, y: 64, z: 0 }), 'farmland')
+        s.blocks.blockNames.set(key({ x, y: 65, z: 0 }), 'air') // loaded and empty, as the world reports it
+      }
+      s.navigator.fail = { reason: 'unreachable', message: 'no path' }
+
+      const result = await s.skill.run(
+        { farm: undefined, area, crop: 'wheat', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        value: { planted: 0, tilled: 0, skipped: 2, repaired: 0, stillBare: 2 },
+      })
+    })
+
+    it('finds nothing bare on a field that is fully planted, and ignores water and non-soil blocks', async () => {
+      const s = setup()
+      const row = { from: { x: 0, y: 64, z: 0 }, to: { x: 3, y: 64, z: 0 } }
+      s.blocks.blockNames.set(key({ x: 0, y: 64, z: 0 }), 'farmland')
+      s.blocks.blockNames.set(key({ x: 1, y: 64, z: 0 }), 'water')
+      s.blocks.blockNames.set(key({ x: 2, y: 64, z: 0 }), 'stone')
+      s.blocks.blockNames.set(key({ x: 3, y: 64, z: 0 }), 'farmland')
+      s.blocks.blockNames.set(key({ x: 3, y: 65, z: 0 }), 'wheat')
+
+      const result = await s.skill.run(
+        { farm: undefined, area: row, crop: 'wheat', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { planted: 1, repaired: 0, stillBare: 0 } })
+    })
+
+    it('counts max_plants across the sweeps', async () => {
+      const s = setup()
+      for (const x of [0, 1]) s.blocks.blockNames.set(key({ x, y: 64, z: 0 }), 'farmland')
+
+      const result = await s.skill.run(
+        { farm: undefined, area, crop: 'wheat', maxPlants: 1 },
+        context(),
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        value: { planted: 1, tilled: 0, skipped: 0, repaired: 0, stillBare: 0 },
+      })
+    })
   })
 })

@@ -4,7 +4,7 @@ import { dataOf } from '../support/app-under-test.js'
 import { E2EWorld, GROUND_Y } from '../support/e2e-world.js'
 import { readServerInfo, type ServerInfo } from '../support/server-config.js'
 import { startSession, type E2ESession } from '../support/session.js'
-import { waitUntil } from '../support/wait.js'
+import { pause, waitUntil } from '../support/wait.js'
 
 const cell = (x: number, dy: number, z: number): Position => ({ x, y: GROUND_Y + dy, z })
 
@@ -118,6 +118,39 @@ describe('animal farming on a real Minecraft server', () => {
     expect(list.farms).toContainEqual(
       expect.objectContaining({ label: 'cow pen', species: 'cow', herdTarget: 6 }),
     )
+  })
+
+  it('builds a pen on bumpy ground with a clear interior and the gate lying along the fence', async () => {
+    await world.give(bot(), 'oak_fence', 20)
+    await world.give(bot(), 'oak_fence_gate', 1)
+    await untilBotCarries('oak_fence')
+    const origin = cell(2, -1, -10)
+    // Blocks left at fence level inside the pen's footprint, as on uneven ground: grass, dirt two high, a flower.
+    const bumps = [cell(3, 0, -9), cell(4, 0, -8), cell(4, 1, -8), cell(5, 0, -10)]
+    await world.setBlock(bumps[0] as Position, 'grass_block')
+    await world.setBlock(bumps[1] as Position, 'dirt')
+    await world.setBlock(bumps[2] as Position, 'dirt')
+    await world.setBlock(bumps[3] as Position, 'dandelion')
+    await pause(1500) // RCON changes reach the bot a moment later
+
+    const built = await run('build_farm', {
+      kind: 'pen',
+      params: { width: 4, length: 4, species: 'cow', water: false, torches: false },
+      origin,
+      label: 'bumpy pen',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    for (const bump of bumps) expect(await is(bump, 'air')).toBe(true)
+    // The gate is in the south side (z = z0 + 4), which runs along x: it faces north or south.
+    const gate = { x: origin.x + 1, y: origin.y + 1, z: origin.z + 4 }
+    expect(await is(gate, 'oak_fence_gate')).toBe(true)
+    expect(
+      (await is(gate, 'oak_fence_gate[facing=north]')) || (await is(gate, 'oak_fence_gate[facing=south]')),
+    ).toBe(true)
+    // The pen's own protection was registered only after the clearing.
+    const areas = dataOf<{ areas: { label: string }[] }>(await session.bot.call('list_protected_areas'))
+    expect(areas.areas.map((area) => area.label)).toContain('bumpy pen')
   })
 
   it('leads a nearby wild cow into a registered pen', async () => {

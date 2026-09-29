@@ -4,7 +4,9 @@ import type { Navigator } from '../../core/navigator.port.js'
 import { distanceBetween } from '../../core/position.js'
 import type { Position } from '../../core/position.types.js'
 import { err, ok } from '../../core/result.js'
+import type { Scheduler } from '../../core/scheduler.port.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
+import { sleep } from '../../core/sleep.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { FarmRegistry } from '../../state/farm-registry.js'
 import { individualProtection } from '../hunting/animal-catalog.js'
@@ -12,13 +14,23 @@ import { foodFor } from './animal-table.js'
 import { insideBounds, type Bounds } from './farm-area.types.js'
 
 /** How close the bot gets to a wild animal before it starts leading it (real "temptation" range is about 10). */
-const APPROACH_RANGE = 8
+const LEAD_RANGE = 3
+/** A flock further away than this is approached in legs of this length, re-reading where the animal is after each. */
+const FAR_LEG = 30
+/** A walk to the animal that fails is tried again from where the animal is now, this many times in all. */
+const APPROACH_TRIES = 3
+/** After a hop the animal must be this close to keep following; otherwise the bot waits for it to catch up. */
+const FOLLOW_NEAR = 6
+const CATCH_UP_STEP_MS = 500
+const CATCH_UP_STEPS = 10
 /** An animal further than this from the bot after a hop is treated as having lost interest. */
 const FOLLOW_LOST_DISTANCE = 12
 /** How far each advance toward the destination goes, so the animal keeps re-triggering its own follow behaviour. */
 const HOP_DISTANCE = 4
 const ARRIVE_RANGE = 2
 const MAX_HOPS = 30
+const MAX_LEGS = 12
+const LEG_ARRIVE_RANGE = 2
 const SEARCH_RADIUS = 32
 
 export interface LureAnimalsInput {
@@ -37,8 +49,12 @@ export interface AbandonedAnimal {
 export interface LureAnimalsOutput {
   readonly led: number
   readonly requested: number
+  /** How many the destination could still take: the request, or less when a pen has little room left. */
+  readonly room: number
+  /** `requested - led`: what is still missing, whatever the reason (see `abandoned`, `penFull`, `room`). */
+  readonly shortfall: number
   readonly abandoned: readonly AbandonedAnimal[]
-  /** The destination pen already held its capacity, so fewer (or none) were led than asked for. */
+  /** True only when the destination pen already held its capacity before anything was led: nothing was tried. */
   readonly penFull: boolean
 }
 
@@ -48,6 +64,7 @@ export interface LureAnimalsDeps {
   readonly navigator: Navigator
   readonly vitals: VitalsReader
   readonly farms: FarmRegistry
+  readonly scheduler: Scheduler
 }
 
 /** A rough capacity for a pen's footprint: one animal per block of it, not vanilla's exact cramming limit. */
@@ -66,7 +83,10 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
 
   constructor(private readonly deps: LureAnimalsDeps) {}
 
-  async run(input: LureAnimalsInput, context: SkillContext): Promise<SkillResult<LureAnimalsOutput>> {
+  async run(
+    input: LureAnimalsInput,
+    context: SkillContext,
+  ): Promise<SkillResult<LureAnimalsOutput>> {
     const food = foodFor(input.species)
     if (food === undefined)
       return err({
@@ -85,7 +105,15 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
         .nearby(SEARCH_RADIUS)
         .filter((a) => a.species === input.species && insideBounds(a.position, pen.bounds)).length
       room = Math.min(input.count, Math.max(capacity - already, 0))
-      if (room <= 0) return ok({ led: 0, requested: input.count, abandoned: [], penFull: true })
+      if (room <= 0)
+        return ok({
+          led: 0,
+          requested: input.count,
+          room: 0,
+          shortfall: input.count,
+          abandoned: [],
+          penFull: true,
+        })
     }
 
     const candidates = this.deps.animals
@@ -108,12 +136,14 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
 
       const held = await this.deps.interaction.hold(food)
       if (!held.ok)
-        return err({ reason: 'no_food', message: `The bot has no ${food} to lure a ${input.species} with.` })
+        return err({
+          reason: 'no_food',
+          message: `The bot has no ${food} to lure a ${input.species} with.`,
+        })
 
-      const approached = await this.deps.navigator.goToPosition(candidate.position, APPROACH_RANGE, {
-        signal: context.signal,
-      })
-      if (!approached.ok) {
+      const approached = await this.approach(candidate.id, context)
+      if (approached === 'aborted') return err({ reason: 'aborted', message: 'Cancelled.' })
+      if (approached === 'unreachable') {
         abandoned.push({ id: candidate.id, reason: 'unreachable' })
         continue
       }
@@ -128,7 +158,48 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
       }
     }
 
-    return ok({ led, requested: input.count, abandoned, penFull: pen !== undefined && led < input.count })
+    return ok({
+      led,
+      requested: input.count,
+      room,
+      shortfall: input.count - led,
+      abandoned,
+      penFull: false,
+    })
+  }
+
+  /**
+   * Walks next to the animal. It drifts while the bot walks, so its position is read again before every try (up to
+   * `APPROACH_TRIES`), and a flock far away is approached in legs so one long walk cannot fail the whole trip.
+   */
+  private async approach(
+    animalId: number,
+    context: SkillContext,
+  ): Promise<'near' | 'unreachable' | 'aborted'> {
+    const { navigator, animals, vitals } = this.deps
+    for (let attempt = 0; attempt < APPROACH_TRIES; attempt += 1) {
+      if (context.signal.aborted) return 'aborted'
+      let failed = false
+      for (let leg = 0; leg < MAX_LEGS; leg += 1) {
+        const animal = animals.find(animalId)
+        const here = vitals.read()?.position
+        if (animal === undefined || here === undefined) return 'unreachable'
+        const far = distanceBetween(here, animal.position) > FAR_LEG
+        const walked = await navigator.goToPosition(
+          far ? this.hopToward(here, animal.position, FAR_LEG) : animal.position,
+          far ? LEG_ARRIVE_RANGE : LEAD_RANGE,
+          { signal: context.signal },
+        )
+        if (!walked.ok) {
+          if (walked.error.reason === 'aborted') return 'aborted'
+          failed = true
+          break
+        }
+        if (!far) return 'near'
+      }
+      if (!failed) break
+    }
+    return 'unreachable'
   }
 
   /** Advances toward the destination in hops, checking after each that the animal is still close enough to follow. */
@@ -150,11 +221,32 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
 
       const animal = this.deps.animals.find(animalId)
       if (animal === undefined) return 'unreachable'
-      const now = this.deps.vitals.read()?.position
-      if (now === undefined) return 'unreachable'
-      if (distanceBetween(now, animal.position) > FOLLOW_LOST_DISTANCE) return 'lost_interest'
+      const caught = await this.waitForAnimal(animalId, context)
+      if (caught !== 'near') return caught
     }
     return 'unreachable'
+  }
+
+  /**
+   * Stands still with the food in hand until the animal is close again: the bot outruns any animal, and a hop made
+   * while it is still far behind is how it loses interest. Gives up (`lost_interest`) when it does not catch up.
+   */
+  private async waitForAnimal(
+    animalId: number,
+    context: SkillContext,
+  ): Promise<'near' | 'lost_interest' | 'unreachable' | 'aborted'> {
+    const { animals, vitals, scheduler } = this.deps
+    for (let step = 0; ; step += 1) {
+      const animal = animals.find(animalId)
+      const now = vitals.read()?.position
+      if (animal === undefined || now === undefined) return 'unreachable'
+      const away = distanceBetween(now, animal.position)
+      if (away <= FOLLOW_NEAR) return 'near'
+      // Far beyond the range it follows in, waiting will not bring it back.
+      if (away > FOLLOW_LOST_DISTANCE || step >= CATCH_UP_STEPS) return 'lost_interest'
+      await sleep(scheduler, CATCH_UP_STEP_MS, context.signal)
+      if (context.signal.aborted) return 'aborted'
+    }
   }
 
   private hopToward(from: Position, to: Position, distance: number): Position {

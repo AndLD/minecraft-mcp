@@ -57,7 +57,7 @@ describe('farming through the MCP server', () => {
   it('builds a watered, tilled, planted field and registers it', async () => {
     const h = await start((bot) => {
       bot.addItems('wheat_seeds', 8)
-      bot.addItems('water_bucket', 1)
+      bot.addItems('water_bucket', 3)
     })
 
     const result = await call(h, 'build_farm', {
@@ -70,11 +70,15 @@ describe('farming through the MCP server', () => {
 
     expect(task(result)).toMatchObject({
       status: 'succeeded',
-      result: { kind: 'wheat field 3x3', farm: { kind: 'field', crop: 'wheat', label: 'wheat field' } },
+      result: {
+        kind: 'wheat field 3x3',
+        farm: { kind: 'field', crop: 'wheat', label: 'wheat field' },
+      },
     })
     expect(nameAt(h, 0, 63, 0)).toBe('farmland')
     expect(nameAt(h, 0, 64, 0)).toBe('wheat')
-    expect(nameAt(h, 1, 63, 0)).toBe('water') // the channel cell (centre column, x0+1)
+    // The trench: the whole centre column (x0 + 1), so every row is watered.
+    for (const z of [0, 1, 2]) expect(nameAt(h, 1, 63, z)).toBe('water')
 
     const list = await h.call('list_farms')
     expect(task(list)).toMatchObject({ count: 1, farms: [{ label: 'wheat field', crop: 'wheat' }] })
@@ -105,7 +109,10 @@ describe('farming through the MCP server', () => {
 
     const harvest = await call(h, 'harvest_crops', { farm: 'wheat field', wait_seconds: 30 })
 
-    expect(task(harvest)).toMatchObject({ status: 'succeeded', result: { harvested: 1, replanted: 1 } })
+    expect(task(harvest)).toMatchObject({
+      status: 'succeeded',
+      result: { harvested: 1, replanted: 1 },
+    })
     expect(nameAt(h, 0, 64, 0)).toBe('wheat') // replanted
     expect(h.bot.blockAt(toVec3({ x: 0, y: 64, z: 0 }))?.getProperties?.()['age']).toBe('0')
 
@@ -138,5 +145,64 @@ describe('farming through the MCP server', () => {
     })
     expect(nameAt(h, 0, 64, 0)).toBe('wheat')
     expect(nameAt(h, 1, 64, 0)).toBe('wheat')
+  })
+  it('builds a field with separate water blocks: one at the centre of a 7x7 field, none at an edge', async () => {
+    const h = await start((bot) => {
+      bot.addItems('wheat_seeds', 60)
+      bot.addItems('water_bucket', 1)
+    })
+
+    const result = await call(h, 'build_farm', {
+      kind: 'field',
+      params: { width: 7, length: 7, crop: 'wheat', fence: false, torches: false, water: 'spots' },
+      origin: { x: 0, y: 63, z: 0 },
+      wait_seconds: 30,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { planted: 48 } })
+    let water = 0
+    for (let x = 0; x < 7; x += 1)
+      for (let z = 0; z < 7; z += 1) if (nameAt(h, x, 63, z) === 'water') water += 1
+    expect(water).toBe(1)
+    expect(nameAt(h, 3, 63, 3)).toBe('water')
+  })
+
+  it('fences the field with a gate in line with the fence, and previews the water buckets it needs', async () => {
+    const h = await start((bot) => {
+      bot.addItems('wheat_seeds', 10)
+      bot.addItems('water_bucket', 1)
+      bot.addItems('oak_fence', 20)
+      bot.addItems('oak_fence_gate', 1)
+    })
+    const params = {
+      width: 3,
+      length: 3,
+      crop: 'wheat',
+      fence: true,
+      torches: false,
+      water: 'spots',
+    }
+
+    const preview = await h.call('build_farm', {
+      kind: 'field',
+      params,
+      origin: at(0, 63, 0),
+      preview: true,
+    })
+    expect(preview.isError).toBe(false)
+    expect(JSON.stringify(preview.data)).toContain('water_bucket')
+
+    const result = await call(h, 'build_farm', {
+      kind: 'field',
+      params,
+      origin: at(0, 63, 0),
+      wait_seconds: 30,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded' })
+    // The gate is in the south side (z = 3), which runs along x: it faces north or south, never east or west.
+    expect(nameAt(h, 1, 64, 3)).toBe('oak_fence_gate')
+    const facing = h.bot.blockAt(toVec3(at(1, 64, 3)))?.getProperties?.()['facing']
+    expect(['north', 'south']).toContain(facing)
   })
 })

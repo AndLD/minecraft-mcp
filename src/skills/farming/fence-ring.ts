@@ -3,6 +3,9 @@ import type { WorkStep } from '../construction/work-plan.types.js'
 /** How many fence posts apart a torch goes, so a fenced area is lit against mob spawns without one on every post. */
 export const TORCH_SPACING = 5
 
+/** Which side of the ring the gate is in. */
+export type GateSide = 'north' | 'south' | 'east' | 'west'
+
 export interface FenceRingOptions {
   /** The footprint's lowest x/z corner. */
   readonly x0: number
@@ -12,23 +15,45 @@ export interface FenceRingOptions {
   readonly width: number
   readonly length: number
   readonly torches: boolean
+  /** The side the gate is in, at the middle of it (default south). */
+  readonly gateSide?: GateSide
 }
 
 /**
- * A fence ring one cell outside a `width` by `length` footprint, one gate in the middle of the south side, torches
- * along the way every `TORCH_SPACING` posts. Shared by `CropFieldProvider` and `AnimalPenProvider`.
+ * The axis the bot stands on, in line with the gate, when it places it. A gate faces the way the bot looks, and its
+ * panel lies across that direction, so it fits into a fence that runs along x (a north or south side) only when the
+ * bot looks along z, and into one that runs along z (an east or west side) only when it looks along x. This is the same
+ * rule the door of a house follows.
+ */
+export const gateAlignAxis = (side: GateSide): 'x' | 'z' =>
+  side === 'north' || side === 'south' ? 'z' : 'x'
+
+/**
+ * A fence ring one cell outside a `width` by `length` footprint, one gate in the middle of one side (south unless
+ * asked), torches along the way every `TORCH_SPACING` posts. Shared by `CropFieldProvider` and `AnimalPenProvider`.
  */
 export function fenceRingSteps(o: FenceRingOptions): WorkStep[] {
+  const side = o.gateSide ?? 'south'
   const west = o.x0 - 1
   const east = o.x0 + o.width
   const north = o.z0 - 1
   const south = o.z0 + o.length
-  const gateX = o.x0 + Math.floor((o.width - 1) / 2)
+  const middleX = o.x0 + Math.floor((o.width - 1) / 2)
+  const middleZ = o.z0 + Math.floor((o.length - 1) / 2)
+  const gate = {
+    north: { x: middleX, z: north },
+    south: { x: middleX, z: south },
+    east: { x: east, z: middleZ },
+    west: { x: west, z: middleZ },
+  }[side]
   const perimeter: { readonly x: number; readonly z: number; readonly gate: boolean }[] = []
-  for (let x = west; x <= east; x += 1) perimeter.push({ x, z: north, gate: false })
-  for (let z = north + 1; z <= south; z += 1) perimeter.push({ x: east, z, gate: false })
-  for (let x = east - 1; x >= west; x -= 1) perimeter.push({ x, z: south, gate: x === gateX })
-  for (let z = south - 1; z > north; z -= 1) perimeter.push({ x: west, z, gate: false })
+  const add = (x: number, z: number): void => {
+    perimeter.push({ x, z, gate: x === gate.x && z === gate.z })
+  }
+  for (let x = west; x <= east; x += 1) add(x, north)
+  for (let z = north + 1; z <= south; z += 1) add(east, z)
+  for (let x = east - 1; x >= west; x -= 1) add(x, south)
+  for (let z = south - 1; z > north; z -= 1) add(west, z)
 
   const steps: WorkStep[] = []
   let post = 0
@@ -38,7 +63,7 @@ export function fenceRingSteps(o: FenceRingOptions): WorkStep[] {
         kind: 'place',
         at: { x: cell.x, y: o.y0 + 1, z: cell.z },
         block: 'oak_fence_gate',
-        alignAxis: 'x',
+        alignAxis: gateAlignAxis(side),
         branch: 'fence',
       })
       continue

@@ -9,6 +9,8 @@ import { cropFor } from './crop-table.js'
 import type { Bounds } from './farm-area.types.js'
 
 const APPROACH_RANGE = 3
+/** Planting sweeps over the area at most: one, and up to two more to replant what was trampled meanwhile. */
+const MAX_SWEEPS = 3
 const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
 
 export interface PlantCropsInput {
@@ -22,6 +24,10 @@ export interface PlantCropsOutput {
   readonly planted: number
   readonly tilled: number
   readonly skipped: number
+  /** Plots that were lost while the bot worked (trampled back to dirt) and were tilled and planted again. */
+  readonly repaired: number
+  /** Plots that are still bare (dirt, grass, or empty farmland) when the bot is done: the final check found them. */
+  readonly stillBare: number
 }
 
 export interface PlantCropsDeps {
@@ -48,8 +54,56 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
     if (spec === undefined)
       return err({ reason: 'unknown_crop', message: `${input.crop} is not a crop this can plant.` })
     const area = this.resolveArea(input)
-    if (area === undefined) return err({ reason: 'no_area', message: 'Give a farm or an area to plant.' })
+    if (area === undefined)
+      return err({ reason: 'no_area', message: 'Give a farm or an area to plant.' })
 
+    const total = { planted: 0, tilled: 0, skipped: 0, repaired: 0 }
+    let stopped = false
+    for (let sweep = 0; sweep < MAX_SWEEPS; sweep += 1) {
+      const done = await this.sweep(area, spec.spec.seed, input, total.planted, context)
+      if (!done.ok) return done
+      total.planted += done.value.planted
+      total.tilled += done.value.tilled
+      // What the first sweep could not plant is reported once; later sweeps only look for plots lost since.
+      if (sweep === 0) total.skipped = done.value.skipped
+      else total.repaired += done.value.planted
+      stopped = done.value.stopped
+      // A sweep that planted nothing means nothing was lost meanwhile.
+      if (done.value.planted === 0 || stopped) break
+    }
+    // The final check: the last sweep can lose a plot too, so look at the field once more and say what is bare. With
+    // a planting limit the rest is bare on purpose, so nothing is counted then.
+    return ok({ ...total, stillBare: stopped ? 0 : this.countBare(area) })
+  }
+
+  /** Plots of the area a crop could stand on but none does: dirt, grass, or farmland with nothing above it. */
+  private countBare(area: Bounds): number {
+    let bare = 0
+    const y = area.from.y
+    for (let x = area.from.x; x <= area.to.x; x += 1)
+      for (let z = area.from.z; z <= area.to.z; z += 1) {
+        const ground = this.deps.blocks.blockAt({ x, y, z })
+        if (ground === undefined || (ground !== 'farmland' && !TILLABLE.has(ground))) continue
+        const above = this.deps.blocks.blockAt({ x, y: y + 1, z })
+        if (above === 'air') bare += 1
+      }
+    return bare
+  }
+
+  /**
+   * One walk over the area. Farmland beside water is where the bot's own crossing tramples it back into dirt while it
+   * plants (seen on a real server: the plot next to the water block of a fresh field, with the bot standing on it), and
+   * the crop above it breaks with it; the next sweep finds such a plot again and plants it anew.
+   */
+  private async sweep(
+    area: Bounds,
+    seed: string,
+    input: PlantCropsInput,
+    plantedSoFar: number,
+    context: SkillContext,
+  ): Promise<
+    SkillResult<Pick<PlantCropsOutput, 'planted' | 'tilled' | 'skipped'> & { stopped: boolean }>
+  > {
     let planted = 0
     let tilled = 0
     let skipped = 0
@@ -57,8 +111,8 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
     for (let x = area.from.x; x <= area.to.x; x += 1) {
       for (let z = area.from.z; z <= area.to.z; z += 1) {
         if (context.signal.aborted) return err({ reason: 'aborted', message: 'Cancelled.' })
-        if (input.maxPlants !== undefined && planted >= input.maxPlants)
-          return ok({ planted, tilled, skipped })
+        if (input.maxPlants !== undefined && plantedSoFar + planted >= input.maxPlants)
+          return ok({ planted, tilled, skipped, stopped: true })
 
         const ground = { x, y, z }
         const above = { x, y: y + 1, z }
@@ -78,7 +132,8 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
           signal: context.signal,
         })
         if (!walked.ok) {
-          if (walked.error.reason === 'aborted') return err({ reason: 'aborted', message: 'Cancelled.' })
+          if (walked.error.reason === 'aborted')
+            return err({ reason: 'aborted', message: 'Cancelled.' })
           skipped += 1
           continue
         }
@@ -94,21 +149,21 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
           tilled += 1
         }
 
-        const placed = await this.deps.placer.placeAt(spec.spec.seed, above)
+        const placed = await this.deps.placer.placeAt(seed, above)
         if (!placed.ok) {
           if (placed.error.reason === 'no_item')
             return err({
               reason: 'no_seeds',
-              message: `The bot has no ${spec.spec.seed} left to plant.`,
+              message: `The bot has no ${seed} left to plant.`,
             })
           skipped += 1
           continue
         }
         planted += 1
-        context.progress(`Planted ${String(planted)} ${input.crop}`)
+        context.progress(`Planted ${String(plantedSoFar + planted)} ${input.crop}`)
       }
     }
-    return ok({ planted, tilled, skipped })
+    return ok({ planted, tilled, skipped, stopped: false })
   }
 
   private resolveArea(input: PlantCropsInput): Bounds | undefined {

@@ -1017,6 +1017,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     vitals,
     farms: farmRegistry,
     protectedAreas,
+    blocks,
     fetcher: materialFetcher,
     plant: plantCrops,
   })
@@ -1100,6 +1101,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     navigator,
     vitals,
     farms: farmRegistry,
+    scheduler,
   })
   const breedAnimals = new BreedAnimalsSkill({
     animals,

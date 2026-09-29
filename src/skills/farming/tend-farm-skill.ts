@@ -18,6 +18,10 @@ export interface TendComponentResult {
   readonly harvested: number
   readonly replanted: number
   readonly planted: number
+  /** Field: plots lost to the bot's own crossing (trampled back to dirt) while tending, tilled and planted again. */
+  readonly repaired?: number
+  /** Field: plots still bare after the final check (see `problem` for why they could not be planted). */
+  readonly stillBare?: number
   /** Pen: the herd size found, and what was done about it. */
   readonly herdSizeBefore: number | undefined
   readonly herdAction: 'bred' | 'culled' | 'none' | undefined
@@ -99,13 +103,26 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
       const replanted = harvest.ok ? harvest.value.replanted : 0
 
       let planted = 0
+      let repaired: number | undefined
+      let stillBare: number | undefined
+      const problems: string[] = harvest.ok ? [] : [harvest.error.message]
       if (entry.crop !== null) {
         const plant = await this.deps.plant.run(
           { farm: entry.id, area: undefined, crop: entry.crop, maxPlants: undefined },
           context,
         )
         if (!plant.ok && plant.error.reason === 'aborted') return err(plant.error)
-        planted = plant.ok ? plant.value.planted : 0
+        if (plant.ok) {
+          planted = plant.value.planted
+          repaired = plant.value.repaired
+          stillBare = plant.value.stillBare
+          // The bot's own crossing can trample a plot back into dirt (seen beside the water block); the planting step
+          // has looked for such plots once more at the end, so what is left is said, not hidden.
+          if (stillBare > 0)
+            problems.push(
+              `${String(stillBare)} plot(s) are still bare after the final check (no hoe or seeds left, or the bot could not reach them).`,
+            )
+        } else problems.push(plant.error.message)
       }
 
       components.push({
@@ -114,12 +131,14 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
         harvested,
         replanted,
         planted,
+        repaired,
+        stillBare,
         herdSizeBefore: undefined,
         herdAction: undefined,
         eggsPickedUp: undefined,
         eggsStored: undefined,
         eggsReleased: undefined,
-        problem: harvest.ok ? undefined : harvest.error.message,
+        problem: problems.length === 0 ? undefined : problems.join(' '),
       })
     }
     return ok({ components })
