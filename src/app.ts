@@ -191,6 +191,7 @@ import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
 import { ContainerIndex } from './state/container-index.js'
 import { EggPolicy } from './state/egg-policy.js'
+import { ExcavationRecords } from './state/excavation-records.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
@@ -433,6 +434,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const foodPolicy = new FoodPolicy()
   const containerIndex = new ContainerIndex(clock)
   const farmRegistry = new FarmRegistry(clock)
+  const excavationRecords = new ExcavationRecords(clock)
   const eggPolicy = new EggPolicy()
   const railwayLog = new RailwayLog(clock)
   const bedRegistry = new BedRegistry(clock)
@@ -460,6 +462,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       switchPolicy,
       containerIndex,
       farmRegistry,
+      excavationRecords,
       eggPolicy,
       railwayLog,
       bedRegistry,
@@ -956,6 +959,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     executor: planExecutor,
     vitals,
     fetcher: materialFetcher,
+    records: excavationRecords,
+    blocks,
   })
   const structuredGather = new StructuredGatherSkill({
     blocks,
@@ -1243,7 +1248,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PlaceBlockTool(buildSkill, launcher))
     .register(new ExcavateTool(excavateSkill, launcher, wallTarget, config.owner))
     .register(new PreviewExcavationTool(excavateSkill, wallTarget, config.owner))
-    .register(new ListExcavationsTool(excavations))
+    .register(new ListExcavationsTool(excavations, excavationRecords))
     .register(new FlattenAreaTool(flattenArea, launcher, config.owner))
     .register(new PreviewFlattenTool(flattenArea, config.owner))
     .register(new BuildFarmTool(buildFarmSkill, launcher))

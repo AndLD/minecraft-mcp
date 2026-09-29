@@ -103,6 +103,7 @@ describe('excavate', () => {
       spoilPolicy: 'storage',
       onInventoryFull: 'offload_and_return',
       fallingBlocks: 'stop',
+      continueExisting: false,
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Excavate tunnel' } })
     expect(s.tasks.get('task-1')?.resume).toEqual({
@@ -114,6 +115,7 @@ describe('excavate', () => {
         fetch_from_storage: true,
         spoil_policy: 'storage',
         falling_blocks: 'stop',
+        continue_existing: false,
       },
     })
   })
