@@ -26,6 +26,8 @@ export interface SpotRequest {
   readonly avoid?: (cell: Position) => boolean
   /** The bot must stand in line with the target along this axis, one to three blocks away (see `WorkStep`). */
   readonly alignAxis?: 'x' | 'z'
+  /** The bot must not stand on this cell (a block about to be broken must not be the floor under the bot's feet). */
+  readonly notOn?: Position
 }
 
 /**
@@ -100,6 +102,7 @@ export class StandingSpotChooser {
     if (cellKey(spot) === cellKey(request.target) || cellKey(head) === cellKey(request.target))
       return false
     if (this.blocks.isSolid(below) !== true) return false
+    if (request.notOn !== undefined && cellKey(below) === cellKey(request.notOn)) return false
     if (this.blocks.isSolid(spot) !== false || this.blocks.isSolid(head) !== false) return false
     const feet = this.blocks.blockAt(spot)
     if (feet !== undefined && (FLUIDS.has(feet) || feet === 'ladder')) return false

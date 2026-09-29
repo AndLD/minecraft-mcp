@@ -49,6 +49,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | [Opening ordinary doors](world/opening-ordinary-doors.md) | `DoorOpeningNavigator`, gates and trapdoors | Tasks |
 | [Iron doors and switches](world/iron-doors-and-switches.md) | Buttons, levers, plates, `set_switch_policy`, `open_door` | Opening ordinary doors, Persistent state |
 | [Signs](world/signs.md) | `place_sign`, `edit_sign`, `remove_sign`, `read_signs`, sneaking while placing, `SignRegistry` | Storage, Construction and building, Persistent state, Gathering, crafting, smelting |
+| [Breaking one block](world/breaking-one-block.md) | `break_block`: one block at exact coordinates, the refusals, the protection override | Tasks, Gathering, crafting, smelting, Construction and building |
 | [Filling buckets](world/buckets.md) | `fill_bucket`: water and lava into empty buckets, source blocks only, the lava safety rules | Tasks, Construction and building, Gathering, crafting, smelting, Survival reflexes |
 | [Railways](world/railways.md) | Route planning, power layout, verification, `place_minecart` | Construction and building, Excavation, Storage (optional) |
 

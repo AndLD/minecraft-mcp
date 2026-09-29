@@ -118,6 +118,7 @@ describe('MCP server over an in-memory transport', () => {
         'build_railway',
         'place_minecart',
         'fill_bucket',
+        'break_block',
         'place_sign',
         'sleep',
         'set_respawn_point',

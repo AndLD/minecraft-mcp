@@ -159,6 +159,7 @@ import {
 } from './mcp/tools/farming-tools.js'
 import { BuildRailwayTool, PlaceMinecartTool, PlanRailwayTool } from './mcp/tools/railway-tools.js'
 import { FillBucketTool } from './mcp/tools/fill-bucket-tool.js'
+import { BreakBlockTool } from './mcp/tools/break-block-tool.js'
 import { CollectBlockTool } from './mcp/tools/collect-block-tool.js'
 import { CraftTool } from './mcp/tools/craft-tool.js'
 import { ListRecipesTool } from './mcp/tools/list-recipes-tool.js'
@@ -265,6 +266,7 @@ import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
 import { PlaceMinecartSkill } from './skills/railway/place-minecart-skill.js'
 import { FillBucketSkill } from './skills/buckets/fill-bucket-skill.js'
+import { BreakBlockSkill } from './skills/breaking/break-block-skill.js'
 import { LiquidSpotFinder } from './skills/buckets/liquid-spot.js'
 import { MineflayerBedAccess } from './bot/mineflayer-bed-access.js'
 import { MineflayerSignAccess } from './bot/mineflayer-sign-access.js'
@@ -1053,6 +1055,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     guard: protectedAreas,
     spots: new LiquidSpotFinder(blocks),
   })
+  const breakBlock = new BreakBlockSkill({
+    vitals,
+    blocks,
+    digger: constructionDigger,
+    navigator,
+    inventory,
+    guard: protectedAreas,
+    hazards: new HazardRule(blocks),
+    spots: new StandingSpotChooser(blocks),
+    drops: dropCollector,
+  })
   const smeltItems = new SmeltItemsSkill({
     inventory,
     furnaces: new MineflayerFurnaceAccess(connection),
@@ -1242,6 +1255,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BuildRailwayTool(buildRailway, launcher))
     .register(new PlaceMinecartTool(placeMinecart, launcher))
     .register(new FillBucketTool(fillBucket, launcher))
+    .register(new BreakBlockTool(breakBlock, launcher, lookTarget, config.owner))
     .register(new TeleportToPlayerTool(teleport, launcher, config.owner))
     .register(new TeleportToPositionTool(teleport, launcher))
     .register(new RecoverDropsTool(recoverDrops, launcher, dropRecords))
