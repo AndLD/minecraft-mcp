@@ -205,4 +205,108 @@ describe('farming through the MCP server', () => {
     const facing = h.bot.blockAt(toVec3(at(1, 64, 3)))?.getProperties?.()['facing']
     expect(['north', 'south']).toContain(facing)
   })
+  describe.each([
+    ['north', at(1, 64, -1), ['north', 'south']],
+    ['south', at(1, 64, 3), ['north', 'south']],
+    ['east', at(3, 64, 1), ['east', 'west']],
+    ['west', at(-1, 64, 1), ['east', 'west']],
+  ] as const)('a field with the gate on the %s side', (side, gate, facings) => {
+    it('builds the gate there, in line with the fence, and remembers the side', async () => {
+      const h = await start((bot) => {
+        bot.addItems('wheat_seeds', 10)
+        bot.addItems('water_bucket', 1)
+        bot.addItems('oak_fence', 20)
+        bot.addItems('oak_fence_gate', 1)
+      })
+
+      const result = await call(h, 'build_farm', {
+        kind: 'field',
+        params: {
+          width: 3,
+          length: 3,
+          crop: 'wheat',
+          fence: true,
+          torches: false,
+          water: 'spots',
+          gate_side: side,
+        },
+        origin: at(0, 63, 0),
+        label: 'gated field',
+        wait_seconds: 30,
+      })
+
+      expect(task(result)).toMatchObject({
+        status: 'succeeded',
+        result: { farm: { gateSide: side } },
+      })
+      expect(nameAt(h, gate.x, gate.y, gate.z)).toBe('oak_fence_gate')
+      const facing = h.bot.blockAt(toVec3(gate))?.getProperties?.()['facing']
+      expect(facings).toContain(facing)
+      const list = await h.call('list_farms')
+      expect(task(list)).toMatchObject({ farms: [{ label: 'gated field', gateSide: side }] })
+    })
+  })
+
+  it('builds a pumpkin field: stems in every second row, the rows between left free', async () => {
+    const h = await start((bot) => {
+      bot.addItems('pumpkin_seeds', 8)
+      bot.addItems('water_bucket', 3)
+    })
+
+    const result = await call(h, 'build_farm', {
+      kind: 'field',
+      params: { width: 3, length: 3, crop: 'pumpkin', fence: false, torches: false },
+      origin: at(0, 63, 0),
+      label: 'pumpkins',
+      wait_seconds: 30,
+    })
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { planted: 4, farm: { crop: 'pumpkin' } },
+    })
+    for (const z of [0, 2])
+      for (const x of [0, 2]) {
+        expect(nameAt(h, x, 63, z)).toBe('farmland')
+        expect(nameAt(h, x, 64, z)).toBe('pumpkin_stem')
+      }
+    // The free row: untouched ground beside the stems (the water trench crosses it in the middle), air above.
+    for (const x of [0, 2]) expect(nameAt(h, x, 63, 1)).toBe('dirt')
+    expect(nameAt(h, 1, 63, 1)).toBe('water')
+    for (const x of [0, 1, 2]) expect(nameAt(h, x, 64, 1)).toBe('air')
+  })
+
+  it('harvests a grown pumpkin and leaves the stem standing', async () => {
+    const h = await start((bot) => {
+      for (const z of [0, 2]) {
+        bot.setBlock({ x: 0, y: 63, z }, 'farmland')
+        bot.setBlock({ x: 0, y: 64, z }, 'pumpkin_stem')
+        bot.setCropAge({ x: 0, y: 64, z }, 7)
+      }
+      bot.setBlock({ x: 0, y: 64, z: 1 }, 'pumpkin')
+      bot.addItems('pumpkin_seeds', 5)
+    })
+    const registered = await h.call('register_farm', {
+      kind: 'field',
+      crop: 'pumpkin',
+      from: at(0, 63, 0),
+      to: at(0, 63, 2),
+      label: 'pumpkins',
+    })
+    expect(registered.isError).toBe(false)
+    const before = await h.call('inspect_farm', { farm: 'pumpkins' })
+    expect(task(before)).toMatchObject({ components: [{ ripe: 1, growing: 2 }] })
+
+    const harvest = await call(h, 'harvest_crops', { farm: 'pumpkins', wait_seconds: 30 })
+
+    expect(task(harvest)).toMatchObject({
+      status: 'succeeded',
+      result: { harvested: 1, replanted: 0 },
+    })
+    expect(nameAt(h, 0, 64, 1)).toBe('air')
+    expect(nameAt(h, 0, 64, 0)).toBe('pumpkin_stem')
+    expect(nameAt(h, 0, 64, 2)).toBe('pumpkin_stem')
+    const after = await h.call('inspect_farm', { farm: 'pumpkins' })
+    expect(task(after)).toMatchObject({ components: [{ ripe: 0, growing: 2 }] })
+  })
 })

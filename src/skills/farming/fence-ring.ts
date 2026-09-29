@@ -3,8 +3,13 @@ import type { WorkStep } from '../construction/work-plan.types.js'
 /** How many fence posts apart a torch goes, so a fenced area is lit against mob spawns without one on every post. */
 export const TORCH_SPACING = 5
 
+export const GATE_SIDES = ['north', 'south', 'east', 'west'] as const
 /** Which side of the ring the gate is in. */
-export type GateSide = 'north' | 'south' | 'east' | 'west'
+export type GateSide = (typeof GATE_SIDES)[number]
+
+/** The parameter description shared by every layout that builds a fence ring (a field, a pen). */
+export const GATE_SIDE_DESCRIPTION =
+  'Which side of the fence the gate is in, at the middle of that side: north (low z), south (high z, default), east (high x), or west (low x).'
 
 export interface FenceRingOptions {
   /** The footprint's lowest x/z corner. */

@@ -34,6 +34,7 @@ const farmView = (entry: FarmEntry) => ({
   crop: entry.crop,
   species: entry.species,
   herdTarget: entry.herdTarget,
+  gateSide: entry.gateSide,
   spotCount: entry.spots?.length ?? null,
   bounds: entry.bounds,
   label: entry.label,
@@ -47,8 +48,10 @@ const buildFarmSchema = z.object({
     .record(z.string(), z.unknown())
     .default({})
     .describe(
-      'The kind\'s own parameters (for "field": width, length, crop, fence, torches, water ("trench" by default, ' +
-        '"spots" for separate water blocks); for "pen": width, length, species, water, torches). Work them out from ' +
+      'The kind\'s own parameters (for "field": width, length, crop, fence, torches, gate_side, water ("trench" by ' +
+        'default, "spots" for separate water blocks); for "pen": width, length, species, gate_side, water, torches). ' +
+        'gate_side (north, south, east, west; default south) puts the fence gate in the middle of that side, for a field or a pen. ' +
+        'Work them out from ' +
         "the player's words; when unclear, ask.",
     ),
   origin: positionSchema
@@ -93,7 +96,10 @@ export class BuildFarmTool implements ToolDefinition<typeof buildFarmSchema> {
     'remembered (list_farms) and its footprint is protected from other tasks. A field is watered by a trench ' +
     'down the middle or by separate water blocks (params.water); every water block takes one filled water ' +
     'bucket (fill_bucket makes them), so use preview first to see how many are needed. A pen has its interior ' +
-    'cleared of natural blocks left at fence level, and the gate is set in line with the fence. Runs in the ' +
+    'cleared of natural blocks left at fence level, and the gate is set in line with the fence. The gate goes on the ' +
+    'side params.gate_side names (default south); it is remembered with the farm (list_farms, inspect_farm). A ' +
+    'pumpkin field (crop: pumpkin) tills every second row for the stems and leaves the rows between free for the ' +
+    'pumpkins; pumpkin_seeds come from crafting a pumpkin. Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = buildFarmSchema
 
@@ -146,7 +152,7 @@ const farmOrAreaShape = {
 
 const plantCropsSchema = z.object({
   ...farmOrAreaShape,
-  crop: z.string().min(1).describe('What to plant: wheat, carrots, potatoes, or beetroots (or the seed item name).'),
+  crop: z.string().min(1).describe('What to plant: wheat, carrots, potatoes, beetroots, or pumpkin (or the seed item name). Pumpkins grow as stems that stay in place; only the tilled stem rows are planted.'),
   max_plants: z.number().int().min(1).optional().describe('Stop after planting this many (default: the whole area).'),
   ...taskOptionsShape,
 })
@@ -194,7 +200,8 @@ const harvestCropsSchema = z.object({
 export class HarvestCropsTool implements ToolDefinition<typeof harvestCropsSchema> {
   readonly name = 'harvest_crops'
   readonly description =
-    'Harvests only fully grown crops on a farm or an area and, by default, replants at once. Runs in the ' +
+    'Harvests only fully grown crops on a farm or an area and, by default, replants at once. On a pumpkin field it ' +
+    'breaks the pumpkin blocks and never the stems (nothing to replant). Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = harvestCropsSchema
 
@@ -683,7 +690,9 @@ export class InspectFarmTool implements ToolDefinition<typeof inspectFarmSchema>
   readonly name = 'inspect_farm'
   readonly description =
     'Read-only: reports a farm or group\'s ripe, growing, and empty plots (for a grove: grown trees, saplings, and ' +
-    'empty spots; for a pen: adults and babies) without touching anything. Call this for ' +
+    'empty spots; for a pen: adults and babies; for a pumpkin field: ripe = pumpkins, growing = stems, empty = ' +
+    'stem plots with no stem, blocked = free cells with something in the way) and the side of the gate, ' +
+    'without touching anything. Call this for ' +
     '"check the farm"; use tend_farm to actually do the work.'
   readonly inputSchema = inspectFarmSchema
 

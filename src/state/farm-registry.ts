@@ -23,6 +23,8 @@ const farmSchema = z.object({
   /** The herd size `tend_farm` breeds up to and culls down to, for a pen; null leaves the herd alone. */
   herdTarget: z.number().int().min(1).nullable(),
   bounds: z.object({ from: pointSchema, to: pointSchema }),
+  /** The side of the fence the gate is on (a field or pen the bot built with one), or null when unknown. */
+  gateSide: z.enum(['north', 'south', 'east', 'west']).nullable(),
   /** A grove's planting spots (sapling cells; `size` 2 is a 2x2 of four saplings), or null when none are recorded. */
   spots: z.array(spotSchema).nullable(),
   label: z.string().nullable(),
@@ -38,7 +40,7 @@ export type GroveSpot = z.infer<typeof spotSchema>
 
 const farmsDocument = defineDocument({
   key: 'farms',
-  version: 3,
+  version: 4,
   schema: z.object({ farms: z.array(farmSchema), nextId: z.number().int() }),
   initial: () => ({ farms: [] as FarmEntry[], nextId: 1 }),
   migrations: {
@@ -53,6 +55,10 @@ const farmsDocument = defineDocument({
       const doc = data as { farms: readonly Record<string, unknown>[]; nextId: number }
       return { ...doc, farms: doc.farms.map((entry) => ({ ...entry, spots: null })) }
     },
+    3: (data) => {
+      const doc = data as { farms: readonly Record<string, unknown>[]; nextId: number }
+      return { ...doc, farms: doc.farms.map((entry) => ({ ...entry, gateSide: null })) }
+    },
   },
 })
 
@@ -66,6 +72,7 @@ export interface RegisterFarmOptions {
   readonly species?: string | undefined
   readonly herdTarget?: number | undefined
   readonly spots?: readonly GroveSpot[] | undefined
+  readonly gateSide?: FarmEntry['gateSide'] | undefined
   readonly bounds: { readonly from: Position; readonly to: Position }
   readonly label?: string | undefined
   readonly group?: string | undefined
@@ -112,6 +119,7 @@ export class FarmRegistry implements ProfileScoped {
       species: options.species ?? null,
       herdTarget: options.herdTarget ?? null,
       bounds: options.bounds,
+      gateSide: options.gateSide ?? null,
       spots: options.spots === undefined ? null : [...options.spots],
       label: label === undefined || label === '' ? null : label,
       group: group === undefined || group === '' ? null : group,

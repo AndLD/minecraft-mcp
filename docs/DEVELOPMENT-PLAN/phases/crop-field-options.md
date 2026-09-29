@@ -1,6 +1,7 @@
 # Phase 25: Crop field options: gate side and pumpkin fields
 
-_Estimate: 1 session._
+_Estimate: 1 session._  
+**Status:** done on `feature/crop-field-options`. Decision taken at the start: only the build-time `gate_side` ships; moving the gate of an existing field is not built. Details in [Crop farming](../../features/farming/crop-farming.md).
 
 **Depends on:** [18 Farming, crops, animals, and trees](farming.md) (`CropFieldProvider`, `fenceRingSteps`, `crop-table.ts`, `harvest_crops`, `inspect_farm`), [24 Farming fixes](farming-fixes.md) (the gate axis fix and the water layout).  
 **Optional:** [22 Filling buckets with water and lava](buckets.md) (a field's water buckets could then be filled by the bot).  

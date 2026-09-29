@@ -15,13 +15,27 @@ describe('AnimalPenProvider', () => {
 
   it('reports the species it keeps', () => {
     expect(
-      provider.speciesOf({ width: 4, length: 4, species: 'cow', water: false, torches: true }),
+      provider.speciesOf({
+        width: 4,
+        length: 4,
+        species: 'cow',
+        water: false,
+        torches: true,
+        gate_side: 'south' as const,
+      }),
     ).toBe('cow')
   })
 
   it('builds a fence ring with one gate and no interior work', () => {
     const plan = provider.generate(
-      { width: 4, length: 4, species: 'cow', water: false, torches: false },
+      {
+        width: 4,
+        length: 4,
+        species: 'cow',
+        water: false,
+        torches: false,
+        gate_side: 'south' as const,
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -36,7 +50,14 @@ describe('AnimalPenProvider', () => {
 
   it('places one water source in the middle when asked', () => {
     const plan = provider.generate(
-      { width: 5, length: 5, species: 'pig', water: true, torches: false },
+      {
+        width: 5,
+        length: 5,
+        species: 'pig',
+        water: true,
+        torches: false,
+        gate_side: 'south' as const,
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -49,7 +70,14 @@ describe('AnimalPenProvider', () => {
 
   it('skips water when not asked', () => {
     const plan = provider.generate(
-      { width: 4, length: 4, species: 'cow', water: false, torches: false },
+      {
+        width: 4,
+        length: 4,
+        species: 'cow',
+        water: false,
+        torches: false,
+        gate_side: 'south' as const,
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -59,7 +87,14 @@ describe('AnimalPenProvider', () => {
 
   it('lights the fence when asked', () => {
     const plan = provider.generate(
-      { width: 4, length: 4, species: 'sheep', water: false, torches: true },
+      {
+        width: 4,
+        length: 4,
+        species: 'sheep',
+        water: false,
+        torches: true,
+        gate_side: 'south' as const,
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -70,7 +105,14 @@ describe('AnimalPenProvider', () => {
 
 describe('AnimalPenProvider: the interior', () => {
   const provider = new AnimalPenProvider()
-  const params = { width: 4, length: 4, species: 'cow' as const, water: false, torches: false }
+  const params = {
+    width: 4,
+    length: 4,
+    species: 'cow' as const,
+    water: false,
+    torches: false,
+    gate_side: 'south' as const,
+  }
   const seen = (cells: Record<string, string>) => (at: { x: number; y: number; z: number }) =>
     cells[`${String(at.x)},${String(at.y)},${String(at.z)}`] ?? 'air'
   const breaks = (plan: ReturnType<typeof provider.generate>) => {

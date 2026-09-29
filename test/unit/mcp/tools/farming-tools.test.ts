@@ -113,6 +113,7 @@ describe('BuildFarmTool', () => {
         crop: 'wheat',
         species: null,
         herdTarget: null,
+        gateSide: 'south',
         spots: null,
         bounds: { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 66, z: 2 } },
         label: null,

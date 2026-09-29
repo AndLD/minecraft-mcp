@@ -57,10 +57,13 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
     if (area === undefined)
       return err({ reason: 'no_area', message: 'Give a farm or an area to plant.' })
 
+    // A stem crop grows only in the rows the field tilled (the rows between stay free for the fruit): those are the rows
+    // that hold farmland now, so a plot trampled back to dirt in one of them is tilled again, and no other row is.
+    const stemRows = spec.spec.kind === 'stem' ? this.farmlandRows(area) : undefined
     const total = { planted: 0, tilled: 0, skipped: 0, repaired: 0 }
     let stopped = false
     for (let sweep = 0; sweep < MAX_SWEEPS; sweep += 1) {
-      const done = await this.sweep(area, spec.spec.seed, input, total.planted, context)
+      const done = await this.sweep(area, spec.spec.seed, input, total.planted, stemRows, context)
       if (!done.ok) return done
       total.planted += done.value.planted
       total.tilled += done.value.tilled
@@ -73,15 +76,16 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
     }
     // The final check: the last sweep can lose a plot too, so look at the field once more and say what is bare. With
     // a planting limit the rest is bare on purpose, so nothing is counted then.
-    return ok({ ...total, stillBare: stopped ? 0 : this.countBare(area) })
+    return ok({ ...total, stillBare: stopped ? 0 : this.countBare(area, stemRows) })
   }
 
   /** Plots of the area a crop could stand on but none does: dirt, grass, or farmland with nothing above it. */
-  private countBare(area: Bounds): number {
+  private countBare(area: Bounds, stemRows: ReadonlySet<number> | undefined): number {
     let bare = 0
     const y = area.from.y
     for (let x = area.from.x; x <= area.to.x; x += 1)
       for (let z = area.from.z; z <= area.to.z; z += 1) {
+        if (stemRows !== undefined && !stemRows.has(z)) continue
         const ground = this.deps.blocks.blockAt({ x, y, z })
         if (ground === undefined || (ground !== 'farmland' && !TILLABLE.has(ground))) continue
         const above = this.deps.blocks.blockAt({ x, y: y + 1, z })
@@ -100,6 +104,7 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
     seed: string,
     input: PlantCropsInput,
     plantedSoFar: number,
+    stemRows: ReadonlySet<number> | undefined,
     context: SkillContext,
   ): Promise<
     SkillResult<Pick<PlantCropsOutput, 'planted' | 'tilled' | 'skipped'> & { stopped: boolean }>
@@ -114,6 +119,7 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
         if (input.maxPlants !== undefined && plantedSoFar + planted >= input.maxPlants)
           return ok({ planted, tilled, skipped, stopped: true })
 
+        if (stemRows !== undefined && !stemRows.has(z)) continue
         const ground = { x, y, z }
         const above = { x, y: y + 1, z }
         const groundName = this.deps.blocks.blockAt(ground)
@@ -154,7 +160,10 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
           if (placed.error.reason === 'no_item')
             return err({
               reason: 'no_seeds',
-              message: `The bot has no ${seed} left to plant.`,
+              message:
+                seed === 'pumpkin_seeds'
+                  ? 'The bot has no pumpkin_seeds. Craft a pumpkin into seeds (one pumpkin gives four); the first pumpkin has to come from the player or a pumpkin patch in the world.'
+                  : `The bot has no ${seed} left to plant.`,
             })
           skipped += 1
           continue
@@ -164,6 +173,16 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
       }
     }
     return ok({ planted, tilled, skipped, stopped: false })
+  }
+
+  /** The rows (z) of the area that hold at least one farmland plot. */
+  private farmlandRows(area: Bounds): Set<number> {
+    const rows = new Set<number>()
+    const y = area.from.y
+    for (let x = area.from.x; x <= area.to.x; x += 1)
+      for (let z = area.from.z; z <= area.to.z; z += 1)
+        if (this.deps.blocks.blockAt({ x, y, z }) === 'farmland') rows.add(z)
+    return rows
   }
 
   private resolveArea(input: PlantCropsInput): Bounds | undefined {
