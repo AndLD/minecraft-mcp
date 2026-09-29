@@ -17,7 +17,8 @@ import type { InventoryFullKind } from '../../state/storage-policy.js'
 import type { DropCollector } from '../gathering/drop-collector.js'
 import type { InventoryFullHandler } from '../storage/inventory-full-handler.js'
 import { isOpenAir, isPlanned, isReplaceable } from './block-match.js'
-import type { Hazard, HazardReason, HazardRule } from './hazard-rule.js'
+import { PlanVerifier } from './plan-verifier.js'
+import { MAX_FALLING_COLUMN, type Hazard, type HazardReason, type HazardRule } from './hazard-rule.js'
 import type { SupplyCrafter } from './crafting-supplies.js'
 import type { Scaffolder, Tower } from './scaffolder.js'
 import type { SpoilDiscarder } from './spoil-discarder.js'
@@ -105,6 +106,24 @@ export interface EndedBranch {
   readonly at: Position | undefined
   /** How many cells of it were left undone. */
   readonly skipped: number
+  /** For falling blocks: the sand or gravel cells that block the chain, lowest first. */
+  readonly cells?: readonly Position[]
+}
+
+/** What the end-of-run check of a dug shape found and did (see `WorkPlan.verify`). */
+export interface ShapeCheck {
+  /** Dig cells looked at. */
+  readonly checked: number
+  /** Stray blocks found in dug cells and cleared. */
+  readonly cleaned: number
+  /** Open cells beside the shape closed with the seal block. */
+  readonly sealed: number
+  /** Open cells beside the shape that could not be closed (nothing to seal with). */
+  readonly unsealed: number
+  /** Special blocks (chests, torches, doors...) found in dug cells and left alone. */
+  readonly kept: number
+  /** Dug cells holding water or lava when checked. */
+  readonly fluids: readonly Position[]
 }
 
 export interface PlanOutcome {
@@ -118,6 +137,8 @@ export interface PlanOutcome {
   readonly ended: readonly EndedBranch[]
   /** Best-effort placements that were never had, so were left undone (see `WorkStep.place.optional`). */
   readonly missingOptional: readonly ItemCount[]
+  /** What the end-of-run check found and did; only for plans that ask for it (`WorkPlan.verify`). */
+  readonly shapeCheck?: ShapeCheck
 }
 
 export interface PlanExecutorDeps {
@@ -304,6 +325,7 @@ export class PlanExecutor {
     this.planCells = new Set(plan.steps.map((step) => cellKey(step.at)))
     this.order = new Map(plan.steps.map((step, index) => [cellKey(step.at), index]))
     this.dug = new Set()
+    this.volume = new Set(plan.steps.filter((s) => s.kind === 'break').map((s) => cellKey(s.at)))
     this.placedBlocks = placedBlocksOf(plan)
 
     for (let round = 0; round < ROUNDS; round += 1) {
@@ -425,6 +447,19 @@ export class PlanExecutor {
         },
       )
     }
+    let shapeCheck: ShapeCheck | undefined
+    if (plan.verify === true) {
+      const checked = await this.verify(
+        plan,
+        (step) => skipped.has(keyOf(step)) || failed.has(keyOf(step)),
+        options,
+        fullSession,
+        progress,
+        context,
+      )
+      if ('kind' in checked) return checked.result
+      shapeCheck = checked
+    }
     // Lighting, sealing, and a best-effort placement (a door with nothing to place) are a courtesy (nothing to
     // backfill or place with, left as is), so none of them is part of what must hold.
     const isOptionalPlace = (step: WorkStep): boolean =>
@@ -457,7 +492,88 @@ export class PlanExecutor {
       used: [...progress.used].map(([name, count]) => ({ name, count })),
       ended: [...ended.values()],
       missingOptional: [...missingOptional].map(([name, count]) => ({ name, count })),
+      ...(shapeCheck === undefined ? {} : { shapeCheck }),
     })
+  }
+
+  /**
+   * Reads the dug shape back: stray blocks in dug cells are cleared (never special blocks), open cells a sealed dig
+   * should have closed are sealed, and what still does not match is reported. Chains a hazard ended are left out: their
+   * cells were never meant to be dug.
+   */
+  private async verify(
+    plan: WorkPlan,
+    skip: (step: WorkStep) => boolean,
+    options: PlanOptions,
+    fullSession: ReturnType<InventoryFullHandler['begin']> | undefined,
+    progress: Progress,
+    context: SkillContext,
+  ): Promise<ShapeCheck | Extract<Outcome, { kind: 'stop' }>> {
+    const verifier = new PlanVerifier(this.deps.blocks)
+    const first = verifier.scan(plan, skip, this.placedBlocks)
+    let cleaned = 0
+    for (const at of first.strays) {
+      if (context.signal.aborted) return this.cancelled(progress)
+      const outcome = await this.perform(
+        plan,
+        { kind: 'break', at, branch: 'verify' },
+        [],
+        options,
+        fullSession,
+        progress,
+        context,
+      )
+      if (outcome.kind === 'stop') return outcome
+      if (outcome.kind === 'done' && isOpenAir(this.deps.blocks.blockAt(at))) cleaned += 1
+    }
+
+    let sealed = 0
+    let unsealed = 0
+    if (plan.seal !== undefined && plan.cavityCheck === true) {
+      for (const at of verifier.openings(plan, skip)) {
+        if (context.signal.aborted) return this.cancelled(progress)
+        if (!this.canSeal(plan.seal)) {
+          unsealed += 1
+          continue
+        }
+        const outcome = await this.perform(
+          plan,
+          { kind: 'seal', at, block: plan.seal.block, branch: 'verify' },
+          [],
+          options,
+          fullSession,
+          progress,
+          context,
+        )
+        if (outcome.kind === 'stop') return outcome
+        if (outcome.kind === 'done' && !isOpenAir(this.deps.blocks.blockAt(at))) sealed += 1
+        else unsealed += 1
+      }
+    }
+
+    const last = verifier.scan(plan, skip, this.placedBlocks)
+    const firstStray = last.strays[0]
+    if (firstStray !== undefined)
+      return stop(
+        failure(
+          'verification_failed',
+          `${String(last.strays.length)} cell(s) of the dug shape still hold a block that is not part of it (for example at ${this.where(firstStray)}). Run it again to clear them.`,
+          progress,
+          { strays: last.strays },
+        ),
+      ) as Extract<Outcome, { kind: 'stop' }>
+    return {
+      checked: last.checked,
+      cleaned,
+      sealed,
+      unsealed,
+      kept: last.kept,
+      fluids: last.fluids,
+    }
+  }
+
+  private cancelled(progress: Progress): Extract<Outcome, { kind: 'stop' }> {
+    return stop(failure('aborted', 'Cancelled.', progress)) as Extract<Outcome, { kind: 'stop' }>
   }
 
   /**
@@ -489,6 +605,10 @@ export class PlanExecutor {
   private order: ReadonlyMap<string, number> = new Map()
   /** Cells broken during this run. */
   private dug = new Set<string>()
+  /** Every cell the running plan digs. */
+  private volume: ReadonlySet<string> = new Set()
+  /** How deep the clearing of a falling column has gone (each cell of it is a nested step). */
+  private clearing = 0
   /** Blocks this plan itself places (see `placedBlocksOf`). */
   private placedBlocks: ReadonlySet<string> = new Set()
 
@@ -537,6 +657,7 @@ export class PlanExecutor {
     branch: string,
     reason: EndedBranch['reason'],
     at: Position | undefined,
+    cells?: readonly Position[],
   ): void {
     const label = branch.startsWith('vein@') ? 'vein' : branch
     const key = `${label}|${reason}|${label === 'vein' ? '' : cellKey(at ?? { x: 0, y: 0, z: 0 })}`
@@ -546,6 +667,9 @@ export class PlanExecutor {
       reason,
       at: found?.at ?? at,
       skipped: (found?.skipped ?? 0) + 1,
+      ...(cells === undefined && found?.cells === undefined
+        ? {}
+        : { cells: found?.cells ?? cells }),
     })
   }
 
@@ -559,13 +683,13 @@ export class PlanExecutor {
   ): void {
     const branch = step.kind === 'break' ? (step.branch ?? keyOf(step)) : keyOf(step)
     skipped.add(keyOf(step))
-    this.recordEnded(ended, branch, hazard.reason, hazard.at)
+    this.recordEnded(ended, branch, hazard.reason, hazard.at, hazard.cells)
     for (const list of lists)
       for (let i = list.length - 1; i >= 0; i -= 1) {
         const other = list[i]
         if (other?.branch !== branch) continue
         skipped.add(keyOf(other))
-        this.recordEnded(ended, branch, hazard.reason, hazard.at)
+        this.recordEnded(ended, branch, hazard.reason, hazard.at, hazard.cells)
         list.splice(i, 1)
       }
   }
@@ -814,8 +938,22 @@ export class PlanExecutor {
         order: this.order,
         index: this.order.get(cellKey(step.at)) ?? Infinity,
         dug: this.dug,
+        volume: this.volume,
       })
       if (hazard !== undefined) {
+        if (hazard.reason === 'falling_blocks') {
+          const cleared = await this.clearFalling(
+            plan,
+            step,
+            hazard,
+            pending,
+            options,
+            fullSession,
+            progress,
+            context,
+          )
+          if (cleared !== undefined) return cleared
+        }
         if (
           hazard.reason === 'cave_breakthrough' &&
           plan.seal !== undefined &&
@@ -910,6 +1048,44 @@ export class PlanExecutor {
       case 'till':
         return this.till(step.at, progress, context)
     }
+  }
+
+  /**
+   * Sand or gravel above the block about to be broken. When the cell above is one the plan digs itself, dig it first
+   * (whichever mode); with `fallingBlocks: 'clear'` dig the column from the top down, so nothing falls in. The safety
+   * check for lava and water runs on every cell of it, as it does for any break. Undefined when it cannot be cleared:
+   * the chain then ends and names the cells.
+   */
+  private async clearFalling(
+    plan: WorkPlan,
+    step: WorkStep,
+    hazard: Hazard,
+    pending: readonly WorkStep[],
+    options: PlanOptions,
+    fullSession: ReturnType<InventoryFullHandler['begin']> | undefined,
+    progress: Progress,
+    context: SkillContext,
+  ): Promise<Outcome | undefined> {
+    if (this.clearing >= MAX_FALLING_COLUMN) return undefined
+    const planned = this.plannedBreakAt(plan, hazard.at)
+    if (planned === undefined && plan.fallingBlocks !== 'clear') return undefined
+    const target: WorkStep = planned ?? { kind: 'break', at: hazard.at, branch: 'clear' }
+    this.clearing += 1
+    try {
+      const dug = await this.perform(plan, target, pending, options, fullSession, progress, context)
+      if (dug.kind !== 'done') return dug
+    } finally {
+      this.clearing -= 1
+    }
+    return this.perform(plan, step, pending, options, fullSession, progress, context)
+  }
+
+  /** The plan's own step that digs this cell, when it is still to be dug. */
+  private plannedBreakAt(plan: WorkPlan, cell: Position): WorkStep | undefined {
+    const key = cellKey(cell)
+    const index = this.order.get(key)
+    const step = index === undefined ? undefined : plan.steps[index]
+    return step?.kind === 'break' && !this.dug.has(key) ? step : undefined
   }
 
   private async till(at: Position, progress: Progress, context: SkillContext): Promise<Outcome> {

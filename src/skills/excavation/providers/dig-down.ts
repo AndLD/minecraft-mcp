@@ -188,6 +188,7 @@ export function digDown(spec: DigDown): WorkPlan {
     standing: 'inside',
     hazards: 'end_branch',
     cavityCheck: spec.cavities,
+    ownVolume: true,
     veins: { maxSize: 64 },
     seal: spec.seal,
   }

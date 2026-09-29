@@ -79,6 +79,7 @@ describe('excavating through the MCP server', () => {
     const names = (listed.data as { shapes: { name: string }[] }).shapes.map((s) => s.name)
     expect(names).toEqual([
       'branch_mine',
+      'dig_to',
       'pit',
       'quarry',
       'room',
@@ -435,5 +436,93 @@ describe('excavating through the MCP server', () => {
     expect(unknown.text).toContain('quarry')
     expect(wrong.text).toContain('invalid_params')
     expect(wrong.text).toContain('direction')
+  })
+  describe('reliability of a dig', () => {
+    it('digs a quarry over a cave and around a placed chest: nothing stray inside, and the result says it was checked', async () => {
+      const h = await start((bot) => {
+        bot.inventoryItems = [
+          { name: 'iron_pickaxe', count: 1 },
+          { name: 'cobblestone', count: 60 },
+        ]
+        // The bottom layer of the footprint (y 61) and a ring around it are one open cave.
+        for (let x = 10; x <= 16; x += 1)
+          for (let z = 3; z <= 9; z += 1) bot.setBlock(at(x, 61, z), 'air')
+        // A chest a player put in the middle of the second layer.
+        bot.setBlock(at(13, 62, 6), 'chest')
+      })
+
+      const result = await call(h, 'excavate', {
+        shape: 'quarry',
+        params: { width: 3, length: 3, to_y: 61, exit: 'none' },
+        origin: at(12, 63, 5),
+        wait_seconds: 55,
+      })
+
+      expect(task(result)).toMatchObject({
+        status: 'succeeded',
+        result: { shapeCheck: { kept: 0 }, ended: [{ reason: 'player_block' }] },
+      })
+      expect(nameAt(h, 13, 62, 6)).toBe('chest')
+      const stray: string[] = []
+      for (let x = 12; x <= 14; x += 1)
+        for (let y = 61; y <= 63; y += 1)
+          for (let z = 5; z <= 7; z += 1)
+            if (!(x === 13 && y === 62 && z === 6) && nameAt(h, x, y, z) !== 'air')
+              stray.push(`${String(x)},${String(y)},${String(z)}:${String(nameAt(h, x, y, z))}`)
+      expect(stray).toEqual([])
+      // The cave beside the volume is closed.
+      expect(nameAt(h, 11, 61, 6)).toBe('cobblestone')
+    })
+
+    it('stops under gravel by default and names the cells, and digs through it with falling_blocks: clear', async () => {
+      const gravel = (bot: FakeBot) => {
+        pocket(bot, 10, 50, 5)
+        for (const y of [52, 53]) bot.setBlock(at(10, y, 1), 'gravel')
+      }
+      const params = { direction: 'north', length: 8, torch_spacing: 0 }
+      const stopped = await start(gravel)
+
+      const first = await call(stopped, 'excavate', { shape: 'tunnel', params, wait_seconds: 55 })
+
+      expect(task(first)).toMatchObject({
+        status: 'succeeded',
+        result: {
+          ended: [{ reason: 'falling_blocks', cells: [at(10, 52, 1), at(10, 53, 1)] }],
+        },
+      })
+      await stopped.close()
+
+      const cleared = await start(gravel)
+      const second = await call(cleared, 'excavate', {
+        shape: 'tunnel',
+        params,
+        falling_blocks: 'clear',
+        wait_seconds: 55,
+      })
+
+      expect(task(second)).toMatchObject({ status: 'succeeded', result: { ended: [] } })
+      // The column is gone; the cell right above the tunnel is closed again (an opening over a sealed dig).
+      expect(nameAt(cleared, 10, 53, 1)).toBe('air')
+      expect(nameAt(cleared, 10, 52, 1)).not.toBe('gravel')
+      expect(nameAt(cleared, 10, 50, -2)).toBe('air')
+    })
+
+    it('digs a route to an ore with dig_to and breaks the ore', async () => {
+      const h = await start((bot) => {
+        pocket(bot, 10, 50, 5)
+        bot.setBlock(at(18, 52, 5), 'iron_ore')
+      })
+
+      const result = await call(h, 'excavate', {
+        shape: 'dig_to',
+        params: { target: at(18, 52, 5), torch_spacing: 0 },
+        origin: at(10, 50, 5),
+        wait_seconds: 55,
+      })
+
+      expect(task(result)).toMatchObject({ status: 'succeeded', result: { ended: [] } })
+      expect(nameAt(h, 18, 52, 5)).toBe('air')
+      expect(nameAt(h, 17, 52, 5)).toBe('air') // the cell it was dug from
+    })
   })
 })

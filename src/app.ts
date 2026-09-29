@@ -236,6 +236,7 @@ import {
   QuarryProvider,
   ShaftProvider,
 } from './skills/excavation/providers/dig-down.js'
+import { DigToProvider } from './skills/excavation/providers/dig-to.js'
 import { RoomProvider } from './skills/excavation/providers/room.js'
 import {
   BranchMineProvider,
@@ -949,6 +950,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BranchMineProvider())
     .register(new StaircaseDownProvider())
     .register(new RoomProvider())
+    .register(new DigToProvider())
   const excavateSkill = new ExcavateSkill({
     registry: excavations,
     executor: planExecutor,

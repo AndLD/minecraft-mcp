@@ -100,6 +100,16 @@ export interface WorkPlan {
    * every break with the hazard rule and only stops the chain that meets the hazard.
    */
   readonly hazards?: 'refuse' | 'end_branch'
+  /**
+   * The plan digs a whole volume (a pit, a quarry, a room): an open cell inside it is its own to dig, never a cave to
+   * seal. Off for a tunnel, where an open cell ahead in the line is a real breakthrough.
+   */
+  readonly ownVolume?: boolean
+  /**
+   * What to do about sand or gravel above a block about to be broken: `stop` (default) ends the chain there and names
+   * the cells; `clear` digs the column from the top down first (after the check for lava and water beside it).
+   */
+  readonly fallingBlocks?: 'stop' | 'clear'
   /** Check every break for a cave breakthrough (see `probe`). */
   readonly cavityCheck?: boolean
   /** Mine any ore that touches a dug cell, vein by vein, up to this many blocks per vein. */
@@ -111,6 +121,12 @@ export interface WorkPlan {
    * the old behaviour: a cave breakthrough always ends the chain, and there are no `seal` steps.
    */
   readonly seal?: { readonly block: string; readonly fallback: string }
+  /**
+   * Read the result back at the end: clear stray blocks from the dug cells (never special blocks), close the open cells
+   * a sealed dig should have closed, and fail with `verification_failed` when the shape still does not match. Off by
+   * default; set for every excavation shape.
+   */
+  readonly verify?: boolean
   /** Informational notes for the preview (for example: a door leaves a gap above it). Never affects execution. */
   readonly warnings?: readonly string[]
 }
