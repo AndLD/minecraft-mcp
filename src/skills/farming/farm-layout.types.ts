@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import type { Position } from '../../core/position.types.js'
+import type { GateSide } from './fence-ring.js'
 import type { WorkPlan } from '../construction/work-plan.types.js'
 
 export interface FarmLayoutContext {
@@ -30,4 +31,6 @@ export interface FarmLayoutProvider<Params = unknown> {
   cropOf?(params: Params): string | undefined
   /** The animal species this component keeps, for the `FarmRegistry` entry, when the kind is a pen. */
   speciesOf?(params: Params): string | undefined
+  /** The side of the fence the gate is on, for the `FarmRegistry` entry, when the layout builds a fence with a gate. */
+  gateSideOf?(params: Params): GateSide | undefined
 }

@@ -287,6 +287,8 @@ export class FakeBot implements BotLike {
       oak_fence_gate: { id: 147 },
       wheat: { id: 148 },
       egg: { id: 149 },
+      pumpkin_seeds: { id: 150 },
+      pumpkin: { id: 151 },
     },
     foodsByName: {
       cooked_beef: { foodPoints: 8, saturation: 12.8 },
@@ -891,6 +893,7 @@ export class FakeBot implements BotLike {
     carrot: 'carrots',
     potato: 'potatoes',
     beetroot_seeds: 'beetroots',
+    pumpkin_seeds: 'pumpkin_stem',
   }
 
   placeBlock(reference: BlockLike, face: Position): Promise<void> {

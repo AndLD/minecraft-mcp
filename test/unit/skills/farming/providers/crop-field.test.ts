@@ -23,6 +23,7 @@ describe('CropFieldProvider', () => {
         crop: 'wheat',
         fence: true,
         torches: true,
+        gate_side: 'south' as const,
         water: 'trench',
       }),
     ).toBe('wheat')
@@ -30,7 +31,15 @@ describe('CropFieldProvider', () => {
 
   it('tills every plot except the water trench (planting is a follow-up plant_crops call)', () => {
     const plan = provider.generate(
-      { width: 3, length: 3, crop: 'wheat', fence: false, torches: false, water: 'trench' },
+      {
+        width: 3,
+        length: 3,
+        crop: 'wheat',
+        fence: false,
+        torches: false,
+        gate_side: 'south' as const,
+        water: 'trench',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -49,7 +58,15 @@ describe('CropFieldProvider', () => {
 
   it('places the water before tilling anything, so no farmland dries out and reverts to dirt while waiting for it', () => {
     const plan = provider.generate(
-      { width: 7, length: 7, crop: 'wheat', fence: true, torches: false, water: 'spots' },
+      {
+        width: 7,
+        length: 7,
+        crop: 'wheat',
+        fence: true,
+        torches: false,
+        gate_side: 'south' as const,
+        water: 'spots',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -70,7 +87,15 @@ describe('CropFieldProvider', () => {
 
   it('puts one water block at the centre of a 7x7 field with spots', () => {
     const plan = provider.generate(
-      { width: 7, length: 7, crop: 'wheat', fence: false, torches: false, water: 'spots' },
+      {
+        width: 7,
+        length: 7,
+        crop: 'wheat',
+        fence: false,
+        torches: false,
+        gate_side: 'south' as const,
+        water: 'spots',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -82,7 +107,15 @@ describe('CropFieldProvider', () => {
 
   it('lays a trench of the whole length down the middle of a long field', () => {
     const plan = provider.generate(
-      { width: 5, length: 32, crop: 'wheat', fence: false, torches: false, water: 'trench' },
+      {
+        width: 5,
+        length: 32,
+        crop: 'wheat',
+        fence: false,
+        torches: false,
+        gate_side: 'south' as const,
+        water: 'trench',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -162,7 +195,15 @@ describe('CropFieldProvider', () => {
 
   it('builds a fence ring with one gate and torches when asked', () => {
     const plan = provider.generate(
-      { width: 3, length: 3, crop: 'carrots', fence: true, torches: true, water: 'trench' },
+      {
+        width: 3,
+        length: 3,
+        crop: 'carrots',
+        fence: true,
+        torches: true,
+        gate_side: 'south' as const,
+        water: 'trench',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -180,7 +221,15 @@ describe('CropFieldProvider', () => {
 
   it('skips fence and torches when both are off', () => {
     const plan = provider.generate(
-      { width: 3, length: 3, crop: 'potatoes', fence: false, torches: true, water: 'trench' },
+      {
+        width: 3,
+        length: 3,
+        crop: 'potatoes',
+        fence: false,
+        torches: true,
+        gate_side: 'south' as const,
+        water: 'trench',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
@@ -191,11 +240,121 @@ describe('CropFieldProvider', () => {
 
   it('names the plan after the crop and dimensions', () => {
     const plan = provider.generate(
-      { width: 4, length: 5, crop: 'beetroots', fence: false, torches: false, water: 'trench' },
+      {
+        width: 4,
+        length: 5,
+        crop: 'beetroots',
+        fence: false,
+        torches: false,
+        gate_side: 'south' as const,
+        water: 'trench',
+      },
       { origin },
     )
     if ('error' in plan) throw new Error(plan.error)
     expect(plan.name).toBe('beetroots field 4x5')
     expect(plan.standing).toBe('inside')
+  })
+  describe('the gate side', () => {
+    const gateOf = (side: 'north' | 'south' | 'east' | 'west') => {
+      const plan = provider.generate(
+        {
+          width: 5,
+          length: 7,
+          crop: 'wheat',
+          fence: true,
+          torches: false,
+          gate_side: side,
+          water: 'trench',
+        },
+        { origin },
+      )
+      if ('error' in plan) throw new Error(plan.error)
+      return plan.steps.find((s) => s.kind === 'place' && s.block === 'oak_fence_gate')
+    }
+
+    it.each([
+      ['north', { x: 12, y: 65, z: -6 }],
+      ['south', { x: 12, y: 65, z: 2 }],
+      ['east', { x: 15, y: 65, z: -2 }],
+      ['west', { x: 9, y: 65, z: -2 }],
+    ] as const)('puts the gate in the middle of the %s side', (side, at) => {
+      expect(gateOf(side)?.at).toEqual(at)
+    })
+
+    it('reports the side for the registry, and none when there is no fence', () => {
+      const params = {
+        width: 3,
+        length: 3,
+        crop: 'wheat' as const,
+        fence: true,
+        torches: false,
+        gate_side: 'east' as const,
+        water: 'trench' as const,
+      }
+
+      expect(provider.gateSideOf(params)).toBe('east')
+      expect(provider.gateSideOf({ ...params, fence: false })).toBeUndefined()
+    })
+
+    it('defaults to the south side in the parameter schema', () => {
+      const parsed = provider.params.parse({ width: 3, length: 3, crop: 'wheat' })
+
+      expect(parsed.gate_side).toBe('south')
+    })
+  })
+
+  describe('a pumpkin field', () => {
+    const plan = () => {
+      const made = provider.generate(
+        {
+          width: 5,
+          length: 5,
+          crop: 'pumpkin',
+          fence: false,
+          torches: false,
+          gate_side: 'south',
+          water: 'trench',
+        },
+        { origin },
+      )
+      if ('error' in made) throw new Error(made.error)
+      return made
+    }
+    const rowsOf = (kind: 'till' | 'place') =>
+      new Set(
+        plan()
+          .steps.filter(
+            (s) =>
+              (kind === 'till' && s.kind === 'till') ||
+              (kind === 'place' && s.kind === 'place' && s.block === 'water_bucket'),
+          )
+          .map((s) => s.at.z - origin.z),
+      )
+
+    it('tills only every second row and leaves the rows between untouched', () => {
+      expect([...rowsOf('till')].sort()).toEqual([0, 2, 4])
+      expect(plan().steps.some((s) => s.kind === 'till' && (s.at.z - origin.z) % 2 === 1)).toBe(
+        false,
+      )
+    })
+
+    it('puts water over the whole length, so every stem row is watered', () => {
+      expect([...rowsOf('place')].sort()).toEqual([0, 1, 2, 3, 4])
+    })
+
+    it('reports the pumpkin as its crop', () => {
+      expect(
+        provider.cropOf({
+          width: 3,
+          length: 3,
+          crop: 'pumpkin',
+          fence: true,
+          torches: false,
+          gate_side: 'south',
+          water: 'trench',
+        }),
+      ).toBe('pumpkin')
+    })
   })
 })

@@ -134,11 +134,13 @@ export class BuildFarmSkill implements Skill<BuildFarmInput, BuildFarmOutput> {
     const bounds = boundsOf(plan)
     const crop = provider.cropOf?.(params)
     const species = provider.speciesOf?.(params)
+    const gateSide = provider.gateSideOf?.(params)
     const registered = this.deps.farms.register({
       kind: provider.kind,
       crop,
       species,
       herdTarget: input.herdTarget,
+      gateSide,
       bounds,
       label: input.label,
       group: input.group,

@@ -301,4 +301,94 @@ describe('crop farming on a real Minecraft server', () => {
     expect(await is({ ...a, y: a.y + 1 }, 'wheat')).toBe(true)
     expect(await is({ ...b, y: b.y + 1 }, 'wheat')).toBe(true)
   })
+  it('builds the gate on the east side, in line with the fence', async () => {
+    await world.give(bot(), 'wooden_hoe', 1)
+    await world.give(bot(), 'wheat_seeds', 10)
+    await world.give(bot(), 'water_bucket', 1)
+    await world.give(bot(), 'oak_fence', 20)
+    await world.give(bot(), 'oak_fence_gate', 1)
+    await untilBotCarries('wooden_hoe')
+    const origin = cell(2, -1, -10)
+
+    const built = await run('build_farm', {
+      kind: 'field',
+      params: {
+        width: 3,
+        length: 3,
+        crop: 'wheat',
+        fence: true,
+        torches: false,
+        water: 'spots',
+        gate_side: 'east',
+      },
+      origin,
+      label: 'east gate field',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    // The east side is the line x = x0 + 3, which runs along z: the gate is in the middle of it and faces east or west.
+    const gate = { x: origin.x + 3, y: origin.y + 1, z: origin.z + 1 }
+    expect(await is(gate, 'oak_fence_gate')).toBe(true)
+    const facesAlong =
+      (await is(gate, 'oak_fence_gate[facing=east]')) ||
+      (await is(gate, 'oak_fence_gate[facing=west]'))
+    expect(facesAlong).toBe(true)
+    // The south middle stays a plain fence post: the gate really moved.
+    expect(await is({ x: origin.x + 1, y: origin.y + 1, z: origin.z + 3 }, 'oak_fence')).toBe(true)
+    const list = dataOf<{ farms: { label: string; gateSide: string }[] }>(
+      await session.bot.call('list_farms'),
+    )
+    expect(list.farms).toContainEqual(
+      expect.objectContaining({ label: 'east gate field', gateSide: 'east' }),
+    )
+  }, 240_000)
+
+  it('builds a pumpkin field and harvests a pumpkin without touching the stem', async () => {
+    await world.give(bot(), 'wooden_hoe', 1)
+    await world.give(bot(), 'pumpkin_seeds', 8)
+    await world.give(bot(), 'water_bucket', 3)
+    await untilBotCarries('wooden_hoe')
+    await untilBotCarries('pumpkin_seeds')
+    const origin = cell(2, -1, -10)
+
+    const built = await run('build_farm', {
+      kind: 'field',
+      params: { width: 3, length: 3, crop: 'pumpkin', fence: false, torches: false },
+      origin,
+      label: 'pumpkins',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    // Stems in rows 0 and 2 beside the water column; row 1 stays free.
+    for (const dz of [0, 2])
+      for (const dx of [0, 2]) {
+        const plot = { x: origin.x + dx, y: origin.y, z: origin.z + dz }
+        expect(await is(plot, 'farmland')).toBe(true)
+        expect(await is({ ...plot, y: plot.y + 1 }, 'pumpkin_stem')).toBe(true)
+      }
+    for (const dx of [0, 2]) {
+      const free = { x: origin.x + dx, y: origin.y, z: origin.z + 1 }
+      expect(await is(free, 'farmland')).toBe(false)
+      expect(await is({ ...free, y: free.y + 1 }, 'air')).toBe(true)
+    }
+
+    // A stem that has grown its fruit: a ripe stem with a pumpkin on the free cell beside it.
+    const stem = { x: origin.x, y: origin.y + 1, z: origin.z }
+    const fruit = { x: origin.x, y: origin.y + 1, z: origin.z + 1 }
+    await world.setBlock(stem, 'pumpkin_stem[age=7]')
+    await world.setBlock(fruit, 'pumpkin')
+    await untilBotSeesAt('pumpkin', fruit)
+
+    const harvested = await run('harvest_crops', { farm: 'pumpkins' })
+
+    if (harvested.failed) throw new Error(`harvest_crops did not succeed: ${harvested.text}`)
+    expect(harvested.task.result).toMatchObject({ harvested: 1, replanted: 0 })
+    expect(await is(fruit, 'air')).toBe(true)
+    expect(await is(stem, 'pumpkin_stem')).toBe(true)
+    for (const dz of [0, 2])
+      for (const dx of [0, 2])
+        expect(
+          await is({ x: origin.x + dx, y: origin.y + 1, z: origin.z + dz }, 'pumpkin_stem'),
+        ).toBe(true)
+  }, 240_000)
 })

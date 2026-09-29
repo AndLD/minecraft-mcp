@@ -32,7 +32,9 @@ class FakeAnimalScanner implements AnimalScanner {
   }
 }
 
-const animal = (overrides: Partial<AnimalInfo> & { species: string; position: Position }): AnimalInfo => ({
+const animal = (
+  overrides: Partial<AnimalInfo> & { species: string; position: Position },
+): AnimalInfo => ({
   id: overrides.id ?? Math.floor(Math.random() * 100_000),
   distance: 1,
   baby: false,
@@ -81,6 +83,8 @@ describe('InspectFarmSkill', () => {
             ripe: 1,
             growing: 1,
             empty: 0,
+            blocked: 0,
+            gateSide: null,
             adults: 0,
             babies: 0,
           },
@@ -91,7 +95,11 @@ describe('InspectFarmSkill', () => {
 
   it('counts a farmland plot with nothing growing as empty', async () => {
     const s = await setup()
-    const entry = s.farms.register({ kind: 'field', crop: 'wheat', bounds: { from: at(0, 64, 0), to: at(0, 64, 0) } })
+    const entry = s.farms.register({
+      kind: 'field',
+      crop: 'wheat',
+      bounds: { from: at(0, 64, 0), to: at(0, 64, 0) },
+    })
     if (!entry.ok) throw new Error(entry.error)
     s.blocks.blockNames.set(key(at(0, 64, 0)), 'farmland')
 
@@ -105,7 +113,10 @@ describe('InspectFarmSkill', () => {
 
   it('ignores a cell that is not farmland at all', async () => {
     const s = await setup()
-    const entry = s.farms.register({ kind: 'field', bounds: { from: at(0, 64, 0), to: at(0, 64, 0) } })
+    const entry = s.farms.register({
+      kind: 'field',
+      bounds: { from: at(0, 64, 0), to: at(0, 64, 0) },
+    })
     if (!entry.ok) throw new Error(entry.error)
 
     const result = await s.skill.run({ farm: entry.value.id }, context())
@@ -142,6 +153,8 @@ describe('InspectFarmSkill', () => {
             ripe: 0,
             growing: 0,
             empty: 0,
+            blocked: 0,
+            gateSide: null,
             adults: 1,
             babies: 1,
           },
@@ -159,7 +172,9 @@ describe('InspectFarmSkill', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      value: { components: [{ kind: 'grove', ripe: 0, growing: 0, empty: 0, adults: 0, babies: 0 }] },
+      value: {
+        components: [{ kind: 'grove', ripe: 0, growing: 0, empty: 0, adults: 0, babies: 0 }],
+      },
     })
   })
 
@@ -238,7 +253,10 @@ describe('InspectFarmSkill', () => {
 
     const result = await s.skill.run({ farm: entry.value.id }, context())
 
-    expect(result).toMatchObject({ ok: true, value: { components: [{ ripe: 0, growing: 0, empty: 0 }] } })
+    expect(result).toMatchObject({
+      ok: true,
+      value: { components: [{ ripe: 0, growing: 0, empty: 0 }] },
+    })
   })
 
   it('fails with unknown_farm for an unrecognised reference', async () => {
@@ -247,5 +265,72 @@ describe('InspectFarmSkill', () => {
     const result = await s.skill.run({ farm: 'nothing-here' }, context())
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'unknown_farm' } })
+  })
+  describe('a pumpkin field', () => {
+    const field = { from: at(0, 64, 0), to: at(2, 64, 2) }
+    const put = (
+      s: Awaited<ReturnType<typeof setup>>,
+      x: number,
+      z: number,
+      ground: string,
+      above: string,
+    ) => {
+      s.blocks.blockNames.set(key(at(x, 64, z)), ground)
+      s.blocks.blockNames.set(key(at(x, 65, z)), above)
+    }
+
+    it('counts stems growing, pumpkins ready, and stem plots with no stem', async () => {
+      const s = await setup()
+      const entry = s.farms.register({ kind: 'field', crop: 'pumpkin', bounds: field })
+      if (!entry.ok) throw new Error(entry.error)
+      put(s, 0, 0, 'farmland', 'pumpkin_stem')
+      put(s, 1, 0, 'farmland', 'attached_pumpkin_stem')
+      put(s, 2, 0, 'farmland', 'air')
+      put(s, 0, 1, 'grass_block', 'pumpkin')
+      put(s, 1, 1, 'grass_block', 'air')
+
+      const result = await s.skill.run({ farm: entry.value.id }, context())
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { components: [{ ripe: 1, growing: 2, empty: 1, blocked: 0 }] },
+      })
+    })
+
+    it('counts a free cell holding something else as blocked, and never counts a fence or water', async () => {
+      const s = await setup()
+      const entry = s.farms.register({ kind: 'field', crop: 'pumpkin', bounds: field })
+      if (!entry.ok) throw new Error(entry.error)
+      put(s, 0, 1, 'dirt', 'cobblestone')
+      put(s, 1, 1, 'dirt', 'oak_fence')
+      put(s, 2, 1, 'water', 'air')
+
+      const result = await s.skill.run({ farm: entry.value.id }, context())
+
+      expect(result).toMatchObject({ ok: true, value: { components: [{ blocked: 1 }] } })
+    })
+
+    it('leaves cells that are not loaded out of every count', async () => {
+      const s = await setup()
+      const entry = s.farms.register({ kind: 'field', crop: 'pumpkin', bounds: field })
+      if (!entry.ok) throw new Error(entry.error)
+
+      const result = await s.skill.run({ farm: entry.value.id }, context())
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { components: [{ ripe: 0, growing: 0, empty: 0, blocked: 0 }] },
+      })
+    })
+  })
+
+  it('reports the gate side of a farm', async () => {
+    const s = await setup()
+    const entry = s.farms.register({ kind: 'field', crop: 'wheat', bounds, gateSide: 'east' })
+    if (!entry.ok) throw new Error(entry.error)
+
+    const result = await s.skill.run({ farm: entry.value.id }, context())
+
+    expect(result).toMatchObject({ ok: true, value: { components: [{ gateSide: 'east' }] } })
   })
 })

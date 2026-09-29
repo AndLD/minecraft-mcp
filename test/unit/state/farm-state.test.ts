@@ -97,14 +97,17 @@ describe('FarmRegistry', () => {
   it('fails every operation before a world is active', () => {
     const farms = new FarmRegistry(new FakeClock(0))
 
-    expect(farms.register({ kind: 'field', bounds: bounds(0, 0, 1, 1) })).toMatchObject({ ok: false })
+    expect(farms.register({ kind: 'field', bounds: bounds(0, 0, 1, 1) })).toMatchObject({
+      ok: false,
+    })
     expect(farms.list()).toMatchObject({ ok: false })
     expect(farms.all()).toEqual([])
   })
 
   it('refuses past the farm limit', async () => {
     const { farms } = await registry()
-    for (let i = 0; i < MAX_FARMS; i += 1) farms.register({ kind: 'field', bounds: bounds(i, 0, i, 1) })
+    for (let i = 0; i < MAX_FARMS; i += 1)
+      farms.register({ kind: 'field', bounds: bounds(i, 0, i, 1) })
 
     const over = farms.register({ kind: 'field', bounds: bounds(999, 0, 999, 1) })
 
@@ -175,6 +178,7 @@ describe('FarmRegistry', () => {
         crop: 'wheat',
         species: null,
         herdTarget: null,
+        gateSide: null,
         spots: null,
         bounds: bounds(0, 0, 2, 2),
         label: 'old field',
@@ -282,5 +286,50 @@ describe('EggPolicy', () => {
     const store = new InMemoryStateStore()
     store.warnOnLoad = 'recovered'
     expect(await new EggPolicy().attach(store)).toEqual(['recovered'])
+  })
+})
+
+describe('FarmRegistry gate side', () => {
+  it('keeps the gate side given at registration and defaults to none', async () => {
+    const { farms } = await registry()
+    const east = farms.register({
+      kind: 'field',
+      crop: 'wheat',
+      bounds: bounds(0, 0, 2, 2),
+      gateSide: 'east',
+    })
+    const plain = farms.register({ kind: 'field', crop: 'wheat', bounds: bounds(10, 10, 12, 12) })
+
+    expect(east.ok && east.value.gateSide).toBe('east')
+    expect(plain.ok && plain.value.gateSide).toBeNull()
+  })
+
+  it('migrates a version-3 document to no known gate side', async () => {
+    const store = new InMemoryStateStore()
+    store.files.set('farms', {
+      version: 3,
+      data: {
+        farms: [
+          {
+            id: 'farm-1',
+            kind: 'field',
+            crop: 'wheat',
+            species: null,
+            herdTarget: null,
+            bounds: bounds(0, 0, 2, 2),
+            spots: null,
+            label: null,
+            group: null,
+            builtByBot: true,
+            registeredAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        nextId: 2,
+      },
+    })
+
+    const { farms } = await registry(store)
+
+    expect(farms.all()[0]?.gateSide).toBeNull()
   })
 })

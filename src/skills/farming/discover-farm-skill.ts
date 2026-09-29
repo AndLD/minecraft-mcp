@@ -9,7 +9,7 @@ import type { VitalsReader } from '../../core/vitals.port.js'
 import type { FarmRegistry } from '../../state/farm-registry.js'
 import { isPenBarrier } from '../hunting/pen-detector.js'
 import { PENNABLE_SPECIES } from './animal-table.js'
-import { classifyCrop } from './crop-table.js'
+import { cropNameOfBlock } from './crop-table.js'
 import {
   boundsOfCells,
   clusterCells,
@@ -178,8 +178,8 @@ export class DiscoverFarmSkill implements Skill<DiscoverFarmInput, DiscoverFarmO
         const crops: Record<string, number> = {}
         for (const cell of cluster) {
           const state = this.deps.crops.stateAt({ x: cell.x, y: y + 1, z: cell.z })
-          if (state !== undefined && classifyCrop(state.name) !== undefined)
-            crops[state.name] = (crops[state.name] ?? 0) + 1
+          const name = state === undefined ? undefined : cropNameOfBlock(state.name)
+          if (name !== undefined) crops[name] = (crops[name] ?? 0) + 1
         }
         const crop = mostCommon(crops)
         const notes = [

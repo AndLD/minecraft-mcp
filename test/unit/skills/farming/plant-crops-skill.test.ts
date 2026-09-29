@@ -327,4 +327,77 @@ describe('PlantCropsSkill', () => {
       })
     })
   })
+  describe('a pumpkin field', () => {
+    // Rows 0 and 2 were tilled by the field; row 1 was left free for the pumpkins. Row 0 also holds the water column.
+    const field = { from: { x: 0, y: 64, z: 0 }, to: { x: 2, y: 64, z: 2 } }
+    const pumpkinField = () => {
+      const s = setup()
+      for (const z of [0, 2]) {
+        s.blocks.blockNames.set(key({ x: 0, y: 64, z }), 'farmland')
+        s.blocks.blockNames.set(key({ x: 1, y: 64, z }), 'water')
+        s.blocks.blockNames.set(key({ x: 2, y: 64, z }), 'farmland')
+      }
+      for (const x of [0, 1, 2]) s.blocks.blockNames.set(key({ x, y: 64, z: 1 }), 'grass_block')
+      for (const z of [0, 1, 2])
+        for (const x of [0, 1, 2]) s.blocks.blockNames.set(key({ x, y: 65, z }), 'air')
+      return s
+    }
+
+    it('plants pumpkin_seeds only in the tilled rows and never in the free row', async () => {
+      const s = pumpkinField()
+
+      const result = await s.skill.run(
+        { farm: undefined, area: field, crop: 'pumpkin', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toEqual({
+        ok: true,
+        value: { planted: 4, tilled: 0, skipped: 2, repaired: 0, stillBare: 0 },
+      })
+      expect(s.placer.placed.map((p) => p.item)).toEqual(Array(4).fill('pumpkin_seeds'))
+      expect(s.placer.placed.every((p) => p.at.z !== 1)).toBe(true)
+      expect(s.tiller.calls).toEqual([])
+    })
+
+    it('tills a trampled plot of a stem row again, but never a plot of the free row', async () => {
+      const s = pumpkinField()
+      s.blocks.blockNames.set(key({ x: 2, y: 64, z: 2 }), 'dirt')
+
+      const result = await s.skill.run(
+        { farm: undefined, area: field, crop: 'pumpkin', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { planted: 4, tilled: 1 } })
+      expect(s.tiller.calls).toEqual([{ x: 2, y: 64, z: 2 }])
+    })
+
+    it('does not call the free row bare in the final check', async () => {
+      const s = pumpkinField()
+      s.placer.failure = { reason: 'failed', message: 'no' }
+
+      const result = await s.skill.run(
+        { farm: undefined, area: field, crop: 'pumpkin', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { planted: 0, stillBare: 4 } })
+    })
+
+    it('explains where pumpkin seeds come from when there are none', async () => {
+      const s = pumpkinField()
+      s.placer.failure = { reason: 'no_item', message: 'none' }
+
+      const result = await s.skill.run(
+        { farm: undefined, area: field, crop: 'pumpkin', maxPlants: undefined },
+        context(),
+      )
+
+      expect(result).toMatchObject({
+        ok: false,
+        error: { reason: 'no_seeds', message: expect.stringContaining('Craft a pumpkin') },
+      })
+    })
+  })
 })

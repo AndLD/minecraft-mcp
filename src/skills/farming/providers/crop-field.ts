@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import type { Position } from '../../../core/position.types.js'
 import type { WorkPlan, WorkStep } from '../../construction/work-plan.types.js'
-import { fenceRingSteps } from '../fence-ring.js'
+import { GATE_SIDES, GATE_SIDE_DESCRIPTION, fenceRingSteps, type GateSide } from '../fence-ring.js'
 import type { FarmLayoutContext, FarmLayoutProvider } from '../farm-layout.types.js'
-import { CROP_NAMES, classifyCrop } from '../crop-table.js'
+import { CROP_NAMES, cropFor } from '../crop-table.js'
 
 const MIN_WIDTH = 3
 /** Water hydrates farmland up to 4 blocks away in every direction: one water line (or spot) serves 9 blocks across. */
@@ -49,6 +49,13 @@ export function waterPlots(
   return across.flatMap((i) => Array.from({ length }, (_, j) => ({ i, j })))
 }
 
+/**
+ * A stem crop (pumpkin) grows its fruit on a free cell beside the stem, so every second row along the field stays
+ * untilled: rows 0, 2, 4... hold stems, rows 1, 3, 5... are left free (grass or dirt, nothing above) for the fruit.
+ * Rows run across the field (along x), so whatever the water layout, every stem has a free row next to it.
+ */
+export const isFreeRow = (j: number): boolean => j % 2 === 1
+
 const cropFieldParams = z.object({
   width: z
     .number()
@@ -64,12 +71,17 @@ const cropFieldParams = z.object({
     .min(MIN_LENGTH)
     .max(MAX_LENGTH)
     .describe(`Along the field, z axis (${String(MIN_LENGTH)} to ${String(MAX_LENGTH)}).`),
-  crop: z.enum(CROP_NAMES).describe(`What to plant: ${CROP_NAMES.join(', ')}.`),
+  crop: z
+    .enum(CROP_NAMES)
+    .describe(
+      `What to plant: ${CROP_NAMES.join(', ')}. Pumpkin is planted in every second row only (the rows between are left free for the fruit); its seeds come from crafting a pumpkin.`,
+    ),
   fence: z.boolean().default(true).describe('Build a fence with a gate around the field.'),
   torches: z
     .boolean()
     .default(true)
     .describe('Light the fence posts so mobs cannot spawn on the field at night.'),
+  gate_side: z.enum(GATE_SIDES).default('south').describe(GATE_SIDE_DESCRIPTION),
   water: z
     .enum(WATER_LAYOUTS)
     .default('trench')
@@ -97,7 +109,10 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
     'of water down the middle (one line per 9 blocks of width), "spots" one block at the centre of each 9x9 part; ' +
     'either way every plot is within 4 blocks of water, and no lone block goes at an edge. Each water block takes ' +
     'one filled water bucket (fill_bucket makes them), so the preview says how many are needed. ' +
-    'build_farm plants the chosen crop over the field right after building it. Needs a hoe, water buckets, and fence.'
+    'build_farm plants the chosen crop over the field right after building it. `gate_side` (north, south, east, ' +
+    'west; default south) puts the gate in the middle of that side; a pen takes the same option. `crop: pumpkin` ' +
+    'makes a stem field: stems go in every second row and the rows between stay free for the pumpkins to grow ' +
+    'into (harvest_crops takes the pumpkins and leaves the stems). Needs a hoe, water buckets, and fence.'
   readonly params = cropFieldParams
 
   defaultOrigin(feet: Position): Position {
@@ -108,9 +123,13 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
     return params.crop
   }
 
+  gateSideOf(params: CropFieldParams): GateSide | undefined {
+    return params.fence ? params.gate_side : undefined
+  }
+
   generate(p: CropFieldParams, context: FarmLayoutContext): WorkPlan | { error: string } {
-    if (classifyCrop(p.crop) === undefined)
-      return { error: `${p.crop} is not a crop this can plant.` }
+    const spec = cropFor(p.crop)?.spec
+    if (spec === undefined) return { error: `${p.crop} is not a crop this can plant.` }
     const { x: x0, y: y0, z: z0 } = context.origin
     const water = new Set(
       waterPlots(p.width, p.length, p.water).map(({ i, j }) => `${String(i)},${String(j)}`),
@@ -125,13 +144,22 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
         const ground = { x: x0 + i, y: y0, z: z0 + j }
         if (water.has(`${String(i)},${String(j)}`))
           wet.push({ kind: 'place', at: ground, block: 'water_bucket', branch: 'channel' })
+        else if (spec.kind === 'stem' && isFreeRow(j)) continue
         else tilled.push({ kind: 'till', at: ground, branch: 'field' })
       }
     }
     const steps: WorkStep[] = [...wet, ...tilled]
     if (p.fence)
       steps.push(
-        ...fenceRingSteps({ x0, y0, z0, width: p.width, length: p.length, torches: p.torches }),
+        ...fenceRingSteps({
+          x0,
+          y0,
+          z0,
+          width: p.width,
+          length: p.length,
+          torches: p.torches,
+          gateSide: p.gate_side,
+        }),
       )
     return {
       name: `${p.crop} field ${String(p.width)}x${String(p.length)}`,

@@ -3,7 +3,7 @@ import type { Position } from '../../../core/position.types.js'
 import type { WorkPlan, WorkStep } from '../../construction/work-plan.types.js'
 import { isOpenAir, isReplaceable } from '../../construction/block-match.js'
 import { isClearable } from '../../site-leveling/natural-terrain.js'
-import { fenceRingSteps } from '../fence-ring.js'
+import { GATE_SIDES, GATE_SIDE_DESCRIPTION, fenceRingSteps, type GateSide } from '../fence-ring.js'
 import type { FarmLayoutContext, FarmLayoutProvider } from '../farm-layout.types.js'
 import { PENNABLE_SPECIES } from '../animal-table.js'
 
@@ -26,6 +26,7 @@ const animalPenParams = z.object({
   species: z
     .enum(PENNABLE_SPECIES)
     .describe(`What the pen is for: ${PENNABLE_SPECIES.join(', ')}.`),
+  gate_side: z.enum(GATE_SIDES).default('south').describe(GATE_SIDE_DESCRIPTION),
   water: z.boolean().default(false).describe('Put a water source in the middle of the pen.'),
   torches: z
     .boolean()
@@ -52,7 +53,7 @@ export class AnimalPenProvider implements FarmLayoutProvider<AnimalPenParams> {
     'A fenced pen with a gate for one animal species: `width` (x) by `length` (z), starting at the lowest x/z ' +
     'corner (by default the ground block two blocks east of the bot). Holds about ' +
     `${String(penCapacity(MIN_SIDE, MIN_SIDE))} to ${String(penCapacity(MAX_SIDE, MAX_SIDE))} animals depending on size ` +
-    '(one per block of floor, a simple figure, not the exact vanilla cramming limit). Needs fence and, with water, a water bucket.'
+    '(one per block of floor, a simple figure, not the exact vanilla cramming limit). Needs fence and, with water, a water bucket. `gate_side` puts the gate in the middle of the north, south (default), east, or west side.'
   readonly params = animalPenParams
 
   defaultOrigin(feet: Position): Position {
@@ -63,12 +64,24 @@ export class AnimalPenProvider implements FarmLayoutProvider<AnimalPenParams> {
     return params.species
   }
 
+  gateSideOf(params: AnimalPenParams): GateSide {
+    return params.gate_side
+  }
+
   generate(p: AnimalPenParams, context: FarmLayoutContext): WorkPlan | { error: string } {
     const { x: x0, y: y0, z: z0 } = context.origin
     const { clearing, kept } = this.interior(p, context)
     const steps: WorkStep[] = [
       ...clearing,
-      ...fenceRingSteps({ x0, y0, z0, width: p.width, length: p.length, torches: p.torches }),
+      ...fenceRingSteps({
+        x0,
+        y0,
+        z0,
+        width: p.width,
+        length: p.length,
+        torches: p.torches,
+        gateSide: p.gate_side,
+      }),
     ]
     if (p.water) {
       const center = {
