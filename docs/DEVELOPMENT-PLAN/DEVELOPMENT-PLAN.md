@@ -85,7 +85,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [26 Closing gates and doors behind the bot](phases/closing-doors-behind.md) | done (`feature/closing-doors-behind`: doors the bot opens are closed on every path, leftovers on the next trip, pen gates checked at the end of pen tasks; a door found open is left alone) |
 | [27 Excavation reliability](phases/excavation-reliability.md) | done (`feature/excavation-reliability`: the cave-sealing bug reproduced and fixed, every shape read back at the end with stray blocks cleared and special blocks kept, `falling_blocks: 'clear'`, the exact blocking cells in `ended`, and the `dig_to` shape) |
 | [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | done (`feature/excavation-upward`: `continue_existing` from a record of the bot's own digs, `order: bottom_up` for pit, shaft, and quarry; a dig made by hand is not recognised and asks for its origin) |
-| [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | not started (added from live sessions) |
+| [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | done (`feature/placement-fixes`: the furnace cause was a click that opens the furnace, fixed by sneaking; a sign tries several standing spots, names free places when blocked, and takes `replace_block`) |
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | not started (cave flow added) |
 | [31 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
 | [32 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |

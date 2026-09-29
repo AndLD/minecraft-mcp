@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it } from '@jest/globals'
+import type { DigFailure, Digger, DigAssessment } from '../../../../src/core/digger.port.js'
+import type { Position } from '../../../../src/core/position.types.js'
+import { err, ok, type Result } from '../../../../src/core/result.js'
 import type { PlaceSignInput } from '../../../../src/skills/signs/place-sign-skill.js'
 import { PlaceSignSkill } from '../../../../src/skills/signs/place-sign-skill.js'
 import { SignRegistry } from '../../../../src/state/sign-registry.js'
@@ -23,7 +26,24 @@ import { InMemoryStateStore } from '../../../fakes/state-fakes.js'
 const at = (x: number, y: number, z: number) => ({ x, y, z })
 const LINES = ['Iron', '', '', ''] as const
 
-async function setup() {
+/** Breaks a block of the sign world (what `replace_block` uses), and can be made to fail. */
+class WorldDigger implements Digger {
+  readonly dug: Position[] = []
+  failure: DigFailure | undefined
+  constructor(private readonly world: SignWorld) {}
+  assess(position: Position): DigAssessment | undefined {
+    const name = this.world.blockAt(position) ?? 'air'
+    return { blockName: name, diggable: true, requiredTools: [], canHarvest: true, tool: undefined }
+  }
+  dig(position: Position): Promise<Result<void, DigFailure>> {
+    this.dug.push(position)
+    if (this.failure !== undefined) return Promise.resolve(err(this.failure))
+    this.world.set(position.x, position.y, position.z, 'air')
+    return Promise.resolve(ok(undefined))
+  }
+}
+
+async function setup(options: { digger?: boolean } = {}) {
   const clock = new FakeClock(0)
   const world = new SignWorld()
   const vitals = new FakeVitals()
@@ -35,7 +55,9 @@ async function setup() {
   const guard = new FakeAreaGuard()
   const registry = new SignRegistry(clock)
   await registry.attach(new InMemoryStateStore())
+  const digger = new WorldDigger(world)
   const skill = new PlaceSignSkill({
+    ...(options.digger === false ? {} : { digger }),
     vitals,
     blocks: world,
     signs,
@@ -46,7 +68,7 @@ async function setup() {
     registry,
     scheduler: new AutoScheduler(clock),
   })
-  return { world, vitals, navigator, placer, signs, supplies, guard, registry, skill }
+  return { world, vitals, navigator, placer, signs, supplies, guard, registry, skill, digger }
 }
 
 const input = (overrides: Partial<PlaceSignInput> = {}): PlaceSignInput => ({
@@ -57,6 +79,7 @@ const input = (overrides: Partial<PlaceSignInput> = {}): PlaceSignInput => ({
   wood: undefined,
   facing: undefined,
   towards: undefined,
+  replaceBlock: undefined,
   ...overrides,
 })
 
@@ -238,7 +261,8 @@ describe('PlaceSignSkill', () => {
   })
 
   it('reports a walk that failed, and a cancelled one', async () => {
-    s.navigator.failures = [{ reason: 'unreachable', message: 'no path' }]
+    const noPath = { reason: 'unreachable' as const, message: 'no path' }
+    s.navigator.failures = [noPath, noPath, noPath, noPath]
     const unreachable = await s.skill.run(input(), skillContext().context)
     expect(unreachable).toMatchObject({ ok: false, error: { reason: 'unreachable' } })
 
@@ -289,5 +313,152 @@ describe('PlaceSignSkill', () => {
     await s.skill.run(input({ side: 'back' }), skillContext().context)
 
     expect(s.signs.writes[0]?.side).toBe('back')
+  })
+  describe('a sign on top of a fence', () => {
+    const fence = at(10, FLOOR, 10)
+    const cell = at(10, FLOOR + 1, 10)
+    const onFence = (overrides: Partial<PlaceSignInput> = {}) =>
+      input({ reference: fence, face: 'top', ...overrides })
+    beforeEach(() => {
+      s.world.set(10, FLOOR, 10, 'oak_fence')
+    })
+
+    it('tries the next spot when the walk to the first one fails, and names why in the end if none works', async () => {
+      const gate = {
+        reason: 'unreachable' as const,
+        message: 'The oak_fence_gate at 69, 87, 48 would not open',
+      }
+      s.navigator.failures = [gate]
+
+      const result = await s.skill.run(onFence({ facing: 'north' }), skillContext().context)
+
+      expect(result).toMatchObject({ ok: true, value: { position: cell, kind: 'standing' } })
+      expect(s.navigator.trips).toHaveLength(2)
+      expect(s.navigator.trips[1]?.target).not.toEqual(s.navigator.trips[0]?.target)
+    })
+
+    it('gives the direction of the spot it finally stood on as the way the text faces', async () => {
+      s.navigator.failures = [{ reason: 'unreachable', message: 'no route' }]
+
+      const result = await s.skill.run(onFence({ facing: 'north' }), skillContext().context)
+
+      expect(result.ok).toBe(true)
+      // The first spot was north of the fence (z 8, facing north); the next is a spot on another side.
+      const second = s.navigator.trips[1]?.target
+      expect(second !== undefined && (second.x !== 10 || second.z !== 8)).toBe(true)
+    })
+
+    it('fails with every spot it tried and why, after four', async () => {
+      const failure = { reason: 'unreachable' as const, message: 'the gate would not open' }
+      s.navigator.failures = [failure, failure, failure, failure, failure]
+
+      const result = await s.skill.run(onFence(), skillContext().context)
+
+      expect(s.navigator.trips).toHaveLength(4)
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          reason: 'unreachable',
+          message: expect.stringContaining('the gate would not open'),
+        },
+      })
+      if (!result.ok) {
+        const detail = result.error.detail as { tried: unknown[] }
+        expect(detail.tried).toHaveLength(4)
+      }
+      expect(s.placer.placed).toEqual([])
+    })
+
+    it('stops at once when cancelled during the walk', async () => {
+      s.navigator.failures = [{ reason: 'aborted', message: 'stopped' }]
+
+      const result = await s.skill.run(onFence(), skillContext().context)
+
+      expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+      expect(s.navigator.trips).toHaveLength(1)
+    })
+
+    describe('with a torch on top of it', () => {
+      beforeEach(() => {
+        s.world.set(10, FLOOR + 1, 10, 'torch')
+        s.world.set(12, FLOOR, 10, 'oak_fence')
+        s.world.names.push('oak_fence', 'torch')
+        s.world.origin = at(10, FLOOR, 8) // where the bot is: the scan for the next post starts here
+      })
+
+      it('says which free places there are instead, and how to swap the torch', async () => {
+        const result = await s.skill.run(onFence(), skillContext().context)
+
+        expect(result).toMatchObject({
+          ok: false,
+          error: {
+            reason: 'blocked',
+            message: expect.stringContaining('taken by torch'),
+          },
+        })
+        if (result.ok) return
+        expect(result.error.message).toContain(
+          'the top of the next oak_fence (at (12, 64, 10), face top)',
+        )
+        expect(result.error.message).toContain('side of the same oak_fence')
+        expect(result.error.message).toContain('replace_block: true')
+        const detail = result.error.detail as {
+          alternatives: { reference: Position; face: string }[]
+        }
+        expect(detail.alternatives[0]).toEqual({ reference: at(12, FLOOR, 10), face: 'top' })
+        expect(detail.alternatives.length).toBeLessThanOrEqual(3)
+        expect(s.digger.dug).toEqual([])
+      })
+
+      it('swaps the torch for the sign when asked to', async () => {
+        const result = await s.skill.run(onFence({ replaceBlock: true }), skillContext().context)
+
+        expect(result).toMatchObject({ ok: true, value: { position: cell, kind: 'standing' } })
+        expect(s.digger.dug).toEqual([cell])
+        expect(s.world.blockAt(cell)).toBe('oak_sign')
+        // The bot walked to its spot before breaking anything.
+        expect(s.navigator.trips.length).toBeGreaterThan(0)
+      })
+
+      it('says so when the block cannot be broken, and puts no sign up', async () => {
+        s.digger.failure = { reason: 'not_diggable', message: 'too hard' }
+
+        const result = await s.skill.run(onFence({ replaceBlock: true }), skillContext().context)
+
+        expect(result).toMatchObject({ ok: false, error: { reason: 'replace_failed' } })
+        expect(s.placer.placed).toEqual([])
+      })
+
+      it('stops when cancelled while breaking it', async () => {
+        s.digger.failure = { reason: 'aborted', message: 'stopped' }
+
+        const result = await s.skill.run(onFence({ replaceBlock: true }), skillContext().context)
+
+        expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+      })
+
+      it('cannot swap without a digger wired', async () => {
+        const bare = await setup({ digger: false })
+        bare.world.set(10, FLOOR, 10, 'oak_fence')
+        bare.world.set(10, FLOOR + 1, 10, 'torch')
+
+        const result = await bare.skill.run(onFence({ replaceBlock: true }), skillContext().context)
+
+        expect(result).toMatchObject({ ok: false, error: { reason: 'replace_unavailable' } })
+      })
+    })
+
+    it.each(['chest', 'oak_door', 'white_bed', 'oak_sign'])(
+      'never offers, and never does, a swap for a %s',
+      async (name) => {
+        s.world.set(10, FLOOR + 1, 10, name)
+
+        const refused = await s.skill.run(onFence({ replaceBlock: true }), skillContext().context)
+
+        expect(refused).toMatchObject({ ok: false, error: { reason: 'blocked' } })
+        if (!refused.ok) expect(refused.error.message).not.toContain('replace_block: true')
+        expect(s.digger.dug).toEqual([])
+      },
+    )
   })
 })

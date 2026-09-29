@@ -218,7 +218,7 @@ Naming: `snake_case`, verbs first. Descriptions must be written for an LLM reade
 | Excavation | `excavate` (pit, shaft, quarry, tunnel, branch mine, staircase_down, room, dig_to a target block; `stair_width`/`stair_height`, `seal_caves`/`seal_block`, `falling_blocks: clear`, `continue_existing` to deepen a pit/shaft/quarry the bot dug, `order: bottom_up`; every shape is read back and its stray blocks cleared, see `shapeCheck`), `preview_excavation`, `list_excavations` |
 | Breaking | `break_block` (exactly one block at coordinates or the one the player looks at; `override_protection` only on the player's own direct words) |
 | Buckets | `fill_bucket` (water or lava into empty buckets; source blocks only; lava refused in protected areas and beside player builds unless the block is named with `at`) |
-| Signs | `place_sign`, `edit_sign`, `remove_sign`, `read_signs` (wall and standing signs; plain text of 4 lines of 15 characters) |
+| Signs | `place_sign` (`replace_block` to swap a torch for the sign, only after the player agreed), `edit_sign`, `remove_sign`, `read_signs` (wall and standing signs; plain text of 4 lines of 15 characters) |
 | Site leveling | `flatten_area`, `preview_flatten` (cut, fill, and clear a rectangle to a level) |
 | Railways | `plan_railway`, `build_railway`, `place_minecart` |
 | Sleeping | `sleep`, `set_respawn_point`, `place_bed`, `list_beds`, `set_sleep_policy` (never in the Nether or the End: a bed explodes there) |

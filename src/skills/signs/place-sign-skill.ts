@@ -1,5 +1,6 @@
 import type { AreaGuard } from '../../core/area-guard.port.js'
 import type { BlockScanner } from '../../core/block-scanner.port.js'
+import type { Digger } from '../../core/digger.port.js'
 import type { LookFace } from '../../core/container.port.js'
 import type { Navigator } from '../../core/navigator.port.js'
 import type { Placer } from '../../core/placer.port.js'
@@ -50,6 +51,11 @@ export interface PlaceSignInput {
   readonly facing: SignFacing | undefined
   /** Where the reader is (the player); a standing sign faces them by default. */
   readonly towards: Position | undefined
+  /**
+   * Break what stands in the sign's cell (a torch on a fence top) and put the sign there. Only after the player agreed:
+   * without it a taken cell is refused (`blocked`). Containers, doors, beds, and other signs are never broken.
+   */
+  readonly replaceBlock?: boolean | undefined
 }
 
 export interface PlaceSignOutput {
@@ -71,6 +77,8 @@ export interface PlaceSignDeps {
   readonly supplies: SignSupplier
   readonly registry: SignRegistry
   readonly scheduler: Scheduler
+  /** Breaks the block a sign replaces (`replace_block`); without it a replacement is refused. */
+  readonly digger?: Digger
 }
 
 interface Placement {
@@ -80,7 +88,28 @@ interface Placement {
   /** The way the sign's text will face. */
   readonly facing: SignFacing
   readonly stand: Position
+  /** Other places to stand when the walk to `stand` fails, nearest to the bot first (each with the text direction it gives). */
+  readonly alternates: readonly { readonly stand: Position; readonly facing: SignFacing }[]
+  /** The block in the cell that the sign replaces, when the request allowed it. */
+  readonly replace: string | undefined
 }
+
+/** How many spots are tried before giving up on the walk. */
+const MAX_STANDS = 4
+/** How far the free alternatives named in a `blocked` reply may be from the bot. */
+const ALTERNATIVE_RANGE = 8
+const MAX_ALTERNATIVES = 3
+/** Of those, at most this many are other blocks (the rest are other faces of the block asked for). */
+const MAX_NEIGHBOURS = 2
+const FACES: readonly LookFace[] = ['top', 'north', 'south', 'east', 'west']
+
+/** What a sign may replace when asked: not a container, a door, a bed, another sign, a liquid, or bedrock. */
+const canBeReplaced = (name: string): boolean =>
+  !isSignBlock(name) &&
+  !isContainerBlock(name) &&
+  !isFluid(name) &&
+  name !== 'bedrock' &&
+  !/(_door|_trapdoor|_fence_gate|_bed)$/.test(name)
 
 const fail = (reason: string, message: string, detail?: Record<string, unknown>): SkillFailure =>
   detail === undefined ? { reason, message } : { reason, message, detail }
@@ -126,12 +155,35 @@ export class PlaceSignSkill implements Skill<PlaceSignInput, PlaceSignOutput> {
       )
     }
 
-    const walked = await deps.navigator.goToPosition(placement.stand, placement.standing ? 0 : 1, {
-      signal: context.signal,
-    })
-    if (!walked.ok) {
+    // The best spot first; when the walk to it fails (it may lie on the far side of a fence line, so the route runs
+    // round through a gate), the next one, and the failure says which spots were tried and why.
+    const spots = [{ stand: placement.stand, facing: placement.facing }, ...placement.alternates]
+    const tried: { stand: Position; reason: string }[] = []
+    let arrivedAt: { stand: Position; facing: SignFacing } | undefined
+    for (const spot of spots.slice(0, MAX_STANDS)) {
+      const walked = await deps.navigator.goToPosition(spot.stand, placement.standing ? 0 : 1, {
+        signal: context.signal,
+      })
+      if (walked.ok) {
+        arrivedAt = spot
+        break
+      }
       if (walked.error.reason === 'aborted') return err(fail('aborted', 'Cancelled.'))
-      return err(fail('unreachable', `Could not walk to the spot: ${walked.error.message}`))
+      tried.push({ stand: spot.stand, reason: walked.error.message })
+    }
+    if (arrivedAt === undefined)
+      return err(
+        fail(
+          'unreachable',
+          `Could not walk to a spot beside the sign at ${describe(placement.cell)}: ${tried.map((t) => `${describe(t.stand)}: ${t.reason}`).join('; ')}.`,
+          { tried: tried.map((t) => ({ spot: t.stand, reason: t.reason })), cell: placement.cell },
+        ),
+      )
+    const facing = arrivedAt.facing
+
+    if (placement.replace !== undefined) {
+      const cleared = await this.clear(placement, context.signal)
+      if (!cleared.ok) return err(cleared.error)
     }
 
     // Sneaking: a click on a chest or a door would use it, and a sign on a chest is the usual request.
@@ -182,10 +234,49 @@ export class PlaceSignSkill implements Skill<PlaceSignInput, PlaceSignOutput> {
       position: placement.cell,
       kind: placement.standing ? 'standing' : 'wall',
       item,
-      facing: state?.facing ?? placement.facing,
+      facing: state?.facing ?? facing,
       side: input.side,
       lines: input.lines,
     })
+  }
+
+  /** Breaks the block a sign replaces, and waits for the cell to read as empty. */
+  private async clear(
+    placement: Placement,
+    signal: AbortSignal,
+  ): Promise<{ ok: true } | { ok: false; error: SkillFailure }> {
+    const { digger, blocks } = this.deps
+    if (digger === undefined)
+      return {
+        ok: false,
+        error: fail(
+          'replace_unavailable',
+          'The bot cannot break blocks here, so it cannot swap one for a sign.',
+        ),
+      }
+    const dug = await digger.dig(placement.cell, signal)
+    if (!dug.ok)
+      return {
+        ok: false,
+        error:
+          dug.error.reason === 'aborted'
+            ? fail('aborted', 'Cancelled.')
+            : fail(
+                'replace_failed',
+                `The ${placement.replace ?? 'block'} at ${describe(placement.cell)} could not be broken: ${dug.error.message}`,
+              ),
+      }
+    for (let attempt = 0; attempt < CONFIRM_TRIES; attempt += 1) {
+      if (isAir(blocks.blockAt(placement.cell))) return { ok: true }
+      await sleep(this.deps.scheduler, CONFIRM_MS, signal)
+    }
+    return {
+      ok: false,
+      error: fail(
+        'replace_failed',
+        `The cell at ${describe(placement.cell)} did not empty after breaking it.`,
+      ),
+    }
   }
 
   /** Checks the target and finds where to stand; without a face, the best free side of the block. */
@@ -220,11 +311,12 @@ export class PlaceSignSkill implements Skill<PlaceSignInput, PlaceSignOutput> {
     input: PlaceSignInput,
     face: LookFace,
     bot: Position,
+    suggest = true,
   ): { ok: true; value: Placement } | { ok: false; error: SkillFailure } {
     const { blocks, guard } = this.deps
-    const refuse = (reason: string, message: string) => ({
+    const refuse = (reason: string, message: string, detail?: Record<string, unknown>) => ({
       ok: false as const,
-      error: fail(reason, message),
+      error: fail(reason, message, detail),
     })
     if (face === 'bottom')
       return refuse(
@@ -261,11 +353,30 @@ export class PlaceSignSkill implements Skill<PlaceSignInput, PlaceSignOutput> {
         'fluid',
         `The cell at ${describe(cell)} holds ${cellName}: no sign goes in water or lava.`,
       )
-    if (!isAir(cellName))
-      return refuse(
-        'blocked',
-        `The cell at ${describe(cell)} is taken by ${cellName}; a sign is one block and needs a free cell.`,
-      )
+    let replace: string | undefined
+    if (!isAir(cellName)) {
+      const swappable = canBeReplaced(cellName)
+      if (input.replaceBlock === true && swappable) replace = cellName
+      else {
+        const alternatives = suggest ? this.alternatives(input, referenceName, face, bot) : []
+        const free = alternatives.map(
+          (a) => `${a.label} (at ${describe(a.reference)}, face ${a.face})`,
+        )
+        return refuse(
+          'blocked',
+          `The cell at ${describe(cell)} is taken by ${cellName}; a sign is one block and needs a free cell.` +
+            (free.length === 0 ? '' : ` Free instead: ${free.join('; ')}.`) +
+            (swappable
+              ? ` To swap the ${cellName} for the sign, ask the player, then call again with replace_block: true.`
+              : ''),
+          {
+            cell,
+            blockedBy: cellName,
+            alternatives: alternatives.map((a) => ({ reference: a.reference, face: a.face })),
+          },
+        )
+      }
+    }
     const guarded = guard.protectedAt(cell) ?? guard.protectedAt(reference)
     if (guarded !== undefined)
       return refuse(
@@ -277,33 +388,84 @@ export class PlaceSignSkill implements Skill<PlaceSignInput, PlaceSignOutput> {
     const facing: SignFacing = standing
       ? (input.facing ?? facingTowards(cell, input.towards ?? bot))
       : face
-    const stand = this.standingSpot(cell, facing, standing)
+    const spots = this.standingSpots(cell, facing, standing, bot)
+    const stand = spots[0]?.stand
     if (stand === undefined)
       return refuse(
         'no_stand',
         `There is no free, solid, dry spot in front of ${describe(cell)} to stand on while placing the sign (farmland is never trampled).`,
       )
-    return { ok: true, value: { cell, face, standing, facing, stand } }
+    return {
+      ok: true,
+      value: { cell, face, standing, facing, stand, alternates: spots.slice(1), replace },
+    }
   }
 
   /**
-   * Where the bot stands. A standing sign turns to face the player who places it, so the bot stands on the side the text
-   * should face (exactly on the line through the cell); a wall sign takes its direction from the wall, so any free spot
-   * in front will do.
+   * Where the bot can stand, best first. A standing sign turns to face the player who places it, so the bot stands on the
+   * side the text should face (exactly on the line through the cell); a wall sign takes its direction from the wall, so
+   * any free spot in front will do. After those come the spots on the other sides of a standing sign's cell (a different
+   * text direction), nearest to the bot first, for when the walk to the first one fails.
    */
-  private standingSpot(
+  private standingSpots(
     cell: Position,
     facing: SignFacing,
     standing: boolean,
-  ): Position | undefined {
-    const direction = vectorOf(facing)
-    const spots: Position[] = []
-    for (const distance of standing ? [2, 1] : [1, 2])
-      for (const dy of [0, -1]) {
-        const along = offset(cell, direction, distance)
-        spots.push({ x: along.x, y: along.y + dy, z: along.z })
-      }
-    return spots.find((spot) => this.canStand(spot))
+    bot: Position,
+  ): { stand: Position; facing: SignFacing }[] {
+    const around = (direction: SignFacing): Position[] => {
+      const spots: Position[] = []
+      for (const distance of standing ? [2, 1] : [1, 2])
+        for (const dy of [0, -1]) {
+          const along = offset(cell, vectorOf(direction), distance)
+          spots.push({ x: along.x, y: along.y + dy, z: along.z })
+        }
+      return spots.filter((spot) => this.canStand(spot))
+    }
+    const best = around(facing).map((stand) => ({ stand, facing }))
+    if (!standing) return best
+    const others = FACINGS.filter((other) => other !== facing)
+      .flatMap((other) => around(other).map((stand) => ({ stand, facing: other })))
+      .sort((a, b) => distanceBetween(a.stand, bot) - distanceBetween(b.stand, bot))
+    return [...best, ...others]
+  }
+
+  /**
+   * Free places for the sign near a taken cell: the other faces of the same block, then the top of the nearest blocks of
+   * the same kind (the next fence post), each checked like a real request.
+   */
+  private alternatives(
+    input: PlaceSignInput,
+    referenceName: string,
+    refused: LookFace,
+    bot: Position,
+  ): { reference: Position; face: LookFace; label: string }[] {
+    const found: { reference: Position; face: LookFace; label: string }[] = []
+    const consider = (reference: Position, face: LookFace, label: string): void => {
+      if (found.length >= MAX_ALTERNATIVES) return
+      const planned = this.plan(
+        { ...input, reference, face, replaceBlock: false },
+        face,
+        bot,
+        false,
+      )
+      if (planned.ok) found.push({ reference, face, label })
+    }
+    // The top of the next post of the same kind first (the sign was wanted on top of one), then the other faces here.
+    const nearby = this.deps.blocks.findBlocks({
+      names: [referenceName],
+      maxDistance: ALTERNATIVE_RANGE,
+      count: 16,
+    })
+    for (const block of nearby) {
+      if (found.length >= MAX_NEIGHBOURS) break
+      if (distanceBetween(block.position, input.reference) < 0.5) continue
+      consider(block.position, 'top', `the top of the next ${referenceName}`)
+    }
+    for (const face of FACES)
+      if (face !== refused)
+        consider(input.reference, face, `the ${face} side of the same ${referenceName}`)
+    return found
   }
 
   private canStand(spot: Position): boolean {

@@ -95,8 +95,17 @@ describe('place_sign', () => {
         wood: undefined,
         facing: undefined,
         towards: at(5, FLOOR, 20),
+        replaceBlock: false,
       },
     ])
+  })
+
+  it('passes replace_block on to the skill', async () => {
+    s.look.hits.set('Steve', { name: 'oak_fence', position: at(5, FLOOR, 5), face: 'top' })
+
+    await run({ text: 'Iron', replace_block: true })
+
+    expect(runs[0]).toMatchObject({ replaceBlock: true })
   })
 
   it('hangs the sign on a side when the owner looks at the top of a chest', async () => {

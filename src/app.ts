@@ -925,6 +925,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     }),
     registry: signRegistry,
     scheduler,
+    digger: constructionDigger,
   })
   const editSign = new EditSignSkill({
     signs: signAccess,

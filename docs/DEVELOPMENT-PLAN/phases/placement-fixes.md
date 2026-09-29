@@ -1,6 +1,7 @@
 # Phase 29: Placement fixes: furnaces, and signs on fences
 
-_Estimate: ½ session._
+_Estimate: ½ session._  
+**Status:** done on `feature/placement-fixes`. The furnace diagnosis ("cannot place above feet level") was wrong: the click opened the furnace. Details in [Construction and building](../../features/world/construction-and-building.md) and [Signs](../../features/world/signs.md).
 
 **Depends on:** [13 Construction engine and building](construction-building.md) (`Placer`, `StandingSpotChooser`, `Scaffolder`), [21 Signs](signs.md).  
 **Optional:** [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md) (`DoorOpeningNavigator`, for the sign route).  

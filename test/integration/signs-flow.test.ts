@@ -317,4 +317,42 @@ describe('signs through the MCP server', () => {
     expect(nameAt(h, at(12, FLOOR, 11))).toBe('air')
     expect(data(await h.call('get_task_status'))).toMatchObject({ task: { status: 'cancelled' } })
   })
+  describe('a sign on top of a fence with a torch on it', () => {
+    const onFence = (bot: FakeBot) => {
+      for (const x of [14, 15, 16]) bot.setBlock(at(x, FLOOR, 8), 'oak_fence')
+      bot.setBlock(at(15, FLOOR + 1, 8), 'torch')
+    }
+
+    it('names a free place and offers to swap the torch, without touching it', async () => {
+      const h = await start(onFence)
+
+      const result = await call(h, 'place_sign', {
+        at: at(15, FLOOR, 8),
+        face: 'top',
+        text: 'Field',
+        wait_seconds: 40,
+      })
+
+      expect(result.isError).toBe(true)
+      expect(result.text).toContain('blocked')
+      expect(result.text).toContain('Free instead')
+      expect(result.text).toContain('replace_block: true')
+      expect(nameAt(h, at(15, FLOOR + 1, 8))).toBe('torch')
+    })
+
+    it('swaps the torch for the sign with replace_block', async () => {
+      const h = await start(onFence)
+
+      const result = await call(h, 'place_sign', {
+        at: at(15, FLOOR, 8),
+        face: 'top',
+        text: 'Field',
+        replace_block: true,
+        wait_seconds: 40,
+      })
+
+      expect(data(result)).toMatchObject({ status: 'succeeded' })
+      expect(nameAt(h, at(15, FLOOR + 1, 8))).toBe('oak_sign')
+    })
+  })
 })

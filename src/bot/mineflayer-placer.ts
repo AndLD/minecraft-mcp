@@ -1,6 +1,7 @@
 import type { PlaceFailure, PlaceOptions, Placer } from '../core/placer.port.js'
 import type { Position } from '../core/position.types.js'
 import { err, ok, type Result } from '../core/result.js'
+import { isUsedByClick } from '../core/usable-blocks.js'
 import type { BlockLike, BotHolder, BotLike } from './bot-like.types.js'
 import { toVec3 } from './vec3.js'
 
@@ -28,7 +29,7 @@ export class MineflayerPlacer implements Placer {
     if (below === null || below.boundingBox !== 'block')
       return fail('no_support', 'There is no solid block to place it against.')
 
-    return this.place(bot, id, below, UP)
+    return this.placeSneakingIfNeeded(bot, id, below, UP, undefined)
   }
 
   async placeAgainst(
@@ -47,12 +48,26 @@ export class MineflayerPlacer implements Placer {
     const block = bot.blockAt(toVec3(reference))
     if (block === null || block.boundingBox !== 'block')
       return fail('no_support', 'There is no solid block to place it against.')
-    if (options.sneak !== true) return this.place(bot, id, block, toVec3(face))
+    return this.placeSneakingIfNeeded(bot, id, block, toVec3(face), options.sneak)
+  }
 
+  /**
+   * A right click on a furnace, chest, door, or the like uses it instead of placing against it (the server then answers
+   * nothing, and the cell stays empty): the bot sneaks for those, whatever the caller asked, and only when asked for the
+   * rest.
+   */
+  private async placeSneakingIfNeeded(
+    bot: BotLike,
+    itemId: number,
+    against: BlockLike,
+    face: Position,
+    sneak: boolean | undefined,
+  ): Promise<Result<void, PlaceFailure>> {
+    if (sneak !== true && !isUsedByClick(against.name)) return this.place(bot, itemId, against, face)
     bot.setControlState('sneak', true)
     try {
       await bot.waitForTicks(SNEAK_TICKS)
-      return await this.place(bot, id, block, toVec3(face))
+      return await this.place(bot, itemId, against, face)
     } finally {
       bot.setControlState('sneak', false)
     }
