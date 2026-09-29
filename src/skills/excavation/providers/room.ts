@@ -291,6 +291,7 @@ export class RoomProvider implements ExcavationProvider<RoomParams> {
       standing: 'inside',
       hazards: 'end_branch',
       cavityCheck: true,
+      ownVolume: true,
       veins: { maxSize: 64 },
       seal: sealFor(p),
       warnings,

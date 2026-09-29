@@ -1,6 +1,7 @@
 # Phase 27: Excavation reliability
 
-_Estimate: 1½ sessions._
+_Estimate: 1½ sessions._  
+**Status:** done on `feature/excavation-reliability` (the branch is named after the feature, not `fix/excavation-reliability`). The seal bug was theory 2 (a cavern through the floor); a chest in the footprint only ends its own column. `dig_to` shipped in the same branch. Details in [Excavation](../../features/world/excavation.md).
 
 **Depends on:** [14 Excavation and mining](excavation-mining.md), [15 Structured gathering: pits and quarries instead of scattered holes](structured-gathering.md).  
 **Needed by:** [28 Excavating upward and continuing an existing dig](excavation-upward.md) (optional: a continued dig most needs the verification pass).

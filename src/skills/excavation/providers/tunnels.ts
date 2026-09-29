@@ -14,7 +14,7 @@ import {
 } from './geometry.js'
 
 const MAX_LENGTH = 256
-const lightParams = {
+export const lightParams = {
   torch_spacing: z
     .number()
     .int()
@@ -34,7 +34,7 @@ const lightParams = {
 }
 
 /** Whether, and with what, a cave the dig finds is closed instead of left open. */
-const sealParams = {
+export const sealParams = {
   seal_caves: z
     .boolean()
     .default(true)
@@ -49,7 +49,7 @@ const sealParams = {
     ),
 }
 
-const sealFor = (p: {
+export const sealFor = (p: {
   readonly seal_caves: boolean
   readonly seal_block: string
 }): { readonly block: string; readonly fallback: string } | undefined =>

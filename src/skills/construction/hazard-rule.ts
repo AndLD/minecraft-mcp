@@ -21,13 +21,24 @@ export interface DigState {
   readonly index: number
   /** Cells broken during this run (the plan's and ore veins'). */
   readonly dug: ReadonlySet<string>
+  /**
+   * Every cell the plan itself digs. For a plan that digs a whole volume (`WorkPlan.ownVolume`) an open one is the
+   * plan's own (a cave that got there first), not a breakthrough: it is dug anyway, and sealing it would fill the volume
+   * with blocks that then have to be dug out again.
+   */
+  readonly volume?: ReadonlySet<string>
 }
 
 export interface Hazard {
   readonly reason: HazardReason
   /** The cell that stopped the dig (the fluid, the cavity, the spawner, ...). */
   readonly at: Position
+  /** For falling blocks: every sand or gravel cell of the column above, lowest first (what has to be cleared). */
+  readonly cells?: readonly Position[]
 }
+
+/** How much of a falling column is listed (and, when clearing, dug) before giving up on it. */
+export const MAX_FALLING_COLUMN = 24
 
 const NEIGHBOURS: readonly Position[] = [
   { x: 1, y: 0, z: 0 },
@@ -90,7 +101,7 @@ export class HazardRule {
     if (plan.cavityCheck === true) {
       for (const offset of step.probe ?? []) {
         const cell = { x: at.x + offset.x, y: at.y + offset.y, z: at.z + offset.z }
-        if (this.isOurOwn(cell, state)) continue
+        if (this.isOurOwn(cell, state, plan)) continue
         const name = this.blocks.blockAt(cell)
         if (name !== undefined && OPEN.has(name)) return { reason: 'cave_breakthrough', at: cell }
       }
@@ -112,13 +123,20 @@ export class HazardRule {
   /** Sand or gravel above would fall into the opening, even when that cell is itself still to be dug. */
   fallingAbove(at: Position): Hazard | undefined {
     const above = { x: at.x, y: at.y + 1, z: at.z }
-    return isFalling(this.blocks.blockAt(above)) ? { reason: 'falling_blocks', at: above } : undefined
+    if (!isFalling(this.blocks.blockAt(above))) return undefined
+    const cells = [above]
+    for (let y = above.y + 1; cells.length < MAX_FALLING_COLUMN; y += 1) {
+      const cell = { x: at.x, y, z: at.z }
+      if (!isFalling(this.blocks.blockAt(cell))) break
+      cells.push(cell)
+    }
+    return { reason: 'falling_blocks', at: above, cells }
   }
 
   /** An opening the dig itself made or has already worked through (an earlier cell of the plan, a mined ore). */
-  private isOurOwn(cell: Position, state: DigState): boolean {
+  private isOurOwn(cell: Position, state: DigState, plan: WorkPlan): boolean {
     const key = cellKey(cell)
-    if (state.dug.has(key)) return true
+    if (state.dug.has(key) || (plan.ownVolume === true && state.volume?.has(key) === true)) return true
     const position = state.order.get(key)
     return position !== undefined && position < state.index
   }

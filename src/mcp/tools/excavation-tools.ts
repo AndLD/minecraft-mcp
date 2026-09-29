@@ -21,8 +21,8 @@ const shape = {
     .string()
     .min(1)
     .describe(
-      'A shape from list_excavations: "pit", "shaft", "quarry", "tunnel", "branch_mine", "staircase_down", or "room" ' +
-        '(dug into the wall the player looks at).',
+      'A shape from list_excavations: "pit", "shaft", "quarry", "tunnel", "branch_mine", "staircase_down", "room" ' +
+        '(dug into the wall the player looks at), or "dig_to" (a route to a target block, such as an ore).',
     ),
   params: z
     .record(z.string(), z.unknown())
@@ -46,6 +46,7 @@ const toInput = (input: {
   fetch_from_storage?: boolean
   spoil_policy?: ExcavateInput['spoilPolicy']
   on_inventory_full?: ExcavateInput['onInventoryFull']
+  falling_blocks?: ExcavateInput['fallingBlocks']
 }): ExcavateInput => ({
   shape: input.shape,
   params: input.params,
@@ -53,6 +54,7 @@ const toInput = (input: {
   fetchFromStorage: input.fetch_from_storage ?? false,
   spoilPolicy: input.spoil_policy,
   onInventoryFull: input.on_inventory_full,
+  fallingBlocks: input.falling_blocks,
 })
 
 /**
@@ -105,6 +107,12 @@ const excavateSchema = z.object({
     .describe(
       'What happens to the spoil when the inventory is full. "storage" (default): the standing storage policy decides (on_inventory_full below). "discard_junk": the bot throws away cobblestone, dirt, gravel, deepslate and the like beyond a stock of 64 each, where it stands, and carries on; ores, tools, food, torches, and ladders are never thrown. Use it only when the player says the spoil does not matter.',
     ),
+  falling_blocks: z
+    .enum(['stop', 'clear'])
+    .default('stop')
+    .describe(
+      'What to do about sand or gravel above a block about to be broken (it would fall into the opening). "stop" (default): that chain ends with falling_blocks and the result lists the exact cells in `ended[].cells`; clear them by hand (collect_block, or break_block one at a time from the top) and run it again. "clear": the bot digs the column from the top down first, so nothing falls in, and carries on; lava or water beside any of those cells still ends the chain. Use "clear" when the player says to dig through gravel or sand.',
+    ),
   on_inventory_full: z
     .enum(INVENTORY_FULL_KINDS)
     .optional()
@@ -123,7 +131,9 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
     'dug until this call. Safety is built in: before a block is broken it and the six blocks touching it are checked, and ' +
     '**lava or water in any of them ends that tunnel or branch one block short** (the others carry on); it also ends at an ' +
     'open cave, sand or gravel overhead, a spawner, chests, rails, and anything not loaded, and never breaks protected ' +
-    'areas. The result lists every chain that ended early with the reason (hit_lava, hit_water, cave_breakthrough, ' +
+    'areas. Every shape is read back at the end (`shapeCheck`): stray blocks in the dug cells are cleared (chests, torches, ' +
+    'ladders, signs, doors and other special blocks never), open cells beside a sealed dig are closed, and the run fails ' +
+    'with verification_failed and the cells when the shape still does not match. The result lists every chain that ended early with the reason (hit_lava, hit_water, cave_breakthrough, ' +
     'falling_blocks, spawner, player_block, unloaded) and the place: tell the player. Stops with no_torches (torches run out), ' +
     'no_suitable_tool, inventory_full, or missing_materials (ladders); run it again and it continues where it stopped. ' +
     'Runs in the background: poll get_task_status when the reply has status "running".'
@@ -153,6 +163,7 @@ export class ExcavateTool implements ToolDefinition<typeof excavateSchema> {
             ...(origin === undefined ? {} : { origin }),
             fetch_from_storage: input.fetch_from_storage,
             spoil_policy: input.spoil_policy,
+            falling_blocks: input.falling_blocks,
           },
         },
         run: (ctx) => this.skill.run(toInput({ ...input, origin, params }), ctx),

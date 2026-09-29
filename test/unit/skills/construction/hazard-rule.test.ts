@@ -104,9 +104,24 @@ describe('HazardRule: other things in the way', () => {
       expect(rule.check(dig(10, 50, 10), plan(), none)).toEqual({
         reason: 'falling_blocks',
         at: at(10, 51, 10),
+        cells: [at(10, 51, 10)],
       })
     },
   )
+
+  it('lists the whole column of falling blocks above, lowest first, and stops at the first block that stays', () => {
+    const { world, rule } = rock()
+    world.setBlock(at(10, 51, 10), 'gravel')
+    world.setBlock(at(10, 52, 10), 'sand')
+    world.setBlock(at(10, 53, 10), 'stone')
+    world.setBlock(at(10, 54, 10), 'gravel')
+
+    expect(rule.fallingAbove(at(10, 50, 10))).toEqual({
+      reason: 'falling_blocks',
+      at: at(10, 51, 10),
+      cells: [at(10, 51, 10), at(10, 52, 10)],
+    })
+  })
 
   it('stops under gravel even when that cell is itself still to be dug: it would fall when this one opens', () => {
     const { world, rule } = rock()
@@ -220,6 +235,7 @@ describe('HazardRule: the checks on their own', () => {
     expect(rule.fallingAbove(at(10, 50, 10))).toEqual({
       reason: 'falling_blocks',
       at: at(10, 51, 10),
+      cells: [at(10, 51, 10)],
     })
     expect(rule.fallingAbove(at(10, 49, 10))).toBeUndefined()
   })

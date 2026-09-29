@@ -28,6 +28,8 @@ export interface ExcavateInput {
   /** Where the spoil goes when the inventory is full: the standing storage policy (default), or the junk is thrown away. */
   readonly spoilPolicy?: 'storage' | 'discard_junk' | undefined
   readonly onInventoryFull?: InventoryFullKind | undefined
+  /** Sand or gravel above a block about to be broken: end the chain (default) or dig the column first. */
+  readonly fallingBlocks?: 'stop' | 'clear' | undefined
 }
 
 export interface Bounds {
@@ -179,8 +181,14 @@ export class ExcavateSkill implements Skill<ExcavateInput, ExcavateOutput> {
 
     const defaultOrigin = input.origin === undefined
     const origin = input.origin ?? provider.defaultOrigin(vitals.position, parsed.data)
-    const plan = provider.generate(parsed.data, { origin, minY: lowestLayer(vitals.dimension) })
-    if ('error' in plan) return err({ reason: 'invalid_shape', message: plan.error })
+    const generated = provider.generate(parsed.data, { origin, minY: lowestLayer(vitals.dimension) })
+    if ('error' in generated) return err({ reason: 'invalid_shape', message: generated.error })
+    // Every shape is read back at the end: stray blocks cleared, sealing checked (see `WorkPlan.verify`).
+    const plan: WorkPlan = {
+      ...generated,
+      verify: true,
+      ...(input.fallingBlocks === undefined ? {} : { fallingBlocks: input.fallingBlocks }),
+    }
     return ok({ plan, origin, defaultOrigin, interpreted: parsed.data, provider, params: parsed.data })
   }
 }

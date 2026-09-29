@@ -102,6 +102,7 @@ describe('excavate', () => {
       fetchFromStorage: true,
       spoilPolicy: 'storage',
       onInventoryFull: 'offload_and_return',
+      fallingBlocks: 'stop',
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Excavate tunnel' } })
     expect(s.tasks.get('task-1')?.resume).toEqual({
@@ -112,7 +113,27 @@ describe('excavate', () => {
         origin: { x: 10, y: -55, z: 3 },
         fetch_from_storage: true,
         spoil_policy: 'storage',
+        falling_blocks: 'stop',
       },
+    })
+  })
+
+  it('passes falling_blocks: clear on to the skill and keeps it for a resume', async () => {
+    const s = setup()
+    const tool = new ExcavateTool(s.skill, s.launcher, s.wallTarget, undefined)
+
+    await tool.execute(
+      tool.inputSchema.parse({
+        shape: 'staircase_down',
+        params: { direction: 'north', depth: 10 },
+        falling_blocks: 'clear',
+      }),
+      context,
+    )
+
+    expect(s.inputs[0]).toMatchObject({ fallingBlocks: 'clear' })
+    expect(s.tasks.get('task-1')?.resume).toMatchObject({
+      arguments: { falling_blocks: 'clear' },
     })
   })
 
