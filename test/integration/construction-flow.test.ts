@@ -385,4 +385,19 @@ describe('houses, shelters, custom shapes, and pillaring up through the MCP serv
     expect(result.text).toContain('no place to stand')
     expect(h.bot.controlStates.filter((c) => c.control === 'jump')).toEqual([])
   })
+  it('builds four furnaces in two rows: one on top of another needs a click that places, not one that opens', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [{ name: 'furnace', count: 4 }]
+    })
+
+    const result = await call(h, 'build', {
+      blueprint: 'custom',
+      params: { layers: [['FF'], ['FF']], legend: { F: 'furnace' } },
+      origin: { x: 20, y: 64, z: 0 },
+      wait_seconds: 55,
+    })
+
+    expect(task(result)).toMatchObject({ status: 'succeeded', result: { placed: 4 } })
+    for (const y of [64, 65]) for (const x of [20, 21]) expect(nameAt(h, x, y, 0)).toBe('furnace')
+  })
 })

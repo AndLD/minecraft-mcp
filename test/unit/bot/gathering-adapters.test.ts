@@ -357,27 +357,68 @@ describe('MineflayerPlacer', () => {
     expect(bot.placed).toEqual([{ name: 'crafting_table', position: { x: 2, y: 64, z: 0 } }])
   })
 
-  it('holds sneak while placing against a block that a click would use, and lets go afterwards', async () => {
+  it('holds sneak while placing against a block that a click would use, asked for or not, and lets go afterwards', async () => {
     const bot = gameBot()
     bot.setBlock({ x: 2, y: 64, z: 0 }, 'chest')
     bot.setBlock({ x: 2, y: 64, z: 1 }, 'air')
-    bot.inventoryItems = [{ name: 'oak_sign', count: 1 }]
+    bot.inventoryItems = [{ name: 'oak_sign', count: 2 }]
     const placer = new MineflayerPlacer(holderOf(bot))
     const chest = { x: 2, y: 64, z: 0 }
     const south = { x: 0, y: 0, z: 1 }
 
-    const refused = await placer.placeAgainst('oak_sign', chest, south)
-    const placed = await placer.placeAgainst('oak_sign', chest, south, { sneak: true })
+    const automatic = await placer.placeAgainst('oak_sign', chest, south)
+    bot.setBlock({ x: 2, y: 64, z: 1 }, 'air')
+    const asked = await placer.placeAgainst('oak_sign', chest, south, { sneak: true })
 
-    expect(refused).toMatchObject({ ok: false, error: { reason: 'failed' } })
-    expect(placed).toEqual({ ok: true, value: undefined })
-    expect(bot.placed).toEqual([{ name: 'oak_sign', position: { x: 2, y: 64, z: 1 } }])
+    expect(automatic).toEqual({ ok: true, value: undefined })
+    expect(asked).toEqual({ ok: true, value: undefined })
+    expect(bot.placed).toHaveLength(2)
     expect(bot.controlStates).toEqual([
+      { control: 'sneak', active: true },
+      { control: 'sneak', active: false },
       { control: 'sneak', active: true },
       { control: 'sneak', active: false },
     ])
     expect(bot.sneaking).toBe(false)
   })
+
+  it('does not sneak against an ordinary block unless asked', async () => {
+    const bot = gameBot()
+    bot.setBlock({ x: 2, y: 64, z: 0 }, 'stone')
+    bot.inventoryItems = [{ name: 'torch', count: 1 }]
+
+    const result = await new MineflayerPlacer(holderOf(bot)).placeAgainst(
+      'torch',
+      { x: 2, y: 64, z: 0 },
+      { x: 0, y: 0, z: 1 },
+    )
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(bot.controlStates).toEqual([])
+  })
+
+  it.each(['furnace', 'crafting_table', 'barrel', 'oak_door', 'blast_furnace'])(
+    'places on top of a %s by sneaking, so the click does not open it',
+    async (name) => {
+      const bot = gameBot()
+      bot.setBlock({ x: 2, y: 63, z: 0 }, name)
+      bot.setBlock({ x: 2, y: 64, z: 0 }, 'air')
+      bot.inventoryItems = [{ name: 'furnace', count: 1 }]
+
+      const result = await new MineflayerPlacer(holderOf(bot)).placeAt('furnace', {
+        x: 2,
+        y: 64,
+        z: 0,
+      })
+
+      expect(result).toEqual({ ok: true, value: undefined })
+      expect(bot.placed).toEqual([{ name: 'furnace', position: { x: 2, y: 64, z: 0 } }])
+      expect(bot.controlStates).toEqual([
+        { control: 'sneak', active: true },
+        { control: 'sneak', active: false },
+      ])
+    },
+  )
 
   it('lets go of sneak also when the placement fails', async () => {
     const bot = gameBot()

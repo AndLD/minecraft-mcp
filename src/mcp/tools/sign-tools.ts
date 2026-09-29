@@ -90,6 +90,12 @@ const placeSchema = z
       .enum(FACINGS as [string, ...string[]])
       .optional()
       .describe('For a standing sign, the direction its text faces. Default: towards the player.'),
+    replace_block: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Break the block that stands in the sign\'s cell (for example a torch on top of a fence) and put the sign there. Only after the player agreed to it (the blocked reply offers it): never on your own. Chests, doors, beds, and other signs are never broken.',
+      ),
     ...taskOptionsShape,
   })
   .refine((input) => (input.at === undefined) === (input.face === undefined), {
@@ -110,10 +116,11 @@ export class PlaceSignTool implements ToolDefinition<typeof placeSchema> {
     'face you name, or beside a registered container (beside: its label is the text when you give none). The bot fetches a sign from its inventory or the known chests, or crafts ' +
     'three (planks and a stick), walks to a spot in front, places it, writes the text, and reads it back to confirm. ' +
     `Text is plain: up to ${String(SIGN_LINES)} lines of ${String(SIGN_LINE_LENGTH)} characters, no colour or glow ` +
-    '(text_too_long says how to split it). A sign is one block and needs a free cell on a solid block. It never goes in ' +
+    '(text_too_long says how to split it). A sign is one block and needs a free cell on a solid block: when the cell is taken (a torch on the fence top) `blocked` names free places instead and, ' +
+    'if it may be swapped, offers replace_block: true (ask the player first). It never goes in ' +
     'water or lava or in a protected area, and never needs the bot to trample farmland. ' +
     'Failures: text_too_long, no_text, bad_text, no_sign_item, bad_face, not_loaded, fluid, not_solid, blocked, ' +
-    'protected_area, no_stand, unreachable, not_placed, and text_not_written or text_not_confirmed (the sign is then up ' +
+    'protected_area, no_stand, unreachable (names every spot it tried and why), not_placed, replace_failed, and text_not_written or text_not_confirmed (the sign is then up ' +
     'without its text: its position is in the failure, and edit_sign fixes it).'
   readonly inputSchema = placeSchema
 
@@ -181,6 +188,7 @@ export class PlaceSignTool implements ToolDefinition<typeof placeSchema> {
               wood: input.wood,
               facing: input.facing as 'north' | 'south' | 'east' | 'west' | undefined,
               towards,
+              replaceBlock: input.replace_block,
             },
             ctx,
           ),
