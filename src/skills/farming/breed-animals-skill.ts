@@ -6,6 +6,7 @@ import { err, ok } from '../../core/result.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js'
 import { sleep } from '../../core/sleep.js'
+import type { PenGateGuard } from './pen-gate-guard.js'
 import type { FarmRegistry } from '../../state/farm-registry.js'
 import { individualProtection } from '../hunting/animal-catalog.js'
 import { foodFor } from './animal-table.js'
@@ -26,6 +27,8 @@ export interface BreedAnimalsInput {
 }
 
 export interface BreedAnimalsOutput {
+  /** Set when the pen's gate could not be shut at the end. */
+  readonly gateLeftOpen?: string
   readonly bred: number
   readonly pairsFed: number
   readonly herdSize: number
@@ -33,6 +36,8 @@ export interface BreedAnimalsOutput {
 }
 
 export interface BreedAnimalsDeps {
+  /** Shuts the pen's gate when the task ends, however it ended. */
+  readonly gates?: PenGateGuard
   readonly animals: AnimalScanner
   readonly interaction: AnimalInteraction
   readonly navigator: Navigator
@@ -52,6 +57,14 @@ export class BreedAnimalsSkill implements Skill<BreedAnimalsInput, BreedAnimalsO
   constructor(private readonly deps: BreedAnimalsDeps) {}
 
   async run(
+    input: BreedAnimalsInput,
+    context: SkillContext,
+  ): Promise<SkillResult<BreedAnimalsOutput>> {
+    const result = await this.work(input, context)
+    return this.deps.gates?.finish(this.resolveArea(input), result, context.signal) ?? result
+  }
+
+  private async work(
     input: BreedAnimalsInput,
     context: SkillContext,
   ): Promise<SkillResult<BreedAnimalsOutput>> {

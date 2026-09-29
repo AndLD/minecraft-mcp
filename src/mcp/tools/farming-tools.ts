@@ -248,7 +248,8 @@ export class LureAnimalsTool implements ToolDefinition<typeof lureAnimalsSchema>
     'Reply: led, requested, shortfall (requested minus led, whatever the reason), room (how many the pen could still ' +
     'take), abandoned (each animal given up on, with unreachable or lost_interest). penFull is true ONLY when the ' +
     'destination pen already held its capacity before anything was tried; led 0 with abandoned entries means ' +
-    'nothing could be led, not that the pen is full. Runs in the background: poll get_task_status when the reply ' +
+    'nothing could be led, not that the pen is full. The pen\'s gate is shut when the task ends; gateLeftOpen is ' +
+    'set only when it could not be, so tell the player. Runs in the background: poll get_task_status when the reply ' +
     'has status "running".'
   readonly inputSchema = lureAnimalsSchema
 

@@ -1,3 +1,5 @@
+import { penGateSetup } from '../../../fakes/pen-gate-fakes.js'
+import type { PenGateGuard } from '../../../../src/skills/farming/pen-gate-guard.js'
 import { describe, expect, it } from '@jest/globals'
 import type { AnimalInfo, AnimalScanner } from '../../../../src/core/animal-scanner.port.js'
 import type {
@@ -72,7 +74,7 @@ class FakeNavigator implements Navigator {
   }
 }
 
-async function setup() {
+async function setup(gates?: PenGateGuard) {
   const animals = new FakeAnimalScanner()
   const interaction = new FakeInteraction()
   const navigator = new FakeNavigator()
@@ -80,7 +82,7 @@ async function setup() {
   const scheduler = new AutoScheduler(clock)
   const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
-  const skill = new BreedAnimalsSkill({ animals, interaction, navigator, clock, scheduler, farms })
+  const skill = new BreedAnimalsSkill({ animals, interaction, navigator, clock, scheduler, farms, gates })
   return { animals, interaction, navigator, clock, farms, skill }
 }
 
@@ -228,5 +230,43 @@ describe('BreedAnimalsSkill', () => {
     )
 
     expect(result).toMatchObject({ ok: true, value: { herdSize: 2 } })
+  })
+
+  describe('the pen gate', () => {
+    const gate = at(2, 65, 5)
+
+    it('shuts an open gate at the end of a breeding run and of a cancelled one', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      const s = await setup(g.guard)
+      const cancelled = new AbortController()
+      cancelled.abort()
+
+      const result = await s.skill.run(
+        { species: 'cow', farm: undefined, area: bounds, targetCount: 4 },
+        { signal: cancelled.signal, progress: () => undefined },
+      )
+
+      expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+      expect(g.doors.stateAt(gate)?.open).toBe(false)
+    })
+
+    it('reports a gate it could not shut', async () => {
+      const g = penGateSetup()
+      g.doors.add(gate, true, g.blocks)
+      g.doors.farFrom.add('2,65,5')
+      const s = await setup(g.guard)
+      s.animals.animals = [1, 2, 3, 4].map((id) => animal({ id, species: 'cow', position: at(1, 64, 1) }))
+      const cancelled = new AbortController()
+      cancelled.abort()
+
+      const result = await s.skill.run(
+        { species: 'cow', farm: undefined, area: bounds, targetCount: 4 },
+        { signal: cancelled.signal, progress: () => undefined },
+      )
+
+      expect(result).toMatchObject({ ok: false })
+      expect(g.doors.stateAt(gate)?.open).toBe(true)
+    })
   })
 })

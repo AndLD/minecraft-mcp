@@ -48,6 +48,30 @@ describe('MineflayerDoorAccess', () => {
     expect(access.stateAt(at)).toEqual({ name: 'oak_door', open: true })
   })
 
+  it('stops waiting as soon as the door has changed', async () => {
+    const bot = new FakeBot()
+    bot.setBlock(at, 'oak_door')
+    const access = new MineflayerDoorAccess(holderOf(bot))
+
+    await access.toggle(at, new AbortController().signal)
+
+    expect(bot.waitedTicks).toBe(1)
+  })
+
+  it('waits a few ticks for a late server answer, and gives up after that', async () => {
+    const bot = new FakeBot()
+    bot.setBlock(at, 'oak_door')
+    // The server never answers: the click changes nothing.
+    bot.activateBlock = () => Promise.resolve()
+    const access = new MineflayerDoorAccess(holderOf(bot))
+
+    const result = await access.toggle(at, new AbortController().signal)
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(bot.waitedTicks).toBe(8)
+    expect(access.stateAt(at)?.open).toBe(false)
+  })
+
   it('reports not_connected when there is no bot', async () => {
     const access = new MineflayerDoorAccess(holderOf(undefined))
 

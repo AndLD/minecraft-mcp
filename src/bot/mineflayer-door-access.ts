@@ -4,8 +4,11 @@ import { err, ok, type Result } from '../core/result.js'
 import type { BotHolder } from './bot-like.types.js'
 import { toVec3 } from './vec3.js'
 
-/** How many ticks (50 ms each) to wait after the click before reading the block's new state back. */
-const CONFIRM_TICKS = 2
+/**
+ * How many ticks (50 ms each) to wait, at most, for the block to change after the click. The server's answer can be
+ * late under load; a caller that reads the state too early sees no change and clicks again, which undoes the first.
+ */
+const CONFIRM_TICKS = 8
 
 export class MineflayerDoorAccess implements DoorAccess {
   constructor(private readonly holder: BotHolder) {}
@@ -22,6 +25,7 @@ export class MineflayerDoorAccess implements DoorAccess {
     if (bot === undefined)
       return err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })
     const block = bot.blockAt(toVec3(position))
+    const before = block?.getProperties?.()['open']
     if (block === null)
       return err({ reason: 'out_of_reach', message: `${describe(position)} is not loaded.` })
     try {
@@ -33,7 +37,10 @@ export class MineflayerDoorAccess implements DoorAccess {
       })
     }
     if (signal.aborted) return err({ reason: 'failed', message: 'Cancelled.' })
-    await bot.waitForTicks(CONFIRM_TICKS)
+    for (let tick = 0; tick < CONFIRM_TICKS; tick += 1) {
+      await bot.waitForTicks(1)
+      if (bot.blockAt(toVec3(position))?.getProperties?.()['open'] !== before) break
+    }
     return ok(undefined)
   }
 }
