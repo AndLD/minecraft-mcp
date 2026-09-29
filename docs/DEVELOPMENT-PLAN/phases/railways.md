@@ -2,7 +2,7 @@
 
 _Estimate: 2 sessions._
 
-**Depends on:** [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md), [9 Storage and containers](storage-containers.md) (optional), [26 World discovery, including caves and canyons](world-discovery.md) (optional).  
+**Depends on:** [13 Construction engine and building](construction-building.md), [14 Excavation and mining](excavation-mining.md), [9 Storage and containers](storage-containers.md) (optional), [30 World discovery, including caves and canyons](world-discovery.md) (optional).  
 **Needed by:** no later phase depends on it directly.
 
 - Branch: `feature/railways`. Built on the construction engine, excavation (for underground lines), and lighting; materials come from the inventory or storage.
@@ -17,7 +17,7 @@ _Estimate: 2 sessions._
 - **As built** (`feature/railways`, details in [the railways feature file](../../features/world/railways.md)): the power layout was chosen by a real-server experiment, as the plan asked: a redstone torch **beside** a powered rail powers it, a block behind a powered first rail starts a resting cart, and plain rails alone stop a cart within about 10 blocks. The first rails of a line are therefore a powered **run of four** (a single powered rail every 8 left a cart that started from rest stranded 2 blocks in). `auto` picks surface or tunnel for the whole line, not per stretch. The engine gained `passable` and `clearedFirst` place steps and `standing: 'inside'` use for a tunnel.
 - **Still to do in this phase (planned, not built in the first `feature/railways` pass):**
   - **Mixing surface and tunnel within one line.** `auto` now chooses for the whole line. The plan is per stretch: the level search already prices cutting, bridging, and following the ground, so a stretch is a tunnel where a hill or a ravine makes the surface cost more than digging through, and the ramps into and out of each tunnel are part of the profile. Each tunnel stretch is lit; the preview says which stretches are which.
-  - **Landmarks as the ends** ("from the mine to the base"). Waits for `set_landmark`/`list_landmarks` in Phase 26; until then an end is coordinates or a player. `from` and `to` (and `to_player`) gain a landmark name, resolved the same way `build_farm` will resolve one.
+  - **Landmarks as the ends** ("from the mine to the base"). Waits for `set_landmark`/`list_landmarks` in Phase 30; until then an end is coordinates or a player. `from` and `to` (and `to_player`) gain a landmark name, resolved the same way `build_farm` will resolve one.
   - **End stops.** A block or buffer at each end so a cart stops at the end of the line instead of running past it (a fence or a solid block beyond the last rail, and an unpowered rail before it so it brakes); optional per end.
 - Tools: `plan_railway` (dry run), `build_railway`, `place_minecart`.
 - **Tests:**

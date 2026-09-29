@@ -80,11 +80,15 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [21 Signs](phases/signs.md) | done (`feature/signs`: `place_sign`, `edit_sign`, `remove_sign`, `read_signs`; wall and standing signs, beside a labelled chest, sign items fetched or crafted, text read back, never removes more than the one sign named) |
 | [22 Filling buckets with water and lava](phases/buckets.md) | not started (added after a live session: the bot cannot fill a bucket, so it needs a water bucket from the player for anything that places water) |
 | [23 Breaking a block at exact coordinates](phases/break-block.md) | not started (added: `collect_block` only takes the nearest match) |
-| [24 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | not started (added after live sessions with the first field) |
-| [25 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | not started (added after a live session: deepening a quarry and its stair walls) |
-| [26 World discovery, including caves and canyons](phases/world-discovery.md) | not started (cave flow added) |
-| [27 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
-| [28 Hardening and polish](phases/hardening-polish.md) | not started (was 14, then 25, then 29; renumbered as phases were added and removed) |
+| [24 Farming fixes](phases/farming-fixes.md) | not started (added from the known issues found in live sessions: gate axis, field water layout, `lure_animals` result, pen grass) |
+| [25 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | not started (added after live sessions with the first field) |
+| [26 Closing gates and doors behind the bot](phases/closing-doors-behind.md) | not started (added from a live session: a pen gate left open, chickens escaped) |
+| [27 Excavation reliability](phases/excavation-reliability.md) | not started (added from live sessions: cave sealing and verification, gravel and sand, `dig_to`) |
+| [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | not started (added after a live session: deepening a quarry and its stair walls) |
+| [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | not started (added from live sessions) |
+| [30 World discovery, including caves and canyons](phases/world-discovery.md) | not started (cave flow added) |
+| [31 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
+| [32 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -119,15 +123,19 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [21 Signs](phases/signs.md) | ½ session |
 | [22 Filling buckets with water and lava](phases/buckets.md) | ½ session |
 | [23 Breaking a block at exact coordinates](phases/break-block.md) | ½ session |
-| [24 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | 1 session |
-| [25 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 1 session |
-| [26 World discovery, including caves and canyons](phases/world-discovery.md) | 2 sessions |
-| [27 Leading a player](phases/leading-a-player.md) | ½ session |
-| [28 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [24 Farming fixes](phases/farming-fixes.md) | 1 session |
+| [25 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | 1 session |
+| [26 Closing gates and doors behind the bot](phases/closing-doors-behind.md) | ½ session |
+| [27 Excavation reliability](phases/excavation-reliability.md) | 1½ sessions |
+| [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 1 session |
+| [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | ½ session |
+| [30 World discovery, including caves and canyons](phases/world-discovery.md) | 2 sessions |
+| [31 Leading a player](phases/leading-a-player.md) | ½ session |
+| [32 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 28 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 32 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -150,16 +158,20 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [16 Site preparation: leveling, dug rooms, and opening doors](phases/site-preparation.md) | 3, 13, 14 | - |
 | [17 Iron doors and switches](phases/iron-doors-switches.md) | 16 | 9 |
 | [18 Farming, crops, animals, and trees](phases/farming.md) | 7, 8, 9, 13 | 16 |
-| [19 Railways](phases/railways.md) | 13, 14 | 9, 26 |
+| [19 Railways](phases/railways.md) | 13, 14 | 9, 30 |
 | [20 Sleeping and respawn point](phases/sleeping-respawn.md) | 3, 6 | 11, 12, 13 |
 | [21 Signs](phases/signs.md) | 9, 13, 16 | - |
 | [22 Filling buckets with water and lava](phases/buckets.md) | 3, 7, 13 | 14 |
 | [23 Breaking a block at exact coordinates](phases/break-block.md) | 3, 7 | 13, 14 |
-| [24 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | 18 | 22 |
-| [25 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 14, 15 | - |
-| [26 World discovery, including caves and canyons](phases/world-discovery.md) | 3, 5, 6 | 12, 14 |
-| [27 Leading a player](phases/leading-a-player.md) | 3 | 18, 26 |
-| [28 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [24 Farming fixes](phases/farming-fixes.md) | 18 | 16 |
+| [25 Crop field options: gate side and pumpkin fields](phases/crop-field-options.md) | 18, 24 | 22 |
+| [26 Closing gates and doors behind the bot](phases/closing-doors-behind.md) | 16 | 18 |
+| [27 Excavation reliability](phases/excavation-reliability.md) | 14, 15 | - |
+| [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 14, 15 | - |
+| [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | 13, 21 | 16 |
+| [30 World discovery, including caves and canyons](phases/world-discovery.md) | 3, 5, 6 | 12, 14 |
+| [31 Leading a player](phases/leading-a-player.md) | 3 | 18, 30 |
+| [32 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 
