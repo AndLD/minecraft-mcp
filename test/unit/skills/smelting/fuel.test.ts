@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals'
-import { chooseFuel } from '../../../../src/skills/smelting/fuel.js'
+import { chooseFuel, totalFuelCapacity } from '../../../../src/skills/smelting/fuel.js'
 
 const inventory = (items: Record<string, number>): Map<string, number> =>
   new Map(Object.entries(items))
@@ -77,5 +77,30 @@ describe('chooseFuel', () => {
     expect(
       chooseFuel({ inventory: inventory({ coal: 4 }), toSmelt: 4, preferred: 'charcoal' }),
     ).toBeUndefined()
+  })
+})
+
+describe('totalFuelCapacity', () => {
+  const bag = (entries: Record<string, number>): Map<string, number> =>
+    new Map(Object.entries(entries))
+
+  it('adds up what all the usable fuel in the bag can smelt', () => {
+    expect(totalFuelCapacity({ inventory: bag({ coal: 1, oak_planks: 4, dirt: 9 }) })).toBe(14)
+  })
+
+  it('counts only the named fuel when one is preferred', () => {
+    expect(
+      totalFuelCapacity({ inventory: bag({ coal: 1, oak_planks: 4 }), preferred: 'coal' }),
+    ).toBe(8)
+  })
+
+  it('does not count the items that are to be smelted as fuel', () => {
+    const inventory = bag({ oak_log: 10, coal: 1 })
+
+    expect(totalFuelCapacity({ inventory, reserved: { name: 'oak_log', count: 10 } })).toBe(8)
+  })
+
+  it('is nothing without fuel', () => {
+    expect(totalFuelCapacity({ inventory: bag({ dirt: 5 }) })).toBe(0)
   })
 })

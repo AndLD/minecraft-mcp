@@ -227,6 +227,96 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
   }, 240_000)
 
+  it('runs a job that the first fuel does not cover, putting in more fuel at a look', async () => {
+    // One coal smelts 8 items and 4 planks 6 more, so 12 iron needs both: the coal goes in first, the planks later.
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'raw_iron', 12)
+    await world.give(bot(), 'coal', 1)
+    await world.give(bot(), 'oak_planks', 4)
+    await untilBotCarries('furnace')
+    await untilBotCarries('raw_iron')
+    await untilBotCarries('coal')
+    await untilBotCarries('oak_planks')
+
+    const smelted = await runToTheEnd('smelt', { item: 'raw_iron' }, 240_000)
+
+    expectSucceeded(smelted)
+    expect(smelted.task?.result).toMatchObject({ smelted: 12, requested: 12, pending: 0 })
+    const used = (smelted.task?.result as { fuelUsed: { name: string }[] }).fuelUsed.map(
+      (entry) => entry.name,
+    )
+    expect(used).toEqual(expect.arrayContaining(['coal', 'oak_planks']))
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(12)
+    expect(await world.countItem(bot(), 'raw_iron')).toBe(0)
+  }, 300_000)
+
+  it('announces a job left with start_only when it should be done, and collect takes it', async () => {
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'raw_iron', 3)
+    await world.give(bot(), 'coal', 1)
+    await untilBotCarries('furnace')
+    await untilBotCarries('raw_iron')
+    await untilBotCarries('coal')
+
+    const started = dataOf<TaskView>(
+      await session.bot.call('smelt', { item: 'raw_iron', wait: 'start_only', wait_seconds: 30 }),
+    )
+    expect(started.status).toBe('succeeded')
+    expect(started.result).toMatchObject({ smelted: 0, pending: 3 })
+
+    // The bot is free for other work; the agent hears when the furnace should be done (3 items: 30 seconds).
+    const heard = await waitUntil(
+      async () => {
+        const result = await session.bot.call('wait_for_chat', { timeout_seconds: 5 })
+        const events = (result.data as { events: { type: string; message: string }[] } | undefined)
+          ?.events
+        return events?.find((event) => event.type === 'smelt_ready')
+      },
+      { timeoutMs: 90_000, intervalMs: 100, description: 'the smelt_ready event' },
+    )
+    expect(heard.message).toContain('collect: true')
+
+    const collected = await runToTheEnd('smelt', { collect: true })
+
+    expectSucceeded(collected)
+    expect(collected.task?.result).toMatchObject({ smelted: 3, pending: 0 })
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
+  }, 240_000)
+
+  it('takes fuel out of a chest when told to and the bag has none, and refuses without the option', async () => {
+    await world.setBlock(at(6, -4), 'chest')
+    await world.fillSlot(at(6, -4), 0, 'coal', 8)
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'raw_iron', 3)
+    await untilBotSees(['chest'], 1)
+    await untilBotCarries('furnace')
+    await untilBotCarries('raw_iron')
+    expect(
+      (
+        await session.bot.call('register_container', {
+          x: 6,
+          y: GROUND_Y,
+          z: -4,
+          label: 'fuel',
+        })
+      ).isError,
+    ).toBe(false)
+
+    const refused = await runToTheEnd('smelt', { item: 'raw_iron' })
+    expect(refused.failed).toBe(true)
+    expect(refused.text).toContain('no_fuel')
+
+    const smelted = await runToTheEnd('smelt', { item: 'raw_iron', fuel_from_storage: true })
+
+    expectSucceeded(smelted)
+    expect(smelted.task?.result).toMatchObject({
+      smelted: 3,
+      fuelFetched: [{ name: 'coal', count: 1 }],
+    })
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
+    expect(await world.countInChest(at(6, -4), 'coal')).toBe(7)
+  }, 200_000)
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)

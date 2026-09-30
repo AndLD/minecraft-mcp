@@ -1,7 +1,7 @@
 import type { ItemCount } from '../../core/recipes.port.js'
 
 /** How many items one unit of the fuel smelts (a furnace burns 200 ticks per item). */
-function itemsPerUnit(item: string): number | undefined {
+export function itemsPerUnit(item: string): number | undefined {
   const fixed: Readonly<Record<string, number>> = {
     coal: 8,
     charcoal: 8,
@@ -35,6 +35,30 @@ export interface FuelChoice {
   readonly amount: number
   /** How many items that much fuel can smelt. */
   readonly capacity: number
+}
+
+/**
+ * How many items all the usable fuel in the inventory can smelt together (the fuels are burned one after the other
+ * as the job goes on). `preferred` narrows it to one fuel. `reserved` is what the smelting itself uses up.
+ */
+export function totalFuelCapacity(options: {
+  readonly inventory: ReadonlyMap<string, number>
+  readonly reserved?: ItemCount | undefined
+  readonly preferred?: string | undefined
+}): number {
+  const candidates =
+    options.preferred === undefined
+      ? DEFAULT_ORDER.flatMap((matches) => [...options.inventory.keys()].filter(matches))
+      : [options.preferred]
+  let total = 0
+  for (const item of new Set(candidates)) {
+    const per = itemsPerUnit(item)
+    const have =
+      (options.inventory.get(item) ?? 0) -
+      (options.reserved?.name === item ? options.reserved.count : 0)
+    if (per !== undefined && have > 0) total += Math.floor(have * per)
+  }
+  return total
 }
 
 /**

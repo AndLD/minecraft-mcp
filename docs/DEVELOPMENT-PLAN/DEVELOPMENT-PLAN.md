@@ -97,7 +97,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [38 Biome-guided search](phases/biome-guided-search.md) | done (`feature/biome-guided-search`: `BiomeGuidedExplorer`, `strategy: guided` by default, biome tables per Minecraft version with the 1.21.1 table as the default) |
 | [39 Tall trees, cutting leaves](phases/tall-tree-leaves.md) | done (`feature/tall-tree-leaves`: the tower planner goes through the tree's own leaves and digs them before the bot climbs into them; `leavesCut` in the result) |
 | [40 Torches from storage for caves](phases/cave-torch-supply.md) | done (`feature/cave-torch-supply`: `explore_caves` fetches torches, or coal and sticks, from storage before going in and after walking out when they run out; `restock`) |
-| [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | not started |
+| [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | done (`feature/smelting-fuel-and-ready`: fuel of every kind in the bag is used and topped up at each look, `fuelUsed`, `fuel_from_storage`, a `smelt_ready` event for a job left in a furnace, a far or other-dimension warning) |
 | [42 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases

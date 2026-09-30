@@ -196,6 +196,8 @@ import { EggPolicy } from './state/egg-policy.js'
 import { ExcavationRecords } from './state/excavation-records.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { SmeltJobs } from './state/smelt-jobs.js'
+import { FuelSupply } from './skills/smelting/fuel-supply.js'
+import { SmeltJobWatcher } from './skills/smelting/smelt-job-watcher.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
@@ -621,6 +623,16 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       message: `Task ${event.snapshot.id} (${event.snapshot.description}) is waiting: ${event.snapshot.pending.message} Options: ${event.snapshot.pending.options.join(', ')}.`,
     })
   })
+  // A smelting job left in a furnace tells the agent when it should be done, so the bot can do other things meanwhile.
+  new SmeltJobWatcher({
+    jobs: smeltJobs,
+    clock,
+    scheduler,
+    vitals,
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+  }).start()
   // Sleeping: beds, the respawn point, and what the bot does at nightfall.
   const bedAccess = new MineflayerBedAccess(connection, scheduler)
   const bedFinder = new BedFinder(blocks, bedRegistry)
@@ -1143,6 +1155,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     navigator,
     jobs: smeltJobs,
+    vitals,
+    fuelSupply: new FuelSupply({
+      inventory,
+      withdraw: withdrawItems,
+      scanner: scanContainers,
+    }),
   })
 
   // Fishing.

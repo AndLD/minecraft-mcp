@@ -43,6 +43,7 @@ function setup(carried: Record<string, number> = { fishing_rod: 1 }) {
         smelted: input.count ?? 0,
         fuel: 'coal',
         requested: input.count ?? 0,
+        fuelUsed: [],
         pending: 0,
         furnace: { x: 0, y: 64, z: 0 },
       }
