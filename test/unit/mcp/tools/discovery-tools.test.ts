@@ -3,12 +3,14 @@ import { ok } from '../../../../src/core/result.js'
 import { WorldKnowledgeStore } from '../../../../src/knowledge/world-knowledge-store.js'
 import { TaskLauncher } from '../../../../src/mcp/task-launcher.js'
 import {
+  ExploreCavesTool,
   ExploreForStructureTool,
   ListKnownStructuresTool,
   ListLandmarksTool,
   RemoveLandmarkTool,
   SetLandmarkTool,
 } from '../../../../src/mcp/tools/discovery-tools.js'
+import type { ExploreCavesSkill } from '../../../../src/skills/discovery/caves/explore-caves-skill.js'
 import type { ExploreForStructureSkill } from '../../../../src/skills/discovery/explore-for-structure-skill.js'
 import { TaskManager } from '../../../../src/tasks/task-manager.js'
 import { DiscoveryWorld } from '../../../fakes/discovery-fakes.js'
@@ -231,5 +233,80 @@ describe('the knowledge tools', () => {
     })
     expect(remove.execute(remove.inputSchema.parse({ name: 'home' }))).toMatchObject({ ok: false })
     expect(list.execute()).toMatchObject({ data: { count: 0 } })
+  })
+})
+
+describe('explore_caves', () => {
+  let inputs: unknown[]
+  let tasks: TaskManager
+  let tool: ExploreCavesTool
+
+  beforeEach(() => {
+    const clock = new FakeClock(0)
+    tasks = new TaskManager({
+      clock,
+      scheduler: new FakeScheduler(clock),
+      logger: new FakeLogger(),
+    })
+    inputs = []
+    const skill = {
+      name: 'explore_caves',
+      run: (input: unknown) => {
+        inputs.push(input)
+        return Promise.resolve(ok({ stopped: 'explored' }))
+      },
+    } as unknown as ExploreCavesSkill
+    tool = new ExploreCavesTool(skill, new TaskLauncher(tasks, clock))
+  })
+
+  const run = (input: Record<string, unknown>) =>
+    tool.execute(tool.inputSchema.parse(input), context)
+
+  it('starts with the defaults: report only, 80 blocks, 10 minutes, light 5', async () => {
+    const result = await run({})
+
+    expect(result).toMatchObject({ ok: true, data: { status: 'succeeded' } })
+    expect(inputs).toEqual([
+      { find: undefined, mine: false, maxDistance: 80, maxMinutes: 10, minLight: 5 },
+    ])
+    expect(tasks.get('task-1')?.resume).toEqual({
+      tool: 'explore_caves',
+      arguments: { mine: false, max_distance: 80, max_minutes: 10, min_light: 5 },
+    })
+  })
+
+  it('passes what to find and to mine it', async () => {
+    await run({
+      find: ['diamond_ore'],
+      mine: true,
+      max_distance: 150,
+      max_minutes: 20,
+      min_light: 8,
+    })
+
+    expect(inputs[0]).toEqual({
+      find: ['diamond_ore'],
+      mine: true,
+      maxDistance: 150,
+      maxMinutes: 20,
+      minLight: 8,
+    })
+  })
+
+  it('checks its input at the boundary', () => {
+    const parse = (input: Record<string, unknown>) => tool.inputSchema.safeParse(input).success
+
+    expect(parse({ max_distance: 5 })).toBe(false)
+    expect(parse({ max_distance: 400 })).toBe(false)
+    expect(parse({ min_light: 0 })).toBe(false)
+    expect(parse({ min_light: 15 })).toBe(false)
+    expect(parse({ find: [''] })).toBe(false)
+    expect(parse({ mine: 'yes' })).toBe(false)
+  })
+
+  it('tells the agent about the safety rules and the stop reasons', () => {
+    expect(tool.description).toContain('ancient')
+    expect(tool.description).toContain('no_torches')
+    expect(tool.description).toContain('3 blocks')
   })
 })

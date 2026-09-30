@@ -161,6 +161,18 @@ export class StrongholdSignature implements StructureSignature {
   }
 }
 
+/** Reinforced deepslate and sculk shriekers: the deep dark. The bot reports it and keeps away. */
+export class AncientCitySignature implements StructureSignature {
+  readonly kind = 'ancient_city'
+
+  detect(context: DetectContext): StructureHit | null {
+    const found = blocksOf(context, ['reinforced_deepslate', 'sculk_shrieker'], 1)[0]
+    return found === undefined
+      ? null
+      : hit(this.kind, found.position, `${found.name.replace('_', ' ')} in the deep dark`)
+  }
+}
+
 export const defaultSignatures = (): readonly StructureSignature[] => [
   new VillageSignature(),
   new DesertTempleSignature(),
@@ -170,4 +182,5 @@ export const defaultSignatures = (): readonly StructureSignature[] => [
   new RuinedPortalSignature(),
   new DungeonSignature(),
   new StrongholdSignature(),
+  new AncientCitySignature(),
 ]

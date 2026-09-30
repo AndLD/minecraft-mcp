@@ -164,6 +164,40 @@ describe('WorldKnowledgeStore: biomes', () => {
   })
 })
 
+describe('WorldKnowledgeStore: finds', () => {
+  it('records a vein once, and treats one of the same name within 8 blocks as the same', async () => {
+    const { knowledge, store } = await active()
+
+    const first = knowledge.recordFind('ore', 'diamond_ore', at(10, 12, 10), 3)
+    const near = knowledge.recordFind('ore', 'diamond_ore', at(14, 12, 10), 1)
+    const far = knowledge.recordFind('ore', 'diamond_ore', at(40, 12, 10), 2)
+    const other = knowledge.recordFind('spawner', 'spawner', at(10, 12, 10), 1)
+
+    expect(first).toMatchObject({ ok: true, value: { isNew: true, entry: { count: 3 } } })
+    expect(near).toMatchObject({ ok: true, value: { isNew: false } })
+    expect(far).toMatchObject({ ok: true, value: { isNew: true } })
+    expect(other).toMatchObject({ ok: true, value: { isNew: true } })
+    expect(knowledge.finds('diamond_ore')).toHaveLength(2)
+    expect(knowledge.finds()).toHaveLength(3)
+
+    const later = new WorldKnowledgeStore(new FakeClock(0))
+    await later.attach(store)
+    expect(later.finds()).toHaveLength(3)
+  })
+
+  it('refuses without a world, and reads a file from before finds existed', async () => {
+    const { store } = await active()
+    store.files.set('knowledge', { version: 1, data: { landmarks: [], structures: [], nextId: 1 } })
+    const old = new WorldKnowledgeStore(new FakeClock(0))
+    await old.attach(store)
+
+    expect(old.finds()).toEqual([])
+    expect(
+      new WorldKnowledgeStore(new FakeClock(0)).recordFind('ore', 'x', at(0, 0, 0), 1),
+    ).toMatchObject({ ok: false })
+  })
+})
+
 describe('WorldKnowledgeStore: persistence', () => {
   it('lists the same landmarks and structures in a new instance on the same store', async () => {
     const { knowledge, store } = await active()

@@ -8,6 +8,7 @@ import {
   PillagerOutpostSignature,
   RuinedPortalSignature,
   StrongholdSignature,
+  AncientCitySignature,
   VillageSignature,
 } from '../../../../src/skills/discovery/structure-signatures.js'
 import { StructureScanner } from '../../../../src/skills/discovery/structure-scanner.js'
@@ -243,6 +244,18 @@ describe('DungeonSignature and StrongholdSignature', () => {
       detect(new StrongholdSignature(), new DiscoveryWorld().put(4, 20, 4, 'end_portal_frame')),
     ).toMatchObject({ kind: 'stronghold', position: { y: 20 } })
     expect(detect(new StrongholdSignature(), new DiscoveryWorld())).toBeNull()
+  })
+})
+
+describe('AncientCitySignature', () => {
+  it('recognizes reinforced deepslate and sculk shriekers', () => {
+    for (const block of ['reinforced_deepslate', 'sculk_shrieker']) {
+      const world = new DiscoveryWorld().put(4, 20, 4, block)
+      expect(detect(new AncientCitySignature(), world)).toMatchObject({ kind: 'ancient_city' })
+    }
+    expect(
+      detect(new AncientCitySignature(), new DiscoveryWorld().put(4, 20, 4, 'deepslate')),
+    ).toBeNull()
   })
 })
 
