@@ -428,4 +428,45 @@ describe('crop farming on a real Minecraft server', () => {
     expect(await is(fruit, 'air')).toBe(true)
     expect(await is(stem, 'melon_stem')).toBe(true)
   }, 240_000)
+
+  it('fertilizes a whole wheat field with bone meal until every plant is ripe', async () => {
+    const plots = [cell(2, 0, -10), cell(3, 0, -10), cell(4, 0, -10)]
+    const ages = [0, 2, 7]
+    for (const [index, plot] of plots.entries()) {
+      await world.setBlock(plot, 'farmland')
+      await world.setBlock({ ...plot, y: plot.y + 1 }, `wheat[age=${String(ages[index])}]`)
+    }
+    await world.give(bot(), 'bone_meal', 30)
+    await untilBotCarries('bone_meal')
+    for (const plot of plots) await untilBotSeesAt('wheat', { ...plot, y: plot.y + 1 })
+    const registered = await session.bot.call('register_farm', {
+      kind: 'field',
+      crop: 'wheat',
+      from: plots[0],
+      to: plots[2],
+      label: 'bone field',
+    })
+    if (registered.isError) throw new Error(`register_farm failed: ${registered.text}`)
+
+    const fertilized = await run('fertilize_crops', { farm: 'bone field' })
+
+    if (fertilized.failed) throw new Error(`fertilize_crops did not succeed: ${fertilized.text}`)
+    expect(fertilized.task.result).toMatchObject({ ripened: 2, skipped: { alreadyRipe: 1 } })
+    for (const plot of plots)
+      expect(await is({ ...plot, y: plot.y + 1 }, 'wheat[age=7]')).toBe(true)
+  }, 240_000)
+
+  it('composts seeds in a composter and takes the bone meal out', async () => {
+    const composter = cell(3, 0, -6)
+    await world.setBlock(composter, 'composter')
+    await world.give(bot(), 'wheat_seeds', 40)
+    await untilBotCarries('wheat_seeds')
+    await untilBotSeesAt('composter', composter)
+
+    const composted = await run('use_composter', { at: composter })
+
+    if (composted.failed) throw new Error(`use_composter did not succeed: ${composted.text}`)
+    expect(composted.task.result).toMatchObject({ boneMeal: 1, level: 0 })
+    await untilBotCarries('bone_meal')
+  }, 240_000)
 })

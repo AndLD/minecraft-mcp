@@ -269,6 +269,7 @@ export class FakeBot implements BotLike {
     itemsByName: {
       cooked_beef: { id: 100 },
       beef: { id: 1500 },
+      bone_meal: { id: 1501 },
       bread: { id: 101 },
       apple: { id: 102 },
       rotten_flesh: { id: 103 },
@@ -455,6 +456,7 @@ export class FakeBot implements BotLike {
         if (name.endsWith('_fence_gate') && this.gateFacings.has(cellKey))
           props['facing'] = this.gateFacings.get(cellKey)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
+        if (name === 'composter') props['level'] = String(this.composterLevels.get(cellKey) ?? 0)
         if (name === 'campfire' || name === 'soul_campfire')
           props['lit'] = !this.campfiresOut.has(cellKey)
         if (classifySwitch(name) !== undefined)
@@ -550,6 +552,14 @@ export class FakeBot implements BotLike {
 
   /** Minecarts put on rails, by rail cell. */
   readonly minecartsPlaced: Position[] = []
+
+  /** Composters: a right-click with a compostable item adds a level (a full one turns ready at once); an empty-handed click on a ready one pops bone meal. */
+  private readonly composterLevels = new Map<string, number>()
+  setComposterLevel(position: Position, level: number): void {
+    this.composterLevels.set(key(position), level)
+  }
+  /** Bone meal used on a crop adds this many growth stages. */
+  boneMealStages = 2
 
   /** Campfires: burning unless put out here. A right-click with an item takes it while fewer than `campfireRoom` are on. */
   private readonly campfiresOut = new Set<string>()
@@ -689,6 +699,22 @@ export class FakeBot implements BotLike {
         type: 'object',
         name: 'minecart',
         position: { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
+      }
+    } else if (this.heldItem?.name === 'bone_meal' && classifyCrop(block.name) !== undefined) {
+      const max = classifyCrop(block.name)?.maxAge ?? 7
+      this.cropAges.set(cellKey, Math.min(max, (this.cropAges.get(cellKey) ?? 0) + this.boneMealStages))
+      this.removeItems('bone_meal', 1)
+      this.heldItem = this.count('bone_meal') > 0 ? { name: 'bone_meal', count: this.count('bone_meal') } : null
+    } else if (block.name === 'composter') {
+      const level = this.composterLevels.get(cellKey) ?? 0
+      const held = this.heldItem?.name
+      if (level === 8) {
+        this.composterLevels.set(cellKey, 0)
+        this.dropItem('bone_meal', 1, { x: position.x + 0.5, y: position.y + 1.2, z: position.z + 0.5 })
+      } else if (held !== undefined && held !== 'bone_meal' && level < 7) {
+        this.removeItems(held, 1)
+        this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
+        this.composterLevels.set(cellKey, level + 1 === 7 ? 8 : level + 1)
       }
     } else if (
       (block.name === 'campfire' || block.name === 'soul_campfire') &&

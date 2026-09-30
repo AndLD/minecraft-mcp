@@ -11,6 +11,8 @@ import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.j
 import type { LureAnimalsSkill } from '../../skills/farming/lure-animals-skill.js'
 import type { MilkCowsSkill } from '../../skills/farming/milk-cows-skill.js'
 import type { ShearSheepSkill } from '../../skills/farming/shear-sheep-skill.js'
+import type { FertilizeCropsSkill } from '../../skills/farming/fertilize-crops-skill.js'
+import type { UseComposterSkill } from '../../skills/farming/use-composter-skill.js'
 import type { PlantCropsSkill } from '../../skills/farming/plant-crops-skill.js'
 import type { PlantTreesSkill } from '../../skills/farming/plant-trees-skill.js'
 import { TREE_NAMES } from '../../skills/farming/tree-table.js'
@@ -425,6 +427,114 @@ export class MilkCowsTool implements ToolDefinition<typeof milkCowsSchema> {
             },
             ctx,
           ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const fertilizeCropsSchema = z.object({
+  ...farmOrAreaShape,
+  crop: z.string().min(1).optional().describe('Only this crop (wheat, carrots, potatoes, beetroots, pumpkin, melon).'),
+  stages: z
+    .number()
+    .int()
+    .min(1)
+    .max(7)
+    .optional()
+    .describe('Grow each plant at most this many stages. Until ripe when omitted.'),
+  max_bone_meal: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Use at most this much bone meal, so a big field does not take everything. Everything carried when omitted.'),
+  from_storage: z.boolean().default(false).describe('Take bone meal (and bones, with craft) out of registered, unprotected containers first.'),
+  craft: z.boolean().default(false).describe('Craft bones into bone meal (1 bone makes 3) when there is not enough.'),
+  ...taskOptionsShape,
+})
+
+export class FertilizeCropsTool implements ToolDefinition<typeof fertilizeCropsSchema> {
+  readonly name = 'fertilize_crops'
+  readonly description =
+    'Uses bone meal on the unripe crops of a registered field (or group) or an area, nearest first, reading each crop after ' +
+    'every use and stopping at ripe (or after stages). Only when the player asked for it. A stem crop (pumpkin, melon) ' +
+    'grows its stem only; ripe crops and protected cells that are not the field\'s own are skipped. Result: applied ' +
+    '(bone meal used), ripened, skipped by reason, boneMealLeft. Bone meal comes from the bag, then storage ' +
+    '(from_storage) and crafting from bones (craft); fails missing_bone_meal and says how much is needed. It never ' +
+    'breaks skeleton bones or hunts for them. Runs in the background: poll get_task_status when the reply has ' +
+    'status "running".'
+  readonly inputSchema = fertilizeCropsSchema
+
+  constructor(
+    private readonly skill: FertilizeCropsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof fertilizeCropsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Fertilize crops',
+        run: (ctx) =>
+          this.skill.run(
+            {
+              farm: input.farm,
+              area: input.area,
+              crop: input.crop,
+              stages: input.stages,
+              maxBoneMeal: input.max_bone_meal,
+              sources: { fromStorage: input.from_storage, craft: input.craft },
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const useComposterSchema = z.object({
+  at: positionSchema.optional().describe('The composter block. The nearest within 32 blocks when omitted.'),
+  items: z
+    .array(z.string().min(1))
+    .min(1)
+    .optional()
+    .describe('What to put in, by item name. Seeds, saplings, leaves, grass, and kelp in the bag when omitted (never food or tools unless named).'),
+  collect: z.boolean().default(true).describe('Take the bone meal out when the composter is ready.'),
+  ...taskOptionsShape,
+})
+
+export class UseComposterTool implements ToolDefinition<typeof useComposterSchema> {
+  readonly name = 'use_composter'
+  readonly description =
+    'Puts scraps into a composter one at a time, reading its level, until it is full; waits for it to turn ready and, ' +
+    'with collect, takes the bone meal out and picks it up. Result: composted (items by name), boneMeal, level (8 is ' +
+    'ready), composter. Never breaks the composter and never builds one (7 planks or logs; place it with build or ' +
+    'place_block). Fails no_composter, not_compostable, nothing_to_compost, or protected_area. Runs in the ' +
+    'background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = useComposterSchema
+
+  constructor(
+    private readonly skill: UseComposterSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof useComposterSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Use a composter',
+        run: (ctx) =>
+          this.skill.run({ at: input.at, items: input.items, collect: input.collect }, ctx),
       },
       {
         replace: input.replace,

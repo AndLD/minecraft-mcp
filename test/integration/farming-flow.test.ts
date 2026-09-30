@@ -309,4 +309,68 @@ describe('farming through the MCP server', () => {
     const after = await h.call('inspect_farm', { farm: 'pumpkins' })
     expect(task(after)).toMatchObject({ components: [{ ripe: 0, growing: 2 }] })
   })
+
+  it('fertilizes a field on ask: unripe wheat is ripened with bone meal, the ripe plant is left, and harvest takes all of it', async () => {
+    const h = await start((bot) => {
+      for (const [x, age] of [
+        [0, 7],
+        [1, 0],
+        [2, 3],
+      ] as const) {
+        bot.setBlock({ x, y: 63, z: 0 }, 'farmland')
+        bot.setBlock({ x, y: 64, z: 0 }, 'wheat')
+        bot.setCropAge({ x, y: 64, z: 0 }, age)
+      }
+      bot.addItems('bone_meal', 10)
+    })
+    const registered = await h.call('register_farm', {
+      kind: 'field',
+      crop: 'wheat',
+      from: { x: 0, y: 63, z: 0 },
+      to: { x: 2, y: 63, z: 0 },
+      label: 'wheat field',
+    })
+    expect(registered.isError).toBe(false)
+
+    const fertilized = await call(h, 'fertilize_crops', { farm: 'wheat field', wait_seconds: 30 })
+
+    expect(task(fertilized)).toMatchObject({
+      status: 'succeeded',
+      result: { applied: 6, ripened: 2, boneMealLeft: 4, skipped: { alreadyRipe: 1 } },
+    })
+    const after = await h.call('inspect_farm', { farm: 'wheat field' })
+    expect(task(after)).toMatchObject({ components: [{ ripe: 3, growing: 0 }] })
+    const harvest = await call(h, 'harvest_crops', { farm: 'wheat field', wait_seconds: 30 })
+    expect(task(harvest)).toMatchObject({ status: 'succeeded', result: { harvested: 3 } })
+  })
+
+  it('fails missing_bone_meal, saying what is needed, when the bag has none', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 0, y: 63, z: 0 }, 'farmland')
+      bot.setBlock({ x: 0, y: 64, z: 0 }, 'wheat')
+    })
+
+    const result = await call(h, 'fertilize_crops', {
+      area: { from: { x: 0, y: 63, z: 0 }, to: { x: 0, y: 63, z: 0 } },
+      wait_seconds: 30,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('missing_bone_meal')
+  })
+
+  it('composts scraps in a composter beside the bot and takes the bone meal out', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 3, y: 64, z: 0 }, 'composter')
+      bot.addItems('wheat_seeds', 10)
+    })
+
+    const result = await call(h, 'use_composter', { wait_seconds: 30 })
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { composted: [{ name: 'wheat_seeds', count: 7 }], level: 0 },
+    })
+    expect(h.bot.count('wheat_seeds')).toBe(3)
+  })
 })

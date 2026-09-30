@@ -101,7 +101,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [42 Blast furnace and smoker](phases/blast-furnace-smoker.md) | done (`feature/blast-furnace-smoker`: `smelt` uses a nearby or carried blast furnace for ores and a smoker for food, twice as fast and twice as far on the same fuel; `station` option) |
 | [43 Campfire cooking](phases/campfire-cooking.md) | done (`feature/campfire-cooking`: `smelt` cooks raw food on a campfire beside the bot with no fuel and no window, four at a time; `station: campfire`, and `auto` uses one when the bag has no fuel or the batch is small) |
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | done (`feature/farming-extras`: `shear_sheep` and `milk_cows` take wool and milk from a pen without harming the animals; `melon` is a stem crop like `pumpkin`) |
-| [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | not started (from the backlog: fertilize a whole field on ask) |
+| [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | done (`feature/composter-bone-meal`: `fertilize_crops` ripens a field with bone meal on ask, from the bag, storage, or crafted bones; `use_composter` turns scraps into bone meal) |
 | [46 Take an item the player hands over](phases/receive-item.md) | not started (from the backlog: `receive_item`, the reverse of `give_items`) |
 | [47 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 

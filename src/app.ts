@@ -145,7 +145,9 @@ import {
 import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-tools.js'
 import {
   BreedAnimalsTool,
+  FertilizeCropsTool,
   MilkCowsTool,
+  UseComposterTool,
   ShearSheepTool,
   BuildFarmTool,
   CollectEggsTool,
@@ -283,6 +285,11 @@ import { WallTarget } from './skills/excavation/wall-target.js'
 import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
+import { BoneMealSupply } from './skills/farming/bone-meal-supply.js'
+import { FertilizeCropsSkill } from './skills/farming/fertilize-crops-skill.js'
+import { UseComposterSkill } from './skills/farming/use-composter-skill.js'
+import { MineflayerBlockUser } from './bot/mineflayer-block-user.js'
+import { MineflayerComposterAccess } from './bot/mineflayer-composter.js'
 import { MilkCowsSkill } from './skills/farming/milk-cows-skill.js'
 import { ShearSheepSkill } from './skills/farming/shear-sheep-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
@@ -1075,6 +1082,33 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inventory,
     farms: farmRegistry,
   })
+  const blockUser = new MineflayerBlockUser(connection)
+  const fertilizeCrops = new FertilizeCropsSkill({
+    crops: cropAccess,
+    navigator,
+    user: blockUser,
+    inventory,
+    farms: farmRegistry,
+    guard: protectedAreas,
+    vitals,
+    scheduler,
+    supply: new BoneMealSupply({
+      inventory,
+      withdraw: withdrawItems,
+      crafter: craftItem,
+      scanner: scanContainers,
+    }),
+  })
+  const useComposter = new UseComposterSkill({
+    blocks,
+    composters: new MineflayerComposterAccess(connection),
+    user: blockUser,
+    navigator,
+    inventory,
+    drops: dropCollector,
+    guard: protectedAreas,
+    scheduler,
+  })
   const plantTrees = new PlantTreesSkill({
     blocks,
     navigator,
@@ -1492,6 +1526,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BreedAnimalsTool(breedAnimals, launcher))
     .register(new ShearSheepTool(shearSheep, launcher))
     .register(new MilkCowsTool(milkCows, launcher))
+    .register(new FertilizeCropsTool(fertilizeCrops, launcher))
+    .register(new UseComposterTool(useComposter, launcher))
     .register(new CollectEggsTool(collectEggs, launcher))
     .register(new SetEggPolicyTool(eggPolicy, standing))
     .register(new TendFarmTool(tendFarm, launcher))
