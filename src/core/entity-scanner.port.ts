@@ -9,6 +9,8 @@ export interface EntityInfo {
   readonly position: Position
   /** Straight-line distance from the bot, in blocks. */
   readonly distance: number
+  /** A bee that is angry (the threat rules fight it); undefined for everything else. */
+  readonly angry?: boolean
 }
 
 export interface PlayerInfo {

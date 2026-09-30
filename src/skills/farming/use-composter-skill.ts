@@ -20,6 +20,8 @@ const SETTLE_MS = 250
 const READY_WAIT_MS = 1_000
 const READY_TRIES = 5
 const PICKUP_RADIUS = 5
+const PICKUP_TRIES = 5
+const PICKUP_WAIT_MS = 500
 const READY = 8
 /** Items go in while the level is below this (7 fills it, and it turns ready by itself). */
 const FULL = 7
@@ -137,8 +139,16 @@ export class UseComposterSkill implements Skill<UseComposterInput, UseComposterO
     const bonesBefore = carried(deps.inventory).get('bone_meal') ?? 0
     if (input.collect && level() === READY) {
       await deps.user.use(at, undefined)
-      await sleep(deps.scheduler, SETTLE_MS, context.signal)
-      await deps.drops.collect({ names: ['bone_meal'], maxDistance: PICKUP_RADIUS }, context.signal)
+      // The bone meal pops out as a dropped item that cannot be picked up for a few ticks (found by the e2e run), so
+      // look for it again a few times before calling it lost.
+      for (let tries = 0; tries < PICKUP_TRIES; tries += 1) {
+        await sleep(deps.scheduler, PICKUP_WAIT_MS, context.signal)
+        await deps.drops.collect(
+          { names: ['bone_meal'], maxDistance: PICKUP_RADIUS },
+          context.signal,
+        )
+        if ((carried(deps.inventory).get('bone_meal') ?? 0) > bonesBefore) break
+      }
     }
     return ok({
       composted: [...composted].map(([name, count]) => ({ name, count })),

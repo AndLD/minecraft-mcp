@@ -21,4 +21,19 @@ describe('foodFor', () => {
   it('covers every pennable species', () => {
     for (const species of PENNABLE_SPECIES) expect(foodFor(species)).toBeDefined()
   })
+
+  describe('bees', () => {
+    it('breed with any flower, poppy first, and cannot be penned', async () => {
+      const { foodsFor, BREEDABLE_SPECIES } =
+        await import('../../../../src/skills/farming/animal-table.js')
+      expect(foodFor('bee')).toBe('poppy')
+      expect(foodsFor('bee')).toEqual(
+        expect.arrayContaining(['poppy', 'dandelion', 'cornflower', 'sunflower']),
+      )
+      expect(foodsFor('cow')).toEqual(['wheat'])
+      expect(foodsFor('zombie')).toEqual([])
+      expect(BREEDABLE_SPECIES).toContain('bee')
+      expect(PENNABLE_SPECIES).not.toContain('bee')
+    })
+  })
 })

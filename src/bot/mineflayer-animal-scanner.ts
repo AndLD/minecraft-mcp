@@ -41,9 +41,17 @@ function woolOf(bot: BotLike, entity: EntityLike): Pick<AnimalInfo, 'sheared' | 
   return { sheared: (flags & 0x10) !== 0, colour: WOOL_COLOURS[flags & 0x0f] ?? 'white' }
 }
 
+/** A bee is angry while its `remaining_anger_time` (in ticks) is above zero. */
+function angerOf(bot: BotLike, entity: EntityLike): Pick<AnimalInfo, 'angry'> {
+  if (entity.name !== 'bee') return {}
+  const left = field(bot, entity, 'remaining_anger_time')
+  return { angry: typeof left === 'number' && left > 0 }
+}
+
 function describe(bot: BotLike, entity: EntityLike, origin: BotLike['entity']): AnimalInfo {
   return {
     ...woolOf(bot, entity),
+    ...angerOf(bot, entity),
     id: entity.id,
     species: entity.name ?? entity.type,
     position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },

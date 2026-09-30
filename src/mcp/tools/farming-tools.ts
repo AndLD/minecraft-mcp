@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PENNABLE_SPECIES } from '../../skills/farming/animal-table.js'
+import { BREEDABLE_SPECIES } from '../../skills/farming/animal-table.js'
 import type { BreedAnimalsSkill } from '../../skills/farming/breed-animals-skill.js'
 import type { BuildFarmInput, BuildFarmSkill } from '../../skills/farming/build-farm-skill.js'
 import type { CollectEggsSkill } from '../../skills/farming/collect-eggs-skill.js'
@@ -233,7 +233,7 @@ export class HarvestCropsTool implements ToolDefinition<typeof harvestCropsSchem
 }
 
 const lureAnimalsSchema = z.object({
-  species: z.enum(PENNABLE_SPECIES).describe(`Which wild animal to lead in: ${PENNABLE_SPECIES.join(', ')}.`),
+  species: z.enum(BREEDABLE_SPECIES).describe(`Which wild animal to lead in: ${BREEDABLE_SPECIES.join(', ')}. A bee follows any flower.`),
   count: z.number().int().min(1).describe('How many to lead in.'),
   farm: z.string().min(1).optional().describe('The pen to lead them into (see list_farms). Give this or destination.'),
   destination: positionSchema.optional().describe('A position to lead them to, when not using a registered pen.'),
@@ -290,7 +290,7 @@ export class LureAnimalsTool implements ToolDefinition<typeof lureAnimalsSchema>
 }
 
 const breedAnimalsSchema = z.object({
-  species: z.enum(PENNABLE_SPECIES).describe(`Which species to breed: ${PENNABLE_SPECIES.join(', ')}.`),
+  species: z.enum(BREEDABLE_SPECIES).describe(`Which species to breed: ${BREEDABLE_SPECIES.join(', ')}. Bees breed with any flower.`),
   target_count: z.number().int().min(1).describe('Stop once the herd (adults and babies together) reaches this size.'),
   ...farmOrAreaShape,
   ...taskOptionsShape,
@@ -942,7 +942,7 @@ export class InspectFarmTool implements ToolDefinition<typeof inspectFarmSchema>
 }
 
 const registerFarmSchema = z.object({
-  kind: z.enum(['field', 'pen', 'grove']).default('field').describe('What kind of farm component this is.'),
+  kind: z.enum(['field', 'pen', 'grove', 'apiary']).default('field').describe('What kind of farm component this is.'),
   crop: z.string().min(1).optional().describe('The crop it grows, for a field, or the tree species (oak, ...), for a grove.'),
   species: z.string().min(1).optional().describe('The animal species it keeps, for a pen.'),
   herd_target: z

@@ -373,4 +373,85 @@ describe('farming through the MCP server', () => {
     })
     expect(h.bot.count('wheat_seeds')).toBe(3)
   })
+
+  it('builds an apiary: a hive on a campfire for each of two hives, a row of flowers, registered as kind "apiary"', async () => {
+    const h = await start((bot) => {
+      bot.addItems('beehive', 2)
+      bot.addItems('campfire', 2)
+      bot.addItems('poppy', 10)
+    })
+
+    const result = await call(h, 'build_farm', {
+      kind: 'apiary',
+      params: { hives: 2 },
+      origin: { x: 2, y: 63, z: 0 },
+      label: 'bees',
+      wait_seconds: 30,
+    })
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { farm: { kind: 'apiary', species: 'bee' } },
+    })
+    for (const x of [2, 5]) {
+      expect(nameAt(h, x, 64, 0)).toBe('campfire')
+      expect(nameAt(h, x, 65, 0)).toBe('beehive')
+    }
+  })
+
+  it('tend_farm takes the honey of a ripe hive in an apiary, smoked, and inspect_farm reads it before and after', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 3, y: 64, z: 0 }, 'campfire')
+      bot.setBlock({ x: 3, y: 65, z: 0 }, 'beehive')
+      bot.setHoneyLevel({ x: 3, y: 65, z: 0 }, 5)
+      bot.setBlock({ x: 6, y: 64, z: 0 }, 'campfire')
+      bot.setBlock({ x: 6, y: 65, z: 0 }, 'beehive')
+      bot.setHoneyLevel({ x: 6, y: 65, z: 0 }, 2)
+      bot.addItems('glass_bottle', 3)
+    })
+    const registered = await h.call('register_farm', {
+      kind: 'apiary',
+      species: 'bee',
+      from: { x: 2, y: 64, z: -1 },
+      to: { x: 7, y: 65, z: 1 },
+      label: 'bees',
+    })
+    expect(registered.isError).toBe(false)
+    const before = await h.call('inspect_farm', { farm: 'bees' })
+    expect(task(before)).toMatchObject({
+      components: [{ kind: 'apiary', ripe: 1, growing: 1, empty: 0 }],
+    })
+
+    const tended = await call(h, 'tend_farm', { farm: 'bees', wait_seconds: 30 })
+
+    expect(task(tended)).toMatchObject({
+      status: 'succeeded',
+      result: { components: [{ kind: 'apiary', honeyBottles: 1 }] },
+    })
+    expect(h.bot.count('honey_bottle')).toBe(1)
+    const after = await h.call('inspect_farm', { farm: 'bees' })
+    expect(task(after)).toMatchObject({ components: [{ ripe: 0, growing: 1, empty: 1 }] })
+  })
+
+  it('harvest_honey refuses a hive with no smoke, and inspect_hives says why', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 3, y: 65, z: 0 }, 'beehive')
+      bot.setHoneyLevel({ x: 3, y: 65, z: 0 }, 5)
+      bot.addItems('glass_bottle', 1)
+    })
+
+    const seen = await h.call('inspect_hives', {})
+    expect(task(seen)).toMatchObject({
+      ready: 1,
+      hives: [{ honeyLevel: 5, ready: true, smoked: false }],
+    })
+
+    const refused = await call(h, 'harvest_honey', { wait_seconds: 30 })
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toContain('no_smoke')
+    expect(h.bot.count('honey_bottle')).toBe(0)
+
+    const told = await call(h, 'harvest_honey', { smoke: 'never', wait_seconds: 30 })
+    expect(task(told)).toMatchObject({ status: 'succeeded', result: { honeyBottles: 1 } })
+  })
 })
