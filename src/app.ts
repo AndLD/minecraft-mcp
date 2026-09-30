@@ -199,6 +199,7 @@ import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
 import { SignRegistry } from './state/sign-registry.js'
 import { WorldKnowledgeStore } from './knowledge/world-knowledge-store.js'
+import { OpenVeinGatherSkill } from './skills/gathering/open-vein-gather-skill.js'
 import { CaveMap } from './skills/discovery/caves/cave-map.js'
 import { ExploreCavesSkill } from './skills/discovery/caves/explore-caves-skill.js'
 import { FindDetector } from './skills/discovery/caves/find-rules.js'
@@ -1221,6 +1222,31 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     knowledge,
     clock,
   })
+  const openVeinGather = new OpenVeinGatherSkill({
+    collect: collectBlocks,
+    explore: exploreCaves,
+    tunneler: {
+      tunnelTo: (target, context) =>
+        excavateSkill.run(
+          {
+            shape: 'dig_to',
+            params: { target },
+            origin: undefined,
+            fetchFromStorage: true,
+            spoilPolicy: 'storage',
+            fallingBlocks: 'stop',
+            continueExisting: false,
+          },
+          context,
+        ),
+    },
+    blocks,
+    finder: blockFinder,
+    map: new CaveMap(blocks),
+    vitals,
+    inventory,
+    clock,
+  })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -1268,7 +1294,13 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ReadSignsTool(signReader))
     .register(new ListBedsTool(bedRegistry))
     .register(new SetSleepPolicyTool(sleepPolicy, standing))
-    .register(new CollectBlockTool(collectBlocks, structuredGather, launcher, collectSaplings))
+    .register(new CollectBlockTool(
+        collectBlocks,
+        structuredGather,
+        launcher,
+        collectSaplings,
+        openVeinGather,
+      ))
     .register(new PickupItemsTool(new PickupItemsSkill(dropCollector, inventory), launcher))
     .register(new CraftTool(craftItem, launcher))
     .register(new SmeltTool(smeltItems, launcher))

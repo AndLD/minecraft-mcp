@@ -88,6 +88,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | done (`feature/placement-fixes`: the furnace cause was a click that opens the furnace, fixed by sneaking; a sign tries several standing spots, names free places when blocked, and takes `replace_block`) |
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | done (`feature/world-discovery`: structure, biome, and mob search, landmarks, `WorldKnowledgeStore`, `/locate` only on request; `feature/cave-exploration`: `explore_caves` with lit, hazard-aware exploration, finds, and vein mining) |
 | [31 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
+| [33 Open-vein gathering](phases/open-vein-gathering.md) | done (`feature/open-vein-gathering`: ores are gathered by veins the bot can walk to, exploring caves for them; tunnelling only on request) |
 | [32 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases

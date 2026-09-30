@@ -18,6 +18,7 @@ import type { ToolContext } from '../../../../src/mcp/tool.types.js'
 import type { CraftItemSkill } from '../../../../src/skills/crafting/craft-item-skill.js'
 import { RecipePlanner } from '../../../../src/skills/crafting/recipe-planner.js'
 import type { CollectBlocksSkill } from '../../../../src/skills/gathering/collect-blocks-skill.js'
+import type { OpenVeinGatherSkill } from '../../../../src/skills/gathering/open-vein-gather-skill.js'
 import type { PickupItemsSkill } from '../../../../src/skills/gathering/pickup-items-skill.js'
 import type { SmeltItemsSkill } from '../../../../src/skills/smelting/smelt-items-skill.js'
 import { ProtectedAreas } from '../../../../src/state/protected-areas.js'
@@ -687,5 +688,104 @@ describe('protected area tools', () => {
       ),
     ).toMatchObject({ ok: false })
     expect(list.execute()).toMatchObject({ ok: false })
+  })
+})
+
+describe('CollectBlockTool: open veins', () => {
+  function withOpenVeins() {
+    const { launcher, tasks } = launching()
+    const collect = stubSkill('collect_block')
+    const open = stubSkill('collect_block', () => ok({ mined: 2, requested: 2, gained: [], explored: 1, tunnelled: 0 }))
+    const tool = new CollectBlockTool(
+      collect.skill as unknown as CollectBlocksSkill,
+      undefined,
+      launcher,
+      undefined,
+      open.skill as unknown as OpenVeinGatherSkill,
+    )
+    return { tool, tasks, collect, open }
+  }
+
+  it('gathers ores by open veins by default, with the search options passed on', async () => {
+    const { tool, collect, open } = withOpenVeins()
+
+    const result = await tool.execute(tool.inputSchema.parse({ blocks: ['iron_ore'], count: 2 }), context)
+
+    expect(open.inputs[0]).toMatchObject({
+      names: ['iron_ore'],
+      count: 2,
+      maxDistance: 32,
+      maxMinutes: 10,
+      tunnel: false,
+    })
+    expect(collect.inputs).toEqual([])
+    expect(result).toMatchObject({ ok: true, data: { result: { layout: 'open_veins', mined: 2, explored: 1 } } })
+  })
+
+  it('tunnels only with open_then_tunnel', async () => {
+    const { tool, open } = withOpenVeins()
+
+    await tool.execute(
+      tool.inputSchema.parse({ blocks: ['ores'], search: 'open_then_tunnel', max_minutes: 30 }),
+      context,
+    )
+
+    expect(open.inputs[0]).toMatchObject({ names: ['ores'], tunnel: true, maxMinutes: 30 })
+  })
+
+  it('keeps the older search with "nearest", and for anything that is not an ore', async () => {
+    const { tool, collect, open } = withOpenVeins()
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['iron_ore'], search: 'nearest' }), context)
+    await tool.execute(tool.inputSchema.parse({ blocks: ['oak_log'] }), context)
+    await tool.execute(tool.inputSchema.parse({ blocks: ['iron_ore', 'stone'] }), context)
+
+    expect(open.inputs).toEqual([])
+    expect(collect.inputs).toHaveLength(3)
+  })
+
+  it('works without the open-vein skill, as before', async () => {
+    const { launcher } = launching()
+    const collect = stubSkill('collect_block')
+    const tool = new CollectBlockTool(collect.skill as unknown as CollectBlocksSkill, undefined, launcher)
+
+    await tool.execute(tool.inputSchema.parse({ blocks: ['iron_ore'] }), context)
+
+    expect(collect.inputs).toHaveLength(1)
+  })
+
+  it('reports a failure with its reason, and keeps the search in the resume', async () => {
+    const { launcher, tasks } = launching()
+    const open = stubSkill('collect_block', () =>
+      err({ reason: 'no_open_vein', message: 'None found.', detail: { mined: 1 } }),
+    )
+    const tool = new CollectBlockTool(
+      stubSkill('collect_block').skill as unknown as CollectBlocksSkill,
+      undefined,
+      launcher,
+      undefined,
+      open.skill as unknown as OpenVeinGatherSkill,
+    )
+
+    const result = await tool.execute(
+      tool.inputSchema.parse({ blocks: ['diamond_ore'], search: 'open_then_tunnel' }),
+      context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('no_open_vein') })
+    expect(tasks.latest()?.resume?.arguments).toMatchObject({
+      search: 'open_then_tunnel',
+      max_minutes: 10,
+    })
+  })
+
+  it('validates the new options', () => {
+    const { tool } = withOpenVeins()
+    const valid = (input: unknown): boolean => tool.inputSchema.safeParse(input).success
+
+    expect(valid({ blocks: ['iron_ore'], search: 'xray' })).toBe(false)
+    expect(valid({ blocks: ['iron_ore'], max_minutes: 0 })).toBe(false)
+    expect(valid({ blocks: ['iron_ore'], max_minutes: 61 })).toBe(false)
+    expect(tool.inputSchema.parse({ blocks: ['iron_ore'] })).toMatchObject({ search: 'open' })
   })
 })

@@ -7,6 +7,10 @@ import type { CollectSaplingsSkill } from '../../skills/farming/collect-saplings
 import { isSaplingName, speciesOfBlocks } from '../../skills/farming/tree-table.js'
 import type { CollectBlocksSkill } from '../../skills/gathering/collect-blocks-skill.js'
 import { BLOCK_ALIAS_NAMES } from '../../skills/gathering/block-aliases.js'
+import {
+  isVeinName,
+  type OpenVeinGatherSkill,
+} from '../../skills/gathering/open-vein-gather-skill.js'
 import { isTerrainBlock } from '../../skills/gathering/structured-gather.js'
 import {
   isSiteUnsuitable,
@@ -58,6 +62,20 @@ const schema = z.object({
     .describe(
       `Only with layout: "auto". The block count at or above which a bulk terrain request switches to a structured dig (default ${String(DEFAULT_STRUCTURED_THRESHOLD)}).`,
     ),
+  search: z
+    .enum(['open', 'open_then_tunnel', 'nearest'])
+    .default('open')
+    .describe(
+      'Only for ores (exact ore names or "ores"; anything else ignores it). "open" (default): gather veins the bot can walk up to, the way a player would: veins in view with a walkable way to them are dug first, and when there are none the bot explores caves (lit, away from lava) until one comes into view; it never tunnels. If none can be found it fails no_open_vein and names a buried one. "open_then_tunnel": the same, and when no open vein can be found it digs a route to the nearest buried vein it can see through the rock (x-ray). "nearest": the older behaviour, nearest vein in the loaded area that touches open space, no search.',
+    ),
+  max_minutes: z
+    .number()
+    .min(1)
+    .max(60)
+    .default(10)
+    .describe(
+      'Only for ores with search "open" or "open_then_tunnel": how long the whole job, including cave exploring, may take, in minutes (1-60, default 10).',
+    ),
   saplings: z
     .number()
     .int()
@@ -77,12 +95,15 @@ const schema = z.object({
 })
 
 interface GatherResult {
-  readonly layout: 'scattered' | 'structured'
+  readonly layout: 'scattered' | 'structured' | 'open_veins'
   readonly mined: number
   readonly requested: number
   readonly gained: readonly ItemCount[]
   readonly shape?: string
   readonly origin?: Position
+  /** Only for open-vein gathering: caves explored for veins, and buried veins tunnelled to. */
+  readonly explored?: number
+  readonly tunnelled?: number
   /** Set when a structured dig was tried and the site was not suitable, so it fell back to a scattered dig. */
   readonly structuredFallbackReason?: string
   /** Only with `saplings` asked for. */
@@ -101,13 +122,13 @@ interface SaplingsSection {
 export class CollectBlockTool implements ToolDefinition<typeof schema> {
   readonly name = 'collect_block'
   readonly description =
-    'Breaks blocks of the given types (exact names, or groups such as "logs" and "ores"), nearest first, and picks up the drops. It uses the best tool it carries, never tunnels ' +
+    'Breaks blocks of the given types (exact names, or groups such as "logs" and "ores"), nearest first, and picks up the drops. Ores are gathered like a player would: veins with a walkable way to them first, exploring caves for them when none is in view, and tunnelling only with search "open_then_tunnel" (see search). It uses the best tool it carries, never tunnels ' +
     '(only blocks that touch open space are dug), never digs straight down, next to lava, or inside protected areas. ' +
     'A single, exact bulk terrain block (dirt, stone, cobblestone, sand, gravel, netherrack) requested in a large enough count digs one small, contained pit or quarry instead ' +
     '(see layout and structured_threshold), so gathering does not leave a scatter of holes; the result then also names the shape and where it is. ' +
     'Long jobs continue in the background: poll get_task_status when the reply has status "running". Result: blocks mined and ' +
     'what the inventory gained. Fails with a reason such as block_not_found, no_suitable_tool (say what to craft first), ' +
-    'inventory_full (only when the policy is stop or the player said stop; otherwise a full inventory pauses the task, or offloads to chests), protected_area, or unreachable; the message says how ' +
+    'no_open_vein (ores: none with a way to them was found; the message names a buried one and the search to use), inventory_full (only when the policy is stop or the player said stop; otherwise a full inventory pauses the task, or offloads to chests), protected_area, or unreachable; the message says how ' +
     'many were collected before it stopped.'
   readonly inputSchema = schema
 
@@ -116,10 +137,16 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     private readonly structured: StructuredGatherSkill | undefined,
     private readonly launcher: TaskLauncher,
     private readonly saplings?: CollectSaplingsSkill,
+    private readonly openVeins?: OpenVeinGatherSkill,
   ) {}
 
   execute(input: z.output<typeof schema>, context: ToolContext) {
-    const base = { blocks: input.blocks, max_distance: input.max_distance }
+    const base = {
+      blocks: input.blocks,
+      max_distance: input.max_distance,
+      search: input.search,
+      max_minutes: input.max_minutes,
+    }
     // A resumed task only collects what is still missing.
     const progress = { remaining: input.count }
     const structuredBlock = this.structuredBlockFor(input)
@@ -138,7 +165,8 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
             }
           },
         },
-        run: async (ctx) => this.withSaplings(await this.gather(structuredBlock, input, progress, ctx), input, ctx),
+        run: async (ctx) =>
+          this.withSaplings(await this.gather(structuredBlock, input, progress, ctx), input, ctx),
       },
       {
         replace: input.replace,
@@ -146,6 +174,36 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
         signal: context.signal,
       },
     )
+  }
+
+  private usesOpenVeins(input: z.output<typeof schema>): boolean {
+    return (
+      this.openVeins !== undefined && input.search !== 'nearest' && input.blocks.every(isVeinName)
+    )
+  }
+
+  private async openVeinRun(
+    input: z.output<typeof schema>,
+    progress: { remaining: number },
+    ctx: SkillContext,
+  ): Promise<SkillResult<GatherResult>> {
+    const ran = await this.openVeins?.run(
+      {
+        names: input.blocks,
+        count: input.count,
+        maxDistance: input.max_distance,
+        maxMinutes: input.max_minutes,
+        tunnel: input.search === 'open_then_tunnel',
+        onInventoryFull: input.on_inventory_full,
+        onMined: (mined) => {
+          progress.remaining = input.count - mined
+        },
+      },
+      ctx,
+    )
+    if (ran === undefined) return this.scattered(input, progress, ctx)
+    if (!ran.ok) return err(ran.error)
+    return { ok: true as const, value: { layout: 'open_veins', ...ran.value } }
   }
 
   /** The one exact terrain block a structured dig would target, or undefined when scattered is the only option. */
@@ -164,6 +222,7 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     progress: { remaining: number },
     ctx: SkillContext,
   ): Promise<SkillResult<GatherResult>> {
+    if (this.usesOpenVeins(input)) return this.openVeinRun(input, progress, ctx)
     if (structuredBlock === undefined) return this.scattered(input, progress, ctx)
 
     const structured = await this.structured?.run(
@@ -194,7 +253,10 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
     if (!ran.ok || input.saplings === undefined || this.saplings === undefined) return ran
     const species = speciesOfBlocks(input.blocks)
     const already = ran.value.gained
-      .filter((item) => isSaplingName(item.name) && (species === undefined || item.name === species.sapling))
+      .filter(
+        (item) =>
+          isSaplingName(item.name) && (species === undefined || item.name === species.sapling),
+      )
       .reduce((sum, item) => sum + item.count, 0)
     const missing = input.saplings - already
     if (missing <= 0)
@@ -202,7 +264,12 @@ export class CollectBlockTool implements ToolDefinition<typeof schema> {
         ok: true as const,
         value: {
           ...ran.value,
-          saplings: { requested: input.saplings, gained: already, leaves: 0, stoppedBecause: 'enough' },
+          saplings: {
+            requested: input.saplings,
+            gained: already,
+            leaves: 0,
+            stoppedBecause: 'enough',
+          },
         },
       }
 
