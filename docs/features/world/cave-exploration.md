@@ -25,7 +25,7 @@ Result: `region` (`cave` or `ravine`), `entrance`, `stopped`, `finds` (new ones,
 
 - Bounding the walk is what keeps the search cheap: a breadth-first walk over open ground is thousands of cells. That is why a cave search only admits roofed cells and why the surface search for a mouth has its own, larger limit.
 - Torches sit on the floor beside the way, not on the wall: it works with the existing `Placer` and needs no wall reference.
-- No torches are fetched from storage; only carried ones and crafted ones are used.
+- No torches are fetched from storage; only carried ones and crafted ones are used (planned: [Phase 40](../../DEVELOPMENT-PLAN/phases/cave-torch-supply.md)).
 - `list_known_structures` shows what was found; the position of a spawner is known but not the mob it spawns (the block data is not read).
 
 ## Tests

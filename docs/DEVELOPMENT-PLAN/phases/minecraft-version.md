@@ -4,7 +4,7 @@ _Estimate: ¼ session._
 **Status:** in review on `feature/configurable-minecraft-version`.
 
 **Depends on:** [2 Core skeleton and MCP shell](core-skeleton-mcp-shell.md) (configuration), [4 E2E test harness](e2e-harness.md).  
-**Needed by:** [39 Hardening and polish](hardening-polish.md) (a run against another version, if wanted).
+**Needed by:** [42 Hardening and polish](hardening-polish.md) (a run against another version, if wanted).
 
 The target Minecraft version is a setting, not a constant: `MC_VERSION`, **1.21.1 by default**.
 
