@@ -52,9 +52,9 @@ const exploreSchema = z
       ),
     use_locate: z
       .boolean()
-      .default(true)
+      .default(false)
       .describe(
-        'Ask the server where the nearest one is first (the /locate command). It only helps when the bot is allowed to use it; otherwise the bot searches on foot.',
+        'Ask the server where the nearest one is first (the /locate command). Off by default: the bot explores like a regular player. Turn it on only when the player asks for the server to be used, and it only helps when the bot is allowed to use commands.',
       ),
     only_new: z
       .boolean()
@@ -89,8 +89,8 @@ export class ExploreForStructureTool implements ToolDefinition<typeof exploreSch
     'ruined_portal, dungeon, stronghold): walks to a spot about 40 blocks away, looks at the loaded blocks and mobs, and ' +
     'repeats until it sees one, then answers with its coordinates and records it (list_known_structures shows it, also ' +
     'after a restart). Other structures seen on the way are recorded too and listed under discovered. A known one within ' +
-    'max_distance is answered immediately (only_new: true looks for another). When the server lets the bot use /locate ' +
-    'the server names the place first and the bot walks there. It stays within max_distance of where it started and ' +
+    'max_distance is answered immediately (only_new: true looks for another). By default it searches on foot like a regular player; ' +
+    'with use_locate: true and a server that lets the bot use /locate, the server names the place first and the bot walks there. It stays within max_distance of where it started and ' +
     'within max_minutes, goes round water and lava, and survival reflexes stay active. found.source is "scan" (seen by ' +
     'the bot) or "locate" (named by the server; reached false when it was beyond max_distance or unreachable). ' +
     'Fails with not_found (the detail says why it stopped and what was seen), stuck (five trips in a row failed), ' +

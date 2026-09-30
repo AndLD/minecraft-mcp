@@ -56,7 +56,7 @@ describe('explore_for_structure', () => {
         maxDistance: 500,
         maxMinutes: 10,
         strategy: 'frontier',
-        useLocate: true,
+        useLocate: false,
         onlyNew: false,
         returnTo: undefined,
       },
@@ -68,7 +68,7 @@ describe('explore_for_structure', () => {
         max_distance: 500,
         max_minutes: 10,
         strategy: 'frontier',
-        use_locate: true,
+        use_locate: false,
         only_new: false,
       },
     })
