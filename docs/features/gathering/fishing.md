@@ -1,6 +1,6 @@
 # Fishing
 
-**Depends on:** [Movement and perception](../core/movement-and-perception.md) (walking, facing a point), [Gathering, crafting, smelting](gathering-crafting-smelting.md) (`smelt` cooks the catch), [Hunting and food](hunting-and-food.md) (the food policy), [Tasks](../core/tasks.md), [Storage](../storage/storage.md) (optional: the storage rules place the catch when the player asks).  
+**Depends on:** [Movement and perception](../../DEVELOPMENT-PLAN/phases/movement-perception.md) (walking, facing a point), [Gathering, crafting, smelting](gathering-crafting-smelting.md) (`smelt` cooks the catch), [Hunting and food](hunting-and-food.md) (the food policy), [Tasks](../core/tasks.md), [Storage](../storage/storage.md) (optional: the storage rules place the catch when the player asks).  
 **Used by:** [Hunting and food](hunting-and-food.md) (the `fish_and_cook` low-food policy).
 
 Branch `feature/fishing`. "Catch me 10 fish": the bot finds a pond, stands on the shore, casts, waits for the bite, reels in, and counts what came up.
