@@ -94,7 +94,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [35 Fishing](phases/fishing.md) | done (`feature/fishing`: `fish` from the shore with a rod, sorting fish, treasure, and junk, optional cooking, and the `fish_and_cook` food policy) |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | done (`feature/smelting-wait`: the furnace window is closed between looks, a cancelled wait leaves the furnace burning and remembers the job in `SmeltJobs`, `smelt` again or `collect: true` takes it, `wait: start_only`, and out of fuel is judged by a stalled furnace) |
 | [37 Organize storage](phases/organize-storage.md) | done (`feature/organize-storage`: `organize_storage` looks into the containers, plans the moves against the room each will have, and carries them out one trip per source; `dry_run` is the default) |
-| [38 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [38 Biome-guided search](phases/biome-guided-search.md) | not started (from the backlog: steer the structure search by biome, with biome tables per Minecraft version and a 1.21.1 default) |
+| [39 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -143,11 +144,12 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [35 Fishing](phases/fishing.md) | 1 session |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | ½ session |
 | [37 Organize storage](phases/organize-storage.md) | ½ session |
-| [38 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [38 Biome-guided search](phases/biome-guided-search.md) | ¾ session |
+| [39 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 38 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 39 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -189,7 +191,8 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [35 Fishing](phases/fishing.md) | 3, 7, 8 | 9, 30 |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | 5, 7 | 9 |
 | [37 Organize storage](phases/organize-storage.md) | 9 | |
-| [38 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [38 Biome-guided search](phases/biome-guided-search.md) | 30, 33 | |
+| [39 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 
