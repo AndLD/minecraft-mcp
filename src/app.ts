@@ -40,6 +40,7 @@ import { MineflayerPlacer } from './bot/mineflayer-placer.js'
 import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
 import { MineflayerServerCommands } from './bot/mineflayer-server-commands.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
+import { MineflayerBiomeReader } from './bot/mineflayer-biome-reader.js'
 import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
 import { MineflayerWorldIdentifier } from './bot/mineflayer-world-identifier.js'
 import { createPathGoals } from './bot/path-goals.js'
@@ -197,6 +198,17 @@ import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
 import { SignRegistry } from './state/sign-registry.js'
+import { WorldKnowledgeStore } from './knowledge/world-knowledge-store.js'
+import { ExploreForStructureSkill } from './skills/discovery/explore-for-structure-skill.js'
+import { defaultSignatures } from './skills/discovery/structure-signatures.js'
+import { StructureScanner } from './skills/discovery/structure-scanner.js'
+import {
+  ExploreForStructureTool,
+  ListKnownStructuresTool,
+  ListLandmarksTool,
+  RemoveLandmarkTool,
+  SetLandmarkTool,
+} from './mcp/tools/discovery-tools.js'
 import { SleepPolicy } from './state/sleep-policy.js'
 import { DropRecoveryPolicy } from './state/drop-recovery-policy.js'
 import { FoodPolicy } from './state/food-policy.js'
@@ -439,6 +451,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const railwayLog = new RailwayLog(clock)
   const bedRegistry = new BedRegistry(clock)
   const signRegistry = new SignRegistry(clock)
+  const knowledge = new WorldKnowledgeStore(clock)
   const sleepPolicy = new SleepPolicy()
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
@@ -467,6 +480,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       railwayLog,
       bedRegistry,
       signRegistry,
+      knowledge,
       sleepPolicy,
       storageRules,
       storagePolicy,
@@ -1163,6 +1177,18 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     botName: () => connection.target?.username,
   })
+  const exploreForStructure = new ExploreForStructureSkill({
+    navigator,
+    vitals,
+    blocks,
+    biomes: new MineflayerBiomeReader(connection),
+    entities,
+    scanner: new StructureScanner(blocks, entities, defaultSignatures()),
+    knowledge,
+    clock,
+    random,
+    commands: serverCommands,
+  })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -1281,6 +1307,11 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new ProtectAreaTool(protectedAreas))
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))
+    .register(new ExploreForStructureTool(exploreForStructure, launcher))
+    .register(new ListKnownStructuresTool(knowledge, vitals))
+    .register(new SetLandmarkTool(knowledge, vitals))
+    .register(new ListLandmarksTool(knowledge))
+    .register(new RemoveLandmarkTool(knowledge))
     .register(new GetTaskStatusTool(tasks, clock))
     .register(new CancelTaskTool(tasks, clock))
     .register(new StopTool(tasks, clock))

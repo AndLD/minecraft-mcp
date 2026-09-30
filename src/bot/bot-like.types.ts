@@ -71,6 +71,8 @@ export interface BlockLike {
   getSignText?(): readonly (string | undefined)[]
   /** Signs: the block entity data as plain values (`is_waxed` is 0 or 1). */
   readonly blockEntity?: unknown
+  /** The biome the block is in. Its `name` can be empty: the id is what the server sent, and the registry names it. */
+  readonly biome?: { readonly id: number; readonly name?: string | undefined } | undefined
 }
 
 /** A crafting recipe as Mineflayer builds it. `delta` lists what changes in the inventory (ingredients negative). */
@@ -158,6 +160,9 @@ export interface BotLike {
       >
     >
     readonly itemsByName: Readonly<Record<string, { readonly id: number }>>
+    /** Only the keys are used. */
+    readonly biomesByName?: Readonly<Record<string, unknown>> | undefined
+    readonly biomes?: Readonly<Record<number, { readonly name: string }>> | undefined
     readonly items: Readonly<Record<number, { readonly name: string; readonly stackSize?: number }>>
     readonly entitiesByName: Readonly<
       Record<string, { readonly metadataKeys?: readonly string[] | undefined }>

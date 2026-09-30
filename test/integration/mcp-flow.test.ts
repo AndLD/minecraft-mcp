@@ -127,6 +127,11 @@ describe('MCP server over an in-memory transport', () => {
         'set_sleep_policy',
         'discover_farm',
         'list_farms',
+        'explore_for_structure',
+        'list_known_structures',
+        'set_landmark',
+        'list_landmarks',
+        'remove_landmark',
         'register_farm',
       ].sort(),
     )

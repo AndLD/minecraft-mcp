@@ -5,6 +5,11 @@ import type { BotHolder } from './bot-like.types.js'
 export class MineflayerEntityScanner implements EntityScanner {
   constructor(private readonly holder: BotHolder) {}
 
+  knownEntityNames(): readonly string[] {
+    const bot = this.holder.current()
+    return bot === undefined ? [] : Object.keys(bot.registry.entitiesByName)
+  }
+
   nearby(maxDistance: number): readonly EntityInfo[] {
     const bot = this.holder.current()
     const origin = bot?.entity?.position

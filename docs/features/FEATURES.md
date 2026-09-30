@@ -52,6 +52,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | [Breaking one block](world/breaking-one-block.md) | `break_block`: one block at exact coordinates, the refusals, the protection override | Tasks, Gathering, crafting, smelting, Construction and building |
 | [Filling buckets](world/buckets.md) | `fill_bucket`: water and lava into empty buckets, source blocks only, the lava safety rules | Tasks, Construction and building, Gathering, crafting, smelting, Survival reflexes |
 | [Railways](world/railways.md) | Route planning, power layout, verification, `place_minecart` | Construction and building, Excavation, Storage (optional) |
+| [World discovery](world/world-discovery.md) | `explore_for_structure`, structure signatures, exploration strategies, landmarks, `WorldKnowledgeStore` | Tasks, Persistent state, Survival reflexes, Server commands and teleporting (optional) |
 
 ## Farming
 
