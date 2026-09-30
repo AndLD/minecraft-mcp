@@ -99,7 +99,10 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [40 Torches from storage for caves](phases/cave-torch-supply.md) | done (`feature/cave-torch-supply`: `explore_caves` fetches torches, or coal and sticks, from storage before going in and after walking out when they run out; `restock`) |
 | [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | done (`feature/smelting-fuel-and-ready`: fuel of every kind in the bag is used and topped up at each look, `fuelUsed`, `fuel_from_storage`, a `smelt_ready` event for a job left in a furnace, a far or other-dimension warning) |
 | [42 Blast furnace and smoker](phases/blast-furnace-smoker.md) | done (`feature/blast-furnace-smoker`: `smelt` uses a nearby or carried blast furnace for ores and a smoker for food, twice as fast and twice as far on the same fuel; `station` option) |
-| [43 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [43 Campfire cooking](phases/campfire-cooking.md) | not started (from the backlog: cook food on a campfire, without fuel) |
+| [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | not started (from the backlog) |
+| [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | not started (from the backlog: fertilize a whole field on ask) |
+| [46 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -153,11 +156,14 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [40 Torches from storage for caves](phases/cave-torch-supply.md) | ¼ session |
 | [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | ½ session |
 | [42 Blast furnace and smoker](phases/blast-furnace-smoker.md) | ½ session |
-| [43 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [43 Campfire cooking](phases/campfire-cooking.md) | ½ session |
+| [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 1 session |
+| [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | ¾ session |
+| [46 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 43 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 46 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -204,7 +210,10 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [40 Torches from storage for caves](phases/cave-torch-supply.md) | 7, 9, 30 | |
 | [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | 36 | 9 |
 | [42 Blast furnace and smoker](phases/blast-furnace-smoker.md) | 7, 36, 41 | |
-| [43 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [43 Campfire cooking](phases/campfire-cooking.md) | 7, 8, 42 | |
+| [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 7, 8, 18 | |
+| [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | 18, 44 | 7, 9 |
+| [46 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 

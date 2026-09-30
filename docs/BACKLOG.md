@@ -68,7 +68,7 @@ _Moved here from the development plan (it was Phase 28): not planned for now. Ro
 
 ### Farming extras
 
-Left out of the farming feature in the plan: shearing sheep, milking cows, honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, melons, cocoa, nether wart; composters; redstone auto-farms (observers, pistons, hoppers).
+Left out of the farming feature in the plan: honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, cocoa, nether wart; redstone auto-farms (observers, pistons, hoppers). Shearing sheep, milking cows, and melons are planned as [Phase 44](DEVELOPMENT-PLAN/phases/farming-extras.md), and the composter with bone meal fertilization of a whole field as [Phase 45](DEVELOPMENT-PLAN/phases/composter-bone-meal.md).
 
 ### Several connected rooms in one request
 
@@ -102,7 +102,7 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Deposit cooked food in chests** once the storage feature exists.
 
 ### Gathering, crafting, smelting
-- **Blast furnace and smoker**: built, see [Gathering, crafting, smelting](features/gathering/gathering-crafting-smelting.md). Crafting one on the way, the campfire, and nuggets from tools and armor are not.
+- **Blast furnace and smoker**: built, see [Gathering, crafting, smelting](features/gathering/gathering-crafting-smelting.md). Crafting one on the way and nuggets from tools and armor are not. The campfire is planned as [Phase 43](DEVELOPMENT-PLAN/phases/campfire-cooking.md).
 - **Bare-floor mining**: asking for `stone` on a stone floor digs the floor blocks next to the bot (never the one underfoot). A "surface only" or "walls only" option could keep the ground intact.
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 
