@@ -120,7 +120,7 @@ The LAN port changes every time you re-open the world. With `MC_PORT` empty the 
 ## Project docs
 
 - [DEVELOPMENT-PLAN.md](docs/DEVELOPMENT-PLAN/DEVELOPMENT-PLAN.md): phased roadmap with acceptance criteria
-- [BACKLOG.md](docs/BACKLOG.md): ideas, deferred work, and known gaps that are not built yet (an index, with one file per area in [docs/backlog/](docs/backlog/)); [COMPLETED-BACKLOG.md](docs/COMPLETED-BACKLOG.md) lists the ones that were built
+- [BACKLOG.md](docs/backlog/BACKLOG.md): ideas, deferred work, and known gaps that are not built yet (an index, with one file per area in [docs/backlog/features/](docs/backlog/features)); [COMPLETED-BACKLOG.md](docs/backlog/COMPLETED-BACKLOG.md) lists the ones that were built
 - [docs/features/FEATURES.md](docs/features/FEATURES.md): how each implemented feature works, one file per feature
 - [docs/e2e-docker-server.md](docs/e2e-docker-server.md): the throwaway Minecraft server the e2e tests use
 - [docs/agent-start-prompt.md](docs/agent-start-prompt.md): a prompt to paste into Claude Code to connect the bot and keep it listening to chat

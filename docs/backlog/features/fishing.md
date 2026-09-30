@@ -2,7 +2,7 @@
 
 **Status:** not planned.
 
-Left out of [Fishing](../features/gathering/fishing.md).
+Left out of [Fishing](../../features/gathering/fishing.md).
 
 - **A boat** (fishing from open water, and reaching a lake with no shore the bot can stand on).
 - **A spare rod:** when the rod breaks the task ends `rod_broke`; another rod in the bag or a chest is not swapped in.

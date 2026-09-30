@@ -5,8 +5,8 @@
 What the farming feature still leaves out.
 
 **Planned (in the development plan, not built yet):**
-- Shearing sheep, milking cows, and melons: [Phase 44](../DEVELOPMENT-PLAN/phases/farming-extras.md).
-- A composter, and bone meal fertilization of a whole field on ask: [Phase 45](../DEVELOPMENT-PLAN/phases/composter-bone-meal.md).
+- Shearing sheep, milking cows, and melons: [Phase 44](../../DEVELOPMENT-PLAN/phases/farming-extras.md).
+- A composter, and bone meal fertilization of a whole field on ask: [Phase 45](../../DEVELOPMENT-PLAN/phases/composter-bone-meal.md).
 
 **Not planned:**
 - **Honey** (bees, hives, honeycomb, and honey bottles).

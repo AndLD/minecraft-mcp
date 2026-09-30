@@ -2,7 +2,7 @@
 
 **Status:** not planned.
 
-Left out of [Gathering, crafting, smelting](../features/gathering/gathering-crafting-smelting.md).
+Left out of [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md).
 
 - **Crafting a blast furnace or a smoker on the way** (a blast furnace costs 5 iron ingots); they must stand nearby or be carried.
 - **Nuggets from tools and armor** in a blast furnace: the smelting table does not have them.

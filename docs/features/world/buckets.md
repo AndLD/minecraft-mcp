@@ -45,7 +45,7 @@ Failures (`reason`): `no_bucket` (with what to craft: 3 iron ingots; it never cr
 
 ## Not built
 
-Reusing the filler for excavation's water landing or crop-field water, and the fall-damage guard in [the backlog](../../backlog/survival-reflexes.md), which needs a full bucket in hand. Neither is part of this feature.
+Reusing the filler for excavation's water landing or crop-field water, and the fall-damage guard in [the backlog](../../backlog/features/survival-reflexes.md), which needs a full bucket in hand. Neither is part of this feature.
 
 ## Exit criteria
 
