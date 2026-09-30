@@ -16,7 +16,7 @@ This page is the index. Each area has its own file under [features/](features/),
 | [Voice instructions](features/voice-instructions.md): speak to the bot instead of typing (push-to-talk companion) |
 | [Several bots managed by one agent](features/multiple-bots.md): N bots in one world |
 | [Autonomy: the bot's own will](features/autonomy.md): goals, needs, and an engine that works on its own |
-| [Farming extras](features/farming-extras.md): honey, sugar cane, bamboo, cocoa, nether wart, redstone auto-farms  |
+| [Farming extras](features/farming-extras.md): honey, sugar cane, bamboo, cocoa, nether wart, redstone auto-farms |
 | [Several connected rooms in one request](features/connected-rooms.md): a `rooms` layout for `excavate` |
 | [Boats](features/boats.md): crossing and fishing on open water |
 
