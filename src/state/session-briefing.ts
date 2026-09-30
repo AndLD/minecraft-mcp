@@ -2,6 +2,7 @@ import type { Clock } from '../core/clock.port.js'
 import { DROP_DESPAWN_MS, type DropRecords } from './drop-records.js'
 import type { InstructionLog } from './instruction-log.js'
 import type { NotesStore } from './notes-store.js'
+import type { SmeltJobs } from './smelt-jobs.js'
 import type { StandingInstructions } from './standing-instructions.js'
 import type { TaskJournal } from './task-journal.js'
 import type { WorldStateManager } from './world-state-manager.js'
@@ -31,6 +32,14 @@ export interface SessionBriefing {
     readonly dimension: string
     readonly secondsLeft: number
   }[]
+  /** Smelting jobs left burning in a furnace: what waits there and how far it is. */
+  readonly smeltJobs: readonly {
+    readonly item: string
+    readonly produced: string
+    readonly furnace: { readonly x: number; readonly y: number; readonly z: number }
+    readonly count: number
+    readonly collected: number
+  }[]
   readonly standingInstructions: Readonly<Record<string, string>>
   readonly notes: readonly {
     readonly id: string
@@ -58,6 +67,7 @@ export interface SessionBriefingBuilderOptions {
   readonly standing: StandingInstructions
   readonly history: InstructionLog
   readonly drops: DropRecords
+  readonly smeltJobs: SmeltJobs
 }
 
 /** Summarizes what the bot remembers about this world, so the agent can pick up where the last session ended. */
@@ -65,7 +75,7 @@ export class SessionBriefingBuilder {
   constructor(private readonly deps: SessionBriefingBuilderOptions) {}
 
   build(): SessionBriefing {
-    const { worldState, journal, notes, standing, history, drops, clock } = this.deps
+    const { worldState, journal, notes, standing, history, drops, clock, smeltJobs } = this.deps
     const opened = worldState.lastOpen
     const nextSteps: string[] = []
 
@@ -75,6 +85,7 @@ export class SessionBriefingBuilder {
         previousSession: null,
         interruptedTasks: [],
         pendingDrops: [],
+        smeltJobs: [],
         standingInstructions: {},
         notes: [],
         recentHistory: [],
@@ -137,6 +148,17 @@ export class SessionBriefingBuilder {
       nextSteps.push(
         'Some dropped items can still be fetched (pendingDrops). Tell the player where they lie and ask whether to fetch them now (recover_drops); they vanish 5 minutes after the drop.',
       )
+    const waitingJobs = smeltJobs.all().map((job) => ({
+      item: job.item,
+      produced: job.produced,
+      furnace: { x: job.x, y: job.y, z: job.z },
+      count: job.count,
+      collected: job.collected,
+    }))
+    if (waitingJobs.length > 0)
+      nextSteps.push(
+        'A furnace still holds a smelting job (smeltJobs). Tell the player, and collect it with smelt (collect: true) when it fits.',
+      )
     const previous = opened.previousSessionAt
     const listedNotes = notes.latest(NOTE_LIMIT)
     if (listedNotes.length > 0)
@@ -163,6 +185,7 @@ export class SessionBriefingBuilder {
         startedAt: job.startedAt,
       })),
       pendingDrops,
+      smeltJobs: waitingJobs,
       standingInstructions: standing.all(),
       notes: listedNotes.map((note) => ({ id: note.id, text: note.text, tags: note.tags })),
       recentHistory: history.recent(HISTORY_LIMIT),

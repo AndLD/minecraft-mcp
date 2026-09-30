@@ -109,6 +109,68 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
     expect(h.bot.count('oak_log')).toBe(2) // 5 logs: 2 for the first 8 planks, 1 for planks to finish the pickaxe
   })
 
+  it('does not stand looking into the furnace: the window is closed while the items cook', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'raw_iron', count: 3 },
+        { name: 'cobblestone', count: 8 },
+        { name: 'coal', count: 1 },
+        { name: 'crafting_table', count: 1 },
+      ]
+    })
+
+    const started = await call(h, 'smelt', { item: 'raw_iron', wait_seconds: 1 })
+    expect(task(started)).toMatchObject({ status: 'running' })
+    for (let step = 0; step < 4; step += 1) {
+      h.scheduler.advance(2_000)
+      await h.settle()
+    }
+
+    expect([...h.bot.furnaces.values()].every((furnace) => furnace.closed)).toBe(true)
+    expect(h.bot.count('raw_iron')).toBe(0)
+
+    for (let step = 0; step < 40; step += 1) {
+      h.scheduler.advance(2_000)
+      await h.settle()
+    }
+    const finished = await call(h, 'get_task_status')
+    expect(task(finished)).toMatchObject({
+      task: { status: 'succeeded', result: { smelted: 3, pending: 0 } },
+    })
+    expect(h.bot.count('iron_ingot')).toBe(3)
+  })
+
+  it('a wait that is cancelled leaves the furnace burning, and a later smelt collects the ingots', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'raw_iron', count: 3 },
+        { name: 'cobblestone', count: 8 },
+        { name: 'coal', count: 1 },
+        { name: 'crafting_table', count: 1 },
+      ]
+    })
+    await call(h, 'smelt', { item: 'raw_iron', wait_seconds: 1 })
+    for (let step = 0; step < 3; step += 1) {
+      h.scheduler.advance(2_000)
+      await h.settle()
+    }
+
+    const cancelled = await call(h, 'cancel_task')
+    expect(cancelled.isError).toBe(false)
+    expect(h.bot.count('raw_iron')).toBe(0) // still in the furnace, not taken back
+    h.scheduler.advance(40_000)
+    await h.settle()
+
+    const collected = await call(h, 'smelt', { collect: true, wait_seconds: 30 })
+
+    expect(task(collected)).toMatchObject({
+      status: 'succeeded',
+      result: { item: 'raw_iron', smelted: 3, pending: 0 },
+    })
+    expect(h.bot.count('iron_ingot')).toBe(3)
+    expect([...h.bot.furnaces.values()].every((furnace) => furnace.closed)).toBe(true)
+  })
+
   it('mines stone with the wooden pickaxe, refuses iron ore until it has a stone pickaxe, then gets iron', async () => {
     const h = await start((bot) => {
       wall(bot, 'stone', 20, -5, 6)
@@ -171,7 +233,14 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
 
     expect(task(result)).toMatchObject({
       status: 'succeeded',
-      result: { item: 'raw_iron', produced: 'iron_ingot', smelted: 3, requested: 3, fuel: 'coal' },
+      result: {
+        item: 'raw_iron',
+        produced: 'iron_ingot',
+        smelted: 3,
+        requested: 3,
+        fuel: 'coal',
+        pending: 0,
+      },
     })
     expect(h.bot.count('iron_ingot')).toBe(3)
     expect(h.bot.count('raw_iron')).toBe(0)

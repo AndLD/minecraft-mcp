@@ -540,11 +540,42 @@ describe('PickupItemsTool, CraftTool, and SmeltTool', () => {
     const all = await tool.execute(tool.inputSchema.parse({ item: 'sand', replace: true }), context)
 
     expect(inputs).toEqual([
-      { item: 'raw_iron', count: 10, fuel: 'coal' },
-      { item: 'sand', count: undefined, fuel: undefined },
+      { item: 'raw_iron', count: 10, fuel: 'coal', wait: 'until_done', collect: false },
+      { item: 'sand', count: undefined, fuel: undefined, wait: 'until_done', collect: false },
     ])
     expect(some).toMatchObject({ ok: true, data: { description: 'Smelt 10 raw_iron' } })
     expect(all).toMatchObject({ ok: true, data: { description: 'Smelt all sand' } })
+  })
+
+  it('smelt can start a job without waiting, and collect one without naming an item', async () => {
+    const { launcher } = launching()
+    const { skill, inputs } = stubSkill('smelt')
+    const tool = new SmeltTool(skill as unknown as SmeltItemsSkill, launcher)
+
+    const started = await tool.execute(
+      tool.inputSchema.parse({ item: 'beef', wait: 'start_only' }),
+      context,
+    )
+    const collected = await tool.execute(tool.inputSchema.parse({ collect: true }), context)
+
+    expect(inputs).toEqual([
+      { item: 'beef', count: undefined, fuel: undefined, wait: 'start_only', collect: false },
+      { item: '', count: undefined, fuel: undefined, wait: 'until_done', collect: true },
+    ])
+    expect(started).toMatchObject({ ok: true, data: { description: 'Smelt all beef' } })
+    expect(collected).toMatchObject({ ok: true, data: { description: 'Collect a smelting job' } })
+  })
+
+  it('smelt asks for an item unless it is collecting', async () => {
+    const { launcher } = launching()
+    const { skill, inputs } = stubSkill('smelt')
+    const tool = new SmeltTool(skill as unknown as SmeltItemsSkill, launcher)
+
+    const result = await tool.execute(tool.inputSchema.parse({}), context)
+
+    expect(result).toMatchObject({ ok: false })
+    expect(inputs).toEqual([])
+    expect(tool.inputSchema.safeParse({ item: 'beef', wait: 'sometimes' }).success).toBe(false)
   })
 })
 

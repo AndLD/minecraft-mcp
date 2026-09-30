@@ -2,6 +2,7 @@ import type { ConnectTarget } from '../../src/core/connection.port.js'
 import type { DocumentSchema, LoadedDocument, StateStore } from '../../src/core/state-store.port.js'
 import type { WorldFingerprint, WorldIdentifier } from '../../src/core/world-identifier.port.js'
 import { DropRecords } from '../../src/state/drop-records.js'
+import { SmeltJobs } from '../../src/state/smelt-jobs.js'
 import { InstructionLog } from '../../src/state/instruction-log.js'
 import { NotesStore } from '../../src/state/notes-store.js'
 import { SessionBriefingBuilder } from '../../src/state/session-briefing.js'
@@ -88,6 +89,7 @@ export function buildStateStack(
   const standing = new StandingInstructions()
   const journal = new TaskJournal(clock, tasks)
   const drops = new DropRecords(clock)
+  const smeltJobs = new SmeltJobs()
   const worldState = new WorldStateManager({
     registry: new WorldRegistry({ store: rootStore, clock }),
     storeForProfile: (profile) => {
@@ -97,7 +99,7 @@ export function buildStateStack(
       profileStores.set(profile, created)
       return created
     },
-    components: [notes, history, standing, journal, drops],
+    components: [notes, history, standing, journal, drops, smeltJobs],
     logger,
   })
   const briefing = new SessionBriefingBuilder({
@@ -108,6 +110,7 @@ export function buildStateStack(
     standing,
     history,
     drops,
+    smeltJobs,
   })
   return {
     clock,
@@ -123,5 +126,6 @@ export function buildStateStack(
     worldState,
     briefing,
     drops,
+    smeltJobs,
   }
 }

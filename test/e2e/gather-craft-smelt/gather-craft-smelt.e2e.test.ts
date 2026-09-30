@@ -178,6 +178,55 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'porkchop')).toBe(0)
   })
 
+  it('stays free while a batch cooks: it hears the owner, a cancelled wait leaves the furnace burning, and a later smelt collects', async () => {
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'raw_iron', 3)
+    await world.give(bot(), 'coal', 1)
+    await untilBotCarries('furnace')
+    await untilBotCarries('raw_iron')
+    await untilBotCarries('coal')
+
+    const started = dataOf<TaskView>(
+      await session.bot.call('smelt', { item: 'raw_iron', wait_seconds: 0 }),
+    )
+    expect(started.status).toBe('running')
+    await pause(4000) // loaded, and now waiting with the window closed
+
+    session.player.chat('are you there?')
+    const heard = await waitUntil(
+      async () => {
+        const result = await session.bot.call('wait_for_chat', { timeout_seconds: 2 })
+        const data = result.data as { messages: { text: string }[] } | undefined
+        return data?.messages.some((m) => m.text === 'are you there?') === true ? true : undefined
+      },
+      { timeoutMs: 20_000, intervalMs: 50, description: 'the owner’s message' },
+    )
+    expect(heard).toBe(true)
+    const stillRunning = dataOf<{ task: TaskView }>(await session.bot.call('get_task_status')).task
+    expect(stillRunning.status).toBe('running')
+
+    await session.bot.call('cancel_task')
+    await waitUntil(
+      async () => {
+        const status = dataOf<{ task: TaskView }>(await session.bot.call('get_task_status')).task
+        return status.status === 'cancelled' ? true : undefined
+      },
+      { description: 'the wait to be cancelled' },
+    )
+    // The items stay in the furnace and go on cooking; nothing was taken back.
+    expect(await world.countItem(bot(), 'raw_iron')).toBe(0)
+
+    await waitUntil(
+      async () => {
+        const collected = await runToTheEnd('smelt', { collect: true })
+        if (collected.failed) return undefined
+        return (await world.countItem(bot(), 'iron_ingot')) >= 3 ? true : undefined
+      },
+      { timeoutMs: 120_000, intervalMs: 5_000, description: 'the ingots to be collected' },
+    )
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
+  }, 240_000)
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)

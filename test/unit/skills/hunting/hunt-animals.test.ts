@@ -35,7 +35,15 @@ function setup() {
   const smelted: { item: string; count: number | undefined }[] = []
   const smelterResult: { value: (item: string, count: number) => SkillResult<SmeltOutput> } = {
     value: (item, count) =>
-      ok({ item, produced: `cooked_${item}`, smelted: count, requested: count, fuel: 'coal' }),
+      ok({
+        item,
+        produced: `cooked_${item}`,
+        smelted: count,
+        requested: count,
+        fuel: 'coal',
+        pending: 0,
+        furnace: { x: 0, y: 64, z: 0 },
+      }),
   }
   const skill = new HuntAnimalsSkill({
     animals: scanner,
@@ -450,7 +458,15 @@ describe('HuntAnimalsSkill', () => {
       const { context, controller } = skillContext()
       world.smelterResult.value = () => {
         controller.abort()
-        return ok({ item: 'beef', produced: 'cooked_beef', smelted: 2, requested: 2, fuel: 'coal' })
+        return ok({
+          item: 'beef',
+          produced: 'cooked_beef',
+          smelted: 2,
+          requested: 2,
+          fuel: 'coal',
+          pending: 0,
+          furnace: { x: 0, y: 64, z: 0 },
+        })
       }
 
       const result = await world.skill.run(

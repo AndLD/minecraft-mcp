@@ -1,7 +1,7 @@
 # Phase 36: Smelting wait strategy
 
 _Estimate: ½ session._  
-**Status:** not started.
+**Status:** done on `feature/smelting-wait`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md). Differences from this plan: the bot does not walk away between looks (no distance limit is needed; it waits where it stands, and goes back to the furnace only to resume a job); fuel is not topped up at a look (the fuel for the whole job is chosen up front); a timeout or `out_of_fuel` takes the leftovers back instead of leaving a job; and out of fuel is now judged by a furnace that has not moved for 30 seconds, because the flame reading is wrong after the window is reopened (this bug came out of the e2e run).
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`SmeltItemsSkill`, `FurnaceAccess`), [Tasks](../../features/core/tasks.md) (one active task, cancellation), [9 Storage and containers](storage-containers.md) (optional: the furnace stays a known place), [5 Persistent state](persistent-state.md) (a pending job survives a restart).  
 **Needed by:** [38 Hardening and polish](hardening-polish.md).
