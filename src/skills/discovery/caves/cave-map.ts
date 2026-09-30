@@ -186,3 +186,30 @@ export class CaveMap {
     return sky * 2 >= cells.length && high - low >= 8 ? 'ravine' : 'cave'
   }
 }
+
+const NEIGHBOUR_OFFSETS = [
+  { x: 1, y: 0, z: 0 },
+  { x: -1, y: 0, z: 0 },
+  { x: 0, y: 1, z: 0 },
+  { x: 0, y: -1, z: 0 },
+  { x: 0, y: 0, z: 1 },
+  { x: 0, y: 0, z: -1 },
+]
+
+/** The keys of the cells a `reach` found, for quick lookups. */
+export const reachedKeys = (cells: readonly ReachedCell[]): Set<string> =>
+  new Set(cells.map(({ position }) => key(position.x, position.y, position.z)))
+
+/**
+ * Whether the bot can stand next to a block: one of the cells beside it (or the cell below one, since a block in a wall
+ * is reached from the floor) is a place it can walk to. A block in a sealed pocket has no such cell.
+ */
+export function canStandBeside(block: Position, reached: ReadonlySet<string>): boolean {
+  for (const offset of NEIGHBOUR_OFFSETS) {
+    const x = block.x + offset.x
+    const y = block.y + offset.y
+    const z = block.z + offset.z
+    if (reached.has(key(x, y, z)) || reached.has(key(x, y - 1, z))) return true
+  }
+  return false
+}

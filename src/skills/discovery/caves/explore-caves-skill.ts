@@ -14,7 +14,7 @@ import type {
   WorldKnowledgeStore,
 } from '../../../knowledge/world-knowledge-store.js'
 import type { StructureScanner } from '../structure-scanner.js'
-import type { CaveMap } from './cave-map.js'
+import { canStandBeside, reachedKeys, type CaveMap } from './cave-map.js'
 import { resolveFind, type SeenFind } from './find-rules.js'
 import type { FindDetector } from './find-rules.js'
 import type { LightManager } from './light-manager.js'
@@ -30,10 +30,14 @@ export interface ExploreCavesInput {
   readonly maxMinutes: number
   /** Torches go where the block light is below this. */
   readonly minLight: number
+  /** End the trip as soon as a wanted ore vein with a walkable way to it is in view (`stopped: found`). */
+  readonly stopOnFind?: boolean | undefined
+  /** Walk back to where the trip started when it ends (default true; not after `stopOnFind`). */
+  readonly returnOut?: boolean | undefined
 }
 
 export type CaveStop =
-  'explored' | 'time' | 'low_health' | 'hungry' | 'no_torches' | 'warden' | 'stuck'
+  'explored' | 'found' | 'time' | 'low_health' | 'hungry' | 'no_torches' | 'warden' | 'stuck'
 
 export interface ExploreCavesOutput {
   readonly region: 'cave' | 'ravine'
@@ -221,7 +225,8 @@ class CaveTrip {
       stopped = await this.arrive()
     }
     if (this.context.signal.aborted) return this.aborted()
-    const returned = await this.walkOut()
+    const staying = stopped === 'found' || this.input.returnOut === false
+    const returned = staying ? false : await this.walkOut()
     return ok(this.output(stopped, returned))
   }
 
@@ -275,17 +280,27 @@ class CaveTrip {
       this.context,
     )
     if (lit === 'placed') this.torches += 1
-    if (lit === 'no_torches') {
-      await this.look()
-      return 'no_torches'
-    }
-    await this.look()
-    return undefined
+    const openVein = await this.look()
+    if (openVein) return 'found'
+    return lit === 'no_torches' ? 'no_torches' : undefined
   }
 
-  private async look(): Promise<void> {
-    const { detector, scanner, knowledge, vitals } = this.deps
+  /** Looks around. True when `stopOnFind` is set and a wanted vein with a walkable way to it is in view. */
+  private async look(): Promise<boolean> {
+    const { detector, scanner, knowledge, vitals, map } = this.deps
+    let openVein = false
+    const reached =
+      this.input.stopOnFind === true
+        ? reachedKeys(map.reach(this.current, LOOK_RADIUS, 6000).cells)
+        : undefined
     for (const seen of detector.detect(LOOK_RADIUS, this.wanted)) {
+      if (
+        reached !== undefined &&
+        seen.kind === 'ore' &&
+        this.wanted.includes(seen.name) &&
+        seen.cells.some((cell) => canStandBeside(cell, reached))
+      )
+        openVein = true
       const recorded = knowledge.recordFind(seen.kind, seen.name, seen.position, seen.count)
       if (!recorded.ok || !recorded.value.isNew) continue
       this.finds.push(recorded.value.entry)
@@ -313,6 +328,7 @@ class CaveTrip {
           : `Found a ${hit.kind} at ${String(hit.position.x)}, ${String(hit.position.y)}, ${String(hit.position.z)}`,
       )
     }
+    return openVein
   }
 
   private async mineVein(seen: SeenFind): Promise<void> {

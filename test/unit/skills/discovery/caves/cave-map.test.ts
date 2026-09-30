@@ -1,5 +1,9 @@
 import { describe, expect, it } from '@jest/globals'
-import { CaveMap } from '../../../../../src/skills/discovery/caves/cave-map.js'
+import {
+  canStandBeside,
+  CaveMap,
+  reachedKeys,
+} from '../../../../../src/skills/discovery/caves/cave-map.js'
 import { CaveWorld } from '../../../../fakes/cave-fakes.js'
 
 const at = (x: number, y: number, z: number) => ({ x, y, z })
@@ -142,5 +146,17 @@ describe('CaveMap.classify', () => {
     const region = map.classify(map.reach(at(0, 101, 0), 20).cells)
 
     expect(region).toBe('ravine')
+  })
+})
+
+describe('canStandBeside', () => {
+  it('is true beside a reachable cell or above one, false for a block nobody can get next to', () => {
+    const world = corridor()
+    const reached = reachedKeys(new CaveMap(world).reach(at(0, 60, 0), 20).cells)
+
+    expect(canStandBeside(at(5, 60, 1), reached)).toBe(true) // in the wall beside the corridor
+    expect(canStandBeside(at(5, 59, 0), reached)).toBe(true) // in the floor: reached from above
+    expect(canStandBeside(at(5, 60, 5), reached)).toBe(false) // deep in the rock
+    expect(canStandBeside(at(5, 60, 1), new Set())).toBe(false)
   })
 })

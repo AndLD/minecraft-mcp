@@ -4,7 +4,7 @@ _Estimate: 2 sessions._
 **Status:** structure discovery is done on `feature/world-discovery` (see [World discovery](../../features/world/world-discovery.md)); the cave and canyon flow is done on `feature/cave-exploration` (see [Cave exploration](../../features/world/cave-exploration.md)); the water-bucket fall guard was not built (the pathfinder's drop limit is now 3). Not built from the list below: biome-guided exploration (no biome port), night handling, and the shipwreck signature.
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [5 Persistent state](persistent-state.md), [6 Survival reflexes](survival-reflexes.md), [12 Server commands and teleport](server-commands-teleport.md) (optional), [14 Excavation and mining](excavation-mining.md) (optional).  
-**Needed by:** [19 Railways](railways.md) (optional), [31 Leading a player](leading-a-player.md) (optional).
+**Needed by:** [19 Railways](railways.md) (optional), [31 Open-vein gathering](open-vein-gathering.md), [32 Leading a player](leading-a-player.md) (optional).
 
 - `WorldKnowledgeStore` (extended from the storage phase; built on `StateStore` under the world profile): persisted with landmarks (home, base) and discovered structures (kind, position, timestamp), next to the container index and storage rules.
 - `StructureSignature` implementations detected from loaded chunks and entities:

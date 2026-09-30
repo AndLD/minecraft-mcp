@@ -87,8 +87,9 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | done (`feature/excavation-upward`: `continue_existing` from a record of the bot's own digs, `order: bottom_up` for pit, shaft, and quarry; a dig made by hand is not recognised and asks for its origin) |
 | [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | done (`feature/placement-fixes`: the furnace cause was a click that opens the furnace, fixed by sneaking; a sign tries several standing spots, names free places when blocked, and takes `replace_block`) |
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | done (`feature/world-discovery`: structure, biome, and mob search, landmarks, `WorldKnowledgeStore`, `/locate` only on request; `feature/cave-exploration`: `explore_caves` with lit, hazard-aware exploration, finds, and vein mining) |
-| [31 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
-| [32 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [31 Open-vein gathering](phases/open-vein-gathering.md) | done (`feature/open-vein-gathering`: ores are gathered by veins the bot can walk to, exploring caves for them; tunnelling only on request) |
+| [32 Leading a player](phases/leading-a-player.md) | not started (added; standalone, small; works with any target and pairs with discovery) |
+| [33 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -130,8 +131,9 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 1 session |
 | [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | ½ session |
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | 2 sessions |
-| [31 Leading a player](phases/leading-a-player.md) | ½ session |
-| [32 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [31 Open-vein gathering](phases/open-vein-gathering.md) | ½ session |
+| [32 Leading a player](phases/leading-a-player.md) | ½ session |
+| [33 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
@@ -170,8 +172,9 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [28 Excavating upward and continuing an existing dig](phases/excavation-upward.md) | 14, 15 | - |
 | [29 Placement fixes: furnaces, and signs on fences](phases/placement-fixes.md) | 13, 21 | 16 |
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | 3, 5, 6 | 12, 14 |
-| [31 Leading a player](phases/leading-a-player.md) | 3 | 18, 30 |
-| [32 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [31 Open-vein gathering](phases/open-vein-gathering.md) | 13, 14, 30 | |
+| [32 Leading a player](phases/leading-a-player.md) | 3 | 18, 30 |
+| [33 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 

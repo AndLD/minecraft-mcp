@@ -39,6 +39,8 @@ export interface CollectInput {
   readonly maxDistance: number
   /** What to do when the inventory is full; the standing policy when undefined. */
   readonly onInventoryFull?: InventoryFullKind | undefined
+  /** Only blocks this accepts are dug (open-vein gathering passes the ones with a walkable way to them). */
+  readonly accept?: ((block: BlockInfo) => boolean) | undefined
   /** Called after every block, so a caller can track what is left. */
   readonly onMined?: (mined: number) => void
 }
@@ -112,7 +114,7 @@ export class CollectBlocksSkill implements Skill<CollectInput, CollectOutput> {
       const found = deps.finder.find({ names, maxDistance: input.maxDistance, count: CANDIDATES })
       if (!found.ok) return err({ reason: 'unknown_block', message: found.error })
       const here = deps.vitals.read()?.position
-      const screened = this.screen(found.value, skipped, here)
+      const screened = this.screen(found.value, skipped, here, input.accept)
       const target = screened.usable[0]
       if (target === undefined)
         return this.noTarget(stop, {
@@ -188,11 +190,13 @@ export class CollectBlocksSkill implements Skill<CollectInput, CollectOutput> {
     blocks: readonly BlockInfo[],
     skipped: ReadonlySet<string>,
     here: Position | undefined,
+    accept?: (block: BlockInfo) => boolean,
   ): { usable: BlockInfo[]; protectedLabel: string | undefined } {
     const usable: BlockInfo[] = []
     let protectedLabel: string | undefined
     for (const block of blocks) {
       if (skipped.has(keyOf(block.position))) continue
+      if (accept !== undefined && !accept(block)) continue
       const area = this.deps.guard.protectedAt(block.position)
       if (area !== undefined) {
         protectedLabel ??= area.label

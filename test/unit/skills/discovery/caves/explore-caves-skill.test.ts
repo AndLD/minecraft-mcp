@@ -312,7 +312,9 @@ describe('ExploreCavesSkill', () => {
   it('stops when cancelled, without walking out, and keeps what it found', async () => {
     tunnel()
     world.setBlock(at(2, 60, 1), 'diamond_ore')
-    world.onPlaced = () => { controller.abort(); }
+    world.onPlaced = () => {
+      controller.abort()
+    }
 
     const result = await run()
 
@@ -354,5 +356,50 @@ describe('ExploreCavesSkill', () => {
     const result = await run(wanted({ maxDistance: 30 }))
 
     expect(result).toMatchObject({ ok: true, value: { region: 'ravine' } })
+  })
+
+  describe('stop on find', () => {
+    it('ends at once when a wanted vein with a way to it is in view, and does not walk out', async () => {
+      tunnel()
+      world.setBlock(at(30, 60, 1), 'diamond_ore')
+
+      const result = await run(
+        wanted({ find: ['diamond_ore'], stopOnFind: true, returnOut: false }),
+      )
+
+      expect(result).toMatchObject({ ok: true, value: { stopped: 'found', returned: false } })
+      expect(world.bot.x).toBeGreaterThan(5)
+    })
+
+    it('does not stop for a vein in a sealed pocket, or one that is not wanted, and goes on exploring', async () => {
+      tunnel()
+      world.carve(at(10, 60, 8), at(12, 61, 8)) // an air pocket nobody can walk to
+      world.setBlock(at(11, 60, 9), 'diamond_ore')
+      world.setBlock(at(20, 60, 1), 'iron_ore')
+
+      const result = await run(wanted({ find: ['diamond_ore'], stopOnFind: true }))
+
+      expect(result).toMatchObject({ ok: true, value: { stopped: 'explored', returned: true } })
+    })
+
+    it('stops for a vein found on an earlier trip too (it is still there)', async () => {
+      tunnel()
+      world.setBlock(at(30, 60, 1), 'diamond_ore')
+      await run(wanted({ find: ['diamond_ore'] }))
+      world.bot = at(0.5, 60, 0.5)
+
+      const again = await run(wanted({ find: ['diamond_ore'], stopOnFind: true }))
+
+      expect(again).toMatchObject({ ok: true, value: { stopped: 'found', finds: [] } })
+    })
+
+    it('walks out as usual without returnOut: false', async () => {
+      tunnel()
+
+      const result = await run(wanted({ returnOut: false }))
+
+      expect(result).toMatchObject({ ok: true, value: { returned: false } })
+      expect(world.bot.x).toBeGreaterThan(20)
+    })
   })
 })
