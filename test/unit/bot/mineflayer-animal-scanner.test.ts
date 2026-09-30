@@ -123,4 +123,28 @@ describe('MineflayerAnimalScanner', () => {
     bot.entities = { '1': cow(1, 12) }
     expect(new MineflayerAnimalScanner(holderOf(bot)).nearby(10)).toEqual([])
   })
+
+  it("reads a sheep's colour and whether it is sheared from the wool byte", () => {
+    const bot = new FakeBot()
+    const sheep = (id: number, wool: number | undefined): EntityLike => ({
+      id,
+      type: 'animal',
+      name: 'sheep',
+      position: { x: 11 + id, y: 64, z: -5 },
+      metadata: metadata([...ANIMAL_KEYS, 'wool'], { wool }),
+    })
+    bot.entities = {
+      '1': sheep(1, 0),
+      '2': sheep(2, 3 | 0x10),
+      '3': sheep(3, undefined),
+      '4': cow(4, 20),
+    }
+
+    const [white, sheared, unknown, other] = new MineflayerAnimalScanner(holderOf(bot)).nearby(30)
+
+    expect(white).toMatchObject({ colour: 'white', sheared: false })
+    expect(sheared).toMatchObject({ colour: 'light_blue', sheared: true })
+    expect(unknown?.sheared).toBeUndefined()
+    expect(other?.colour).toBeUndefined()
+  })
 })

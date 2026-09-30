@@ -163,7 +163,9 @@ export class PlantCropsSkill implements Skill<PlantCropsInput, PlantCropsOutput>
               message:
                 seed === 'pumpkin_seeds'
                   ? 'The bot has no pumpkin_seeds. Craft a pumpkin into seeds (one pumpkin gives four); the first pumpkin has to come from the player or a pumpkin patch in the world.'
-                  : `The bot has no ${seed} left to plant.`,
+                  : seed === 'melon_seeds'
+                    ? 'The bot has no melon_seeds. Craft a melon slice into a seed (one slice gives one); the first seeds have to come from the player or from chests in the world (a jungle temple, a mineshaft, a dungeon).'
+                    : `The bot has no ${seed} left to plant.`,
             })
           skipped += 1
           continue

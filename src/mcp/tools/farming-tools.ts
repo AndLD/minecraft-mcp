@@ -9,6 +9,8 @@ import type { HarvestCropsSkill } from '../../skills/farming/harvest-crops-skill
 import type { HarvestTreesSkill } from '../../skills/farming/harvest-trees-skill.js'
 import type { InspectFarmSkill } from '../../skills/farming/inspect-farm-skill.js'
 import type { LureAnimalsSkill } from '../../skills/farming/lure-animals-skill.js'
+import type { MilkCowsSkill } from '../../skills/farming/milk-cows-skill.js'
+import type { ShearSheepSkill } from '../../skills/farming/shear-sheep-skill.js'
 import type { PlantCropsSkill } from '../../skills/farming/plant-crops-skill.js'
 import type { PlantTreesSkill } from '../../skills/farming/plant-trees-skill.js'
 import { TREE_NAMES } from '../../skills/farming/tree-table.js'
@@ -152,7 +154,7 @@ const farmOrAreaShape = {
 
 const plantCropsSchema = z.object({
   ...farmOrAreaShape,
-  crop: z.string().min(1).describe('What to plant: wheat, carrots, potatoes, beetroots, or pumpkin (or the seed item name). Pumpkins grow as stems that stay in place; only the tilled stem rows are planted.'),
+  crop: z.string().min(1).describe('What to plant: wheat, carrots, potatoes, beetroots, pumpkin, or melon (or the seed item name). Pumpkins and melons grow as stems that stay in place; only the tilled stem rows are planted.'),
   max_plants: z.number().int().min(1).optional().describe('Stop after planting this many (default: the whole area).'),
   ...taskOptionsShape,
 })
@@ -200,8 +202,8 @@ const harvestCropsSchema = z.object({
 export class HarvestCropsTool implements ToolDefinition<typeof harvestCropsSchema> {
   readonly name = 'harvest_crops'
   readonly description =
-    'Harvests only fully grown crops on a farm or an area and, by default, replants at once. On a pumpkin field it ' +
-    'breaks the pumpkin blocks and never the stems (nothing to replant). Runs in the ' +
+    'Harvests only fully grown crops on a farm or an area and, by default, replants at once. On a pumpkin or melon field it ' +
+    'breaks the fruit blocks and never the stems (nothing to replant; a melon block gives 3 to 7 slices). Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = harvestCropsSchema
 
@@ -315,6 +317,112 @@ export class BreedAnimalsTool implements ToolDefinition<typeof breedAnimalsSchem
         run: (ctx) =>
           this.skill.run(
             { species: input.species, farm: input.farm, area: input.area, targetCount: input.target_count },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const shearSheepSchema = z.object({
+  ...farmOrAreaShape,
+  count: z.number().int().min(1).optional().describe('Shear at most this many sheep. Every shearable sheep in reach when omitted.'),
+  max_distance: z
+    .number()
+    .min(1)
+    .max(64)
+    .default(24)
+    .describe('Without a farm or area: how far from the bot to look for sheep, in blocks.'),
+  colour: z.string().min(1).optional().describe('Only sheep of this wool colour, for example "white" or "light_blue".'),
+  ...taskOptionsShape,
+})
+
+export class ShearSheepTool implements ToolDefinition<typeof shearSheepSchema> {
+  readonly name = 'shear_sheep'
+  readonly description =
+    'Takes the wool of adult sheep with shears, in a registered pen or area or within max_distance of the bot: walks up ' +
+    'to each sheep, shears it, and picks up the wool. The sheep stay alive (wool grows back). Never touches babies, named, ' +
+    'tamed, saddled, or ridden sheep, and skips one that is sheared already. Result: sheared, wool by colour, skipped ' +
+    'by reason. Needs shears in the inventory: fails no_shears (they are made of 2 iron ingots; it never crafts them ' +
+    'on its own) or no_sheep. Runs in the background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = shearSheepSchema
+
+  constructor(
+    private readonly skill: ShearSheepSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof shearSheepSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Shear sheep',
+        run: (ctx) =>
+          this.skill.run(
+            {
+              farm: input.farm,
+              area: input.area,
+              count: input.count,
+              maxDistance: input.max_distance,
+              colour: input.colour,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const milkCowsSchema = z.object({
+  ...farmOrAreaShape,
+  count: z.number().int().min(1).max(36).default(1).describe('How many buckets of milk are wanted.'),
+  max_distance: z
+    .number()
+    .min(1)
+    .max(64)
+    .default(24)
+    .describe('Without a farm or area: how far from the bot to look for cows, in blocks.'),
+  ...taskOptionsShape,
+})
+
+export class MilkCowsTool implements ToolDefinition<typeof milkCowsSchema> {
+  readonly name = 'milk_cows'
+  readonly description =
+    'Fills empty buckets with milk: walks up to an adult cow (a mooshroom counts), in a registered pen or area or within ' +
+    'max_distance, and uses a bucket on it. Each cow is milked once per call, so the result can be short of the ' +
+    'wanted count (buckets, requested, cows, skipped). Never touches babies, named, tamed, saddled, or ridden cows. ' +
+    'Needs an empty bucket per cow: fails no_bucket (3 iron ingots; it never crafts one on its own) or no_cows. ' +
+    'Runs in the background: poll get_task_status when the reply has status "running".'
+  readonly inputSchema = milkCowsSchema
+
+  constructor(
+    private readonly skill: MilkCowsSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof milkCowsSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Milk cows for ${String(input.count)} buckets`,
+        run: (ctx) =>
+          this.skill.run(
+            {
+              farm: input.farm,
+              area: input.area,
+              count: input.count,
+              maxDistance: input.max_distance,
+            },
             ctx,
           ),
       },

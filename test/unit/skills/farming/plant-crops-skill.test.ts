@@ -360,6 +360,25 @@ describe('PlantCropsSkill', () => {
       expect(s.tiller.calls).toEqual([])
     })
 
+    it('plants melon_seeds in a melon field the same way, and says where seeds come from when there are none', async () => {
+      const s = pumpkinField()
+      const planted = await s.skill.run(
+        { farm: undefined, area: field, crop: 'melon', maxPlants: undefined },
+        context(),
+      )
+      expect(planted).toMatchObject({ ok: true, value: { planted: 4 } })
+      expect(s.placer.placed.map((p) => p.item)).toEqual(Array(4).fill('melon_seeds'))
+
+      const bare = pumpkinField()
+      bare.placer.failure = { reason: 'no_item', message: 'none' }
+      const result = await bare.skill.run(
+        { farm: undefined, area: field, crop: 'melon', maxPlants: undefined },
+        context(),
+      )
+      expect(result).toMatchObject({ ok: false, error: { reason: 'no_seeds' } })
+      if (!result.ok) expect(result.error.message).toContain('melon_seeds')
+    })
+
     it('tills a trampled plot of a stem row again, but never a plot of the free row', async () => {
       const s = pumpkinField()
       s.blocks.blockNames.set(key({ x: 2, y: 64, z: 2 }), 'dirt')

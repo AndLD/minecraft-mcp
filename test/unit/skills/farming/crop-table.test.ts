@@ -87,3 +87,17 @@ describe('stem crops (pumpkin)', () => {
     expect(cropNameOfBlock('stone')).toBeUndefined()
   })
 })
+
+describe('melon', () => {
+  it('is a stem crop like pumpkin: the stem stays and the fruit is harvested', async () => {
+    const { classifyCrop, cropFor, stemCropOfFruit, cropNameOfBlock } = await import(
+      '../../../../src/skills/farming/crop-table.js'
+    )
+    expect(cropFor('melon')?.spec).toMatchObject({ seed: 'melon_seeds', kind: 'stem', stem: 'melon_stem', fruit: 'melon' })
+    expect(cropFor('melon_seeds')?.block).toBe('melon')
+    expect(classifyCrop('melon_stem')?.fruit).toBe('melon')
+    expect(classifyCrop('attached_melon_stem')?.fruit).toBe('melon')
+    expect(stemCropOfFruit('melon')?.stem).toBe('melon_stem')
+    expect(cropNameOfBlock('melon_stem')).toBe('melon')
+  })
+})

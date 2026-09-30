@@ -54,6 +54,9 @@ class FakeInteraction implements AnimalInteraction {
     this.held.push(item)
     return Promise.resolve(this.holdFailure === undefined ? ok(undefined) : err(this.holdFailure))
   }
+  use(entityId: number): Promise<Result<void, AnimalInteractionFailure>> {
+    return this.feed(entityId)
+  }
   feed(entityId: number): Promise<Result<void, AnimalInteractionFailure>> {
     this.fed.push(entityId)
     return Promise.resolve(ok(undefined))
