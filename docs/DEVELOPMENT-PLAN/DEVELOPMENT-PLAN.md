@@ -94,7 +94,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [35 Fishing](phases/fishing.md) | done (`feature/fishing`: `fish` from the shore with a rod, sorting fish, treasure, and junk, optional cooking, and the `fish_and_cook` food policy) |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | done (`feature/smelting-wait`: the furnace window is closed between looks, a cancelled wait leaves the furnace burning and remembers the job in `SmeltJobs`, `smelt` again or `collect: true` takes it, `wait: start_only`, and out of fuel is judged by a stalled furnace) |
 | [37 Organize storage](phases/organize-storage.md) | done (`feature/organize-storage`: `organize_storage` looks into the containers, plans the moves against the room each will have, and carries them out one trip per source; `dry_run` is the default) |
-| [38 Biome-guided search](phases/biome-guided-search.md) | not started (from the backlog: steer the structure search by biome, with biome tables per Minecraft version and a 1.21.1 default) |
+| [38 Biome-guided search](phases/biome-guided-search.md) | done (`feature/biome-guided-search`: `BiomeGuidedExplorer`, `strategy: guided` by default, biome tables per Minecraft version with the 1.21.1 table as the default) |
 | [39 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases

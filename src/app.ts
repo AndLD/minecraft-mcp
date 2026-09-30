@@ -210,6 +210,11 @@ import { ExploreCavesSkill } from './skills/discovery/caves/explore-caves-skill.
 import { FindDetector } from './skills/discovery/caves/find-rules.js'
 import { LightManager } from './skills/discovery/caves/light-manager.js'
 import { VeinMiner } from './skills/discovery/caves/vein-miner.js'
+import {
+  DEFAULT_BIOME_TABLE_VERSION,
+  STRUCTURE_BIOME_TABLES,
+} from './knowledge/structure-biomes/index.js'
+import { StructureBiomeTables } from './knowledge/structure-biomes/structure-biome-tables.js'
 import { ExploreForStructureSkill } from './skills/discovery/explore-for-structure-skill.js'
 import { defaultSignatures } from './skills/discovery/structure-signatures.js'
 import { StructureScanner } from './skills/discovery/structure-scanner.js'
@@ -1232,16 +1237,24 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     botName: () => connection.target?.username,
   })
   const structureScanner = new StructureScanner(blocks, entities, defaultSignatures())
+  const discoveryBiomes = new MineflayerBiomeReader(connection)
   const exploreForStructure = new ExploreForStructureSkill({
     navigator,
     vitals,
     blocks,
-    biomes: new MineflayerBiomeReader(connection),
+    biomes: discoveryBiomes,
     entities,
     scanner: structureScanner,
     knowledge,
     clock,
     random,
+    biomeTables: new StructureBiomeTables({
+      tables: STRUCTURE_BIOME_TABLES,
+      defaultVersion: DEFAULT_BIOME_TABLE_VERSION,
+      version: config.version,
+      biomes: discoveryBiomes,
+      logger,
+    }),
     commands: serverCommands,
   })
   const exploreCaves = new ExploreCavesSkill({

@@ -1,10 +1,16 @@
 import { describe, expect, it } from '@jest/globals'
+import {
+  DEFAULT_BIOME_TABLE_VERSION,
+  STRUCTURE_BIOME_TABLES,
+} from '../../src/knowledge/structure-biomes/index.js'
+import { StructureBiomeTables } from '../../src/knowledge/structure-biomes/structure-biome-tables.js'
 import { WorldKnowledgeStore } from '../../src/knowledge/world-knowledge-store.js'
 import { ExploreForStructureSkill } from '../../src/skills/discovery/explore-for-structure-skill.js'
 import { StructureScanner } from '../../src/skills/discovery/structure-scanner.js'
 import { defaultSignatures } from '../../src/skills/discovery/structure-signatures.js'
 import { DiscoveryNavigator, DiscoveryWorld, GROUND } from '../fakes/discovery-fakes.js'
 import { FakeClock } from '../fakes/fake-clock.js'
+import { FakeLogger } from '../fakes/fake-logger.js'
 import { FakeRandom } from '../fakes/fake-random.js'
 import { InMemoryStateStore } from '../fakes/state-fakes.js'
 
@@ -86,5 +92,55 @@ describe('exploring for a structure, and remembering it', () => {
     )
     expect(again).toMatchObject({ ok: true, value: { alreadyKnown: true } })
     expect(trips.trips).toEqual([])
+  })
+
+  it('searches by biome with the real tables, on a version that has none, and saves the find', async () => {
+    const files = new InMemoryStateStore()
+    const clock = new FakeClock(0)
+    const world = new DiscoveryWorld()
+    world.biomeNames = [...world.biomeNames, 'ocean', 'savanna', 'beach']
+    world.biome('desert', 110, -80, 260, 80).biome('ocean', -2000, -2000, -30, 2000)
+    world.put(170, GROUND + 1, 10, 'chiseled_sandstone').put(171, GROUND + 1, 10, 'tnt')
+    const logger = new FakeLogger()
+    const knowledge = new WorldKnowledgeStore(clock)
+    await knowledge.attach(files)
+    const skill = new ExploreForStructureSkill({
+      navigator: new DiscoveryNavigator(world),
+      vitals: world,
+      blocks: world,
+      biomes: world,
+      entities: world,
+      scanner: new StructureScanner(world, world, defaultSignatures()),
+      knowledge,
+      clock,
+      random: new FakeRandom(),
+      biomeTables: new StructureBiomeTables({
+        tables: STRUCTURE_BIOME_TABLES,
+        defaultVersion: DEFAULT_BIOME_TABLE_VERSION,
+        version: '1.20.4',
+        biomes: world,
+        logger,
+      }),
+    })
+
+    const found = await skill.run(
+      {
+        kind: 'desert_temple',
+        maxDistance: 500,
+        maxMinutes: 10,
+        strategy: 'guided',
+        useLocate: false,
+        onlyNew: false,
+        returnTo: undefined,
+      },
+      { signal: new AbortController().signal, progress: () => undefined },
+    )
+    knowledge.detach()
+
+    expect(found).toMatchObject({ ok: true, value: { searched: 'guided', found: { x: 170 } } })
+    expect(logger.entries.filter((entry) => entry.level === 'info')).toHaveLength(1)
+    const after = new WorldKnowledgeStore(clock)
+    await after.attach(files)
+    expect(after.structures()).toMatchObject([{ kind: 'desert_temple', x: 170 }])
   })
 })

@@ -15,6 +15,8 @@ interface TaskView {
   result: {
     found: { kind: string; name?: string; x: number; y: number; z: number; source: string }
     reached: boolean
+    hops: number
+    searched: string
     discovered: { kind: string }[]
     returned?: boolean
   } | null
@@ -208,6 +210,28 @@ describe('world discovery on a real Minecraft server', () => {
       await session.bot.call('list_known_structures'),
     )
     expect(listed.biomes).toMatchObject([{ name: 'desert' }])
+  }, 300_000)
+
+  it('finds a desert temple by walking to the desert, not by circling: a guided search takes few hops', async () => {
+    const from = cell(90, -4, -25)
+    const to = cell(150, 4, 25)
+    painted.push([from, to])
+    await world.command(
+      `fillbiome ${String(from.x)} ${String(from.y)} ${String(from.z)} ${String(to.x)} ${String(to.y)} ${String(to.z)} minecraft:desert`,
+    )
+    await put(cell(125, 0, 0), 'chiseled_sandstone')
+    await put(cell(126, 0, 0), 'tnt')
+    await pause(3_000) // the server resends the chunks; the bot reads the new biome from them
+
+    const run = await explore({ kind: 'desert_temple', max_distance: 300, use_locate: false })
+
+    if (run.failed) throw new Error(`The search did not succeed: ${run.text}`)
+    expect(run.task.result).toMatchObject({
+      found: { kind: 'desert_temple', x: 125, z: 0, source: 'scan' },
+      searched: 'guided',
+    })
+    // The blob search needs a dozen hops or more to cover ground out to 125 blocks; the guided one walks there.
+    expect((run.task.result as { hops: number }).hops).toBeLessThanOrEqual(8)
   }, 300_000)
 
   it('finds a wolf standing 55 blocks away and walks up to it', async () => {

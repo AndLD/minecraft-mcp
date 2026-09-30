@@ -6,8 +6,8 @@ import type { ExplorationState, ExplorationStrategy } from './exploration-strate
 export const WAYPOINT_STEP = 40
 
 const across = (a: Position, b: Position): number => Math.hypot(a.x - b.x, a.z - b.z)
-const keyOf = (i: number, j: number): string => `${String(i)},${String(j)}`
-const cellOf = (position: Position, origin: Position, step: number) => ({
+export const keyOf = (i: number, j: number): string => `${String(i)},${String(j)}`
+export const cellOf = (position: Position, origin: Position, step: number) => ({
   i: Math.round((position.x - origin.x) / step),
   j: Math.round((position.z - origin.z) / step),
 })

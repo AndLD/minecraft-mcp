@@ -16,6 +16,8 @@ import type {
   StructureRecord,
   WorldKnowledgeStore,
 } from '../../knowledge/world-knowledge-store.js'
+import type { StructureBiomeTables } from '../../knowledge/structure-biomes/structure-biome-tables.js'
+import { BiomeGuidedExplorer } from './biome-guided-explorer.js'
 import type { ExplorationStrategy } from './exploration-strategy.types.js'
 import { FrontierExplorer, SpiralExplorer, TowardExplorer } from './exploration-strategies.js'
 import { parseLocateReply } from './locate-reply.js'
@@ -23,7 +25,7 @@ import { matchName } from './name-match.js'
 import type { StructureScanner } from './structure-scanner.js'
 import { findSurface } from './surface-finder.js'
 
-export type ExplorationStyle = 'spiral' | 'frontier'
+export type ExplorationStyle = 'spiral' | 'frontier' | 'guided'
 
 /** Exactly one of `kind`, `biome`, and `mob` says what to look for. */
 export interface ExploreForStructureInput {
@@ -68,6 +70,8 @@ export interface ExploreOutput {
   /** Other structures seen on the way, and now recorded. */
   readonly discovered: readonly StructureRecord[]
   readonly hops: number
+  /** How the ground was searched: `guided` (by biome), `frontier`, or `spiral` (none when nothing was walked). */
+  readonly searched?: ExplorationStyle
   readonly returned?: boolean
 }
 
@@ -81,6 +85,8 @@ export interface ExploreForStructureDeps {
   readonly knowledge: WorldKnowledgeStore
   readonly clock: Clock
   readonly random: Random
+  /** Which biomes each structure generates in. Without it a guided search is a frontier search. */
+  readonly biomeTables?: StructureBiomeTables
   /** Absent where the server cannot be asked. */
   readonly commands?: ServerCommands
 }
@@ -225,6 +231,7 @@ class Search {
   private hops = 0
   private failures = 0
   private foundHere: Found | undefined
+  private searched: ExplorationStyle | undefined
 
   constructor(
     private readonly deps: ExploreForStructureDeps,
@@ -252,12 +259,30 @@ class Search {
     const located = await this.locate()
     if (located !== undefined) return located
 
-    const strategy: ExplorationStrategy =
-      input.strategy === 'spiral' ? new SpiralExplorer() : new FrontierExplorer(this.deps.random)
-    const stopped = await this.travel(strategy)
+    const strategy = this.chooseStrategy()
+    this.searched = strategy.style
+    const stopped = await this.travel(strategy.explorer)
     const seenAfter = this.seen()
     if (seenAfter !== undefined) return this.finish(seenAfter)
     return this.failure(stopped)
+  }
+
+  /**
+   * `guided` walks by biome, but only for a structure that has a biome rule; anything else (a biome or mob, a kind
+   * with no rule, or no tables at all) is the frontier search, which is what `guided` falls back to inside as well.
+   */
+  private chooseStrategy(): { explorer: ExplorationStrategy; style: ExplorationStyle } {
+    const { input, seek, deps } = this
+    if (input.strategy === 'spiral') return { explorer: new SpiralExplorer(), style: 'spiral' }
+    if (input.strategy === 'guided' && seek.type === 'structure') {
+      const rule = deps.biomeTables?.ruleFor(seek.kind)
+      if (rule !== undefined)
+        return {
+          explorer: new BiomeGuidedExplorer(deps.biomes, rule, deps.random),
+          style: 'guided',
+        }
+    }
+    return { explorer: new FrontierExplorer(deps.random), style: 'frontier' }
   }
 
   /** What the knowledge store already holds of the wanted thing (a mob is never known: it moves). */
@@ -498,6 +523,7 @@ class Search {
       distanceFromStart: Math.round(flat(found, this.origin)),
       discovered: this.discovered.filter((entry) => entry.id !== found.id),
       hops: this.hops,
+      ...(this.searched === undefined ? {} : { searched: this.searched }),
     }
   }
 
@@ -510,6 +536,7 @@ class Search {
     const detail = {
       stopped,
       hops: this.hops,
+      ...(this.searched === undefined ? {} : { searched: this.searched }),
       farthest: covered,
       distanceFromStart: Math.round(distanceBetween(this.current, this.origin)),
       discovered: this.discovered,
