@@ -19,6 +19,12 @@ const jobSchema = z.object({
   fuel: z.string(),
   /** Epoch milliseconds of the start. */
   startedAt: z.number(),
+  /** The dimension the furnace stands in, so a job in another one is known to be out of reach. */
+  dimension: z.string().default('overworld'),
+  /** No smelt task is waiting for this job: it was started with `start_only` or its wait was cut short. */
+  detached: z.boolean().default(false),
+  /** The `smelt_ready` signal for this job has been sent. */
+  readyNotified: z.boolean().default(false),
 })
 
 export type SmeltJob = z.output<typeof jobSchema>
@@ -41,17 +47,28 @@ const sameFurnace = (a: SmeltJob, b: { x: number; y: number; z: number }): boole
 export class SmeltJobs implements ProfileScoped {
   private store: StateStore | undefined
   private jobs: SmeltJob[] = []
+  private readonly listeners = new Set<() => void>()
 
   async attach(store: StateStore): Promise<readonly string[]> {
     const loaded = await store.load(smeltJobsDocument)
     this.store = store
     this.jobs = [...loaded.value.jobs]
+    this.changed()
     return loaded.warning === undefined ? [] : [loaded.warning]
   }
 
   detach(): void {
     this.store = undefined
     this.jobs = []
+    this.changed()
+  }
+
+  /** Calls `listener` after every change to the jobs, and after a world is opened or closed. Returns how to stop. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   all(): readonly SmeltJob[] {
@@ -80,5 +97,10 @@ export class SmeltJobs implements ProfileScoped {
 
   private save(): void {
     this.store?.save(smeltJobsDocument, { jobs: this.jobs })
+    this.changed()
+  }
+
+  private changed(): void {
+    for (const listener of [...this.listeners]) listener()
   }
 }

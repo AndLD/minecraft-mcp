@@ -2,6 +2,7 @@ import type { Clock } from '../core/clock.port.js'
 import { DROP_DESPAWN_MS, type DropRecords } from './drop-records.js'
 import type { InstructionLog } from './instruction-log.js'
 import type { NotesStore } from './notes-store.js'
+import { readyAt } from '../skills/smelting/smelt-job-watcher.js'
 import type { SmeltJobs } from './smelt-jobs.js'
 import type { StandingInstructions } from './standing-instructions.js'
 import type { TaskJournal } from './task-journal.js'
@@ -39,6 +40,9 @@ export interface SessionBriefing {
     readonly furnace: { readonly x: number; readonly y: number; readonly z: number }
     readonly count: number
     readonly collected: number
+    readonly dimension: string
+    /** Seconds until the furnace should be done (0 when it should be already). */
+    readonly readyInSeconds: number
   }[]
   readonly standingInstructions: Readonly<Record<string, string>>
   readonly notes: readonly {
@@ -154,6 +158,8 @@ export class SessionBriefingBuilder {
       furnace: { x: job.x, y: job.y, z: job.z },
       count: job.count,
       collected: job.collected,
+      dimension: job.dimension,
+      readyInSeconds: Math.max(0, Math.round((readyAt(job) - clock.now()) / 1000)),
     }))
     if (waitingJobs.length > 0)
       nextSteps.push(

@@ -76,6 +76,7 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     scheduler: new AutoScheduler(clock),
     navigator,
     jobs,
+    vitals,
   })
   /** Smelting completes the moment the furnace is looked at. */
   furnaces.session.onLook = () => {
@@ -96,6 +97,7 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     crafted,
     crafterResult,
     jobs,
+    vitals,
   }
 }
 
@@ -116,6 +118,7 @@ describe('SmeltItemsSkill', () => {
         smelted: 5,
         requested: 5,
         fuel: 'coal',
+        fuelUsed: [], // the fake furnace never burns what it is given, so all of it comes back
         pending: 0,
         furnace: { x: 3, y: 64, z: 0 },
       },
@@ -591,6 +594,183 @@ describe('SmeltItemsSkill, the wait', () => {
 
     expect(furnaces.session.log).toContain('took input raw_iron 3')
     expect(jobs.all()).toEqual([])
+  })
+})
+
+describe('SmeltItemsSkill, fuel top-up', () => {
+  /** A furnace that burns what it is given: the fuel slot is empty at every look, and smelting takes one look. */
+  function burning(items: Record<string, number>) {
+    const s = setup(items)
+    const session = s.furnaces.session
+    const smelts = session.onLook
+    session.onLook = () => {
+      session.fuel = undefined
+      smelts()
+    }
+    // What goes into the furnace leaves the bag, as it does in the game.
+    const spend = (item: string, count: number): void => {
+      const value = s.inventory.value
+      if (value === undefined) return
+      s.inventory.value = {
+        ...value,
+        stacks: value.stacks
+          .map((stack) => (stack.name === item ? { ...stack, count: stack.count - count } : stack))
+          .filter((stack) => stack.count > 0),
+      }
+    }
+    const putFuel = session.putFuel.bind(session)
+    session.putFuel = (item, count) => {
+      spend(item, count)
+      return putFuel(item, count)
+    }
+    return s
+  }
+
+  it('runs a job that the first kind of fuel does not cover, putting in the next kind at a look', async () => {
+    const s = burning({ raw_iron: 20, coal: 1, oak_planks: 10 })
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 20, requested: 20, pending: 0 } })
+    const fuelLines = s.furnaces.session.log.filter((line) => line.startsWith('fuel'))
+    // The planks cover more items than the one coal, so they go in first; the coal is put in at a later look.
+    expect(fuelLines[0]).toMatch(/^fuel oak_planks/)
+    expect(fuelLines[1]).toBe('fuel coal 1')
+    expect(result.ok && result.value.fuelUsed).toEqual([
+      { name: 'oak_planks', count: 10 },
+      { name: 'coal', count: 1 },
+    ])
+  })
+
+  it('counts all the fuel in the bag, not just the first kind, when it picks how many to smelt', async () => {
+    const some = await burning({ raw_iron: 40, coal: 1, oak_planks: 4 }).skill.run(
+      smelt('raw_iron', 14),
+      skillContext().context,
+    ) // 8 + 6 = 14 items of fuel
+    const all = await burning({ raw_iron: 40, coal: 1, oak_planks: 4 }).skill.run(
+      smelt('raw_iron'),
+      skillContext().context,
+    )
+
+    expect(some).toMatchObject({ ok: true, value: { smelted: 14, requested: 14 } })
+    expect(all).toMatchObject({ ok: true, value: { smelted: 14, requested: 40 } })
+  })
+
+  it('puts back in the kind of fuel the job started with while the bag has some', async () => {
+    const s = burning({ raw_iron: 30, coal: 6, oak_planks: 10 })
+
+    await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    const fuelLines = s.furnaces.session.log.filter((line) => line.startsWith('fuel'))
+    expect(fuelLines.length).toBeGreaterThan(0)
+    expect(fuelLines.every((line) => line.startsWith('fuel coal'))).toBe(true)
+  })
+
+  it('does not put more in while the fuel slot still holds fuel', async () => {
+    const s = setup({ raw_iron: 3, coal: 5 })
+
+    await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(s.furnaces.session.log.filter((line) => line.startsWith('fuel'))).toEqual([
+      'fuel coal 1',
+    ])
+  })
+
+  it('puts nothing in when the bag has no fuel left', async () => {
+    const s = burning({ raw_iron: 3, coal: 1 })
+    const looks = s.furnaces.session.onLook
+    s.furnaces.session.onLook = () => {
+      // The bag is empty once the first fuel is in the furnace.
+      s.inventory.value = { stacks: [], emptySlots: 30, heldItem: undefined }
+      looks()
+    }
+
+    await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(s.furnaces.session.log.filter((line) => line.startsWith('fuel'))).toEqual([
+      'fuel coal 1',
+    ])
+  })
+
+  it('reports only the fuel that was really burned when the rest comes back', async () => {
+    const s = setup({ raw_iron: 3, coal: 4 })
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { fuelUsed: [] } }) // the fake burns none of it
+  })
+})
+
+describe('SmeltItemsSkill, jobs left in a furnace', () => {
+  it('marks a job left with start_only as detached, for the ready signal', async () => {
+    const s = setup({ raw_iron: 4, coal: 1 })
+    s.furnaces.session.onLook = () => undefined
+
+    await s.skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+
+    expect(s.jobs.all()).toMatchObject([
+      { item: 'raw_iron', detached: true, readyNotified: false, dimension: 'overworld' },
+    ])
+  })
+
+  it('a job that a task is waiting for is not detached, and is gone when done', async () => {
+    const s = setup({ raw_iron: 3, coal: 1 })
+    const seen: (boolean | undefined)[] = []
+    const base = s.furnaces.session.onLook
+    s.furnaces.session.onLook = () => {
+      seen.push(s.jobs.forItem('raw_iron')?.detached)
+      base()
+    }
+
+    await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(seen.every((detached) => detached !== true)).toBe(true)
+    expect(s.jobs.all()).toEqual([])
+  })
+
+  it('detaches a job whose wait was cut short', async () => {
+    const s = setup({ raw_iron: 3, coal: 1 })
+    const { context, controller } = skillContext()
+    s.furnaces.session.onLook = () => {
+      if (s.furnaces.session.input !== undefined) controller.abort()
+    }
+
+    await s.skill.run(smelt('raw_iron'), context)
+
+    expect(s.jobs.all()).toMatchObject([{ detached: true }])
+  })
+
+  it('does not ask for the ready signal again after a collect that leaves items once the estimate has passed', async () => {
+    const s = setup({ raw_iron: 4, coal: 1 })
+    s.furnaces.session.onLook = () => undefined
+    await s.skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    s.clock.advance(60_000) // well past 4 items
+    s.furnaces.session.onLook = () => {
+      s.furnaces.session.output = { name: 'iron_ingot', count: 1 }
+    }
+
+    await s.skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(s.jobs.all()).toMatchObject([{ detached: true, readyNotified: true }])
+  })
+
+  it('leaves a job in another dimension alone, and says where it is', async () => {
+    const s = setup({ raw_iron: 4, coal: 1 })
+    s.furnaces.session.onLook = () => undefined
+    await s.skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    s.vitals.vitals = buildVitals({ dimension: 'minecraft:the_nether' })
+
+    const result = await s.skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_far' } })
+    expect(!result.ok && result.error.message).toContain('the_nether')
+    expect(s.jobs.all()).toHaveLength(1)
   })
 })
 

@@ -163,7 +163,10 @@ describe('SessionBriefingBuilder: smelting jobs', () => {
       loaded: 12,
       collected: 4,
       fuel: 'coal',
-      startedAt: 0,
+      startedAt: stack.clock.now() - 20_000,
+      dimension: 'overworld',
+      detached: true,
+      readyNotified: false,
     })
 
     const briefing = stack.briefing.build()
@@ -175,6 +178,8 @@ describe('SessionBriefingBuilder: smelting jobs', () => {
         furnace: { x: 10, y: 64, z: -3 },
         count: 12,
         collected: 4,
+        dimension: 'overworld',
+        readyInSeconds: 100,
       },
     ])
     expect(briefing.nextSteps.join(' ')).toContain('collect')

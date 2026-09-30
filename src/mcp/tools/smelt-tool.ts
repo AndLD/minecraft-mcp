@@ -54,7 +54,10 @@ export class SmeltTool implements ToolDefinition<typeof schema> {
     'the background: poll get_task_status when the reply has status "running". While the items cook the bot does not stand ' +
     'looking into the furnace: it closes the window and looks again after a while, so a chat message or a new task can come ' +
     'in (cancel_task or replace: true). A wait that is cut short leaves the furnace burning and remembers the job: call smelt ' +
-    'again with the same item, or with collect: true, to take the result. `wait: start_only` loads and returns at once. When a ' +
+    'again with the same item, or with collect: true, to take the result. `wait: start_only` loads and returns at once; a job ' +
+    'left in a furnace announces itself with a smelt_ready event (in wait_for_chat) when it should be done, so the bot can do ' +
+    'other work meanwhile. Fuel of every kind in the bag is used: more is put in at each look, so a big job is not cut to the ' +
+    'first load (fuelUsed says what was burned). When a ' +
     'job ends any other way, whatever is left in the furnace goes back to the inventory. Fails with not_smeltable, ' +
     'missing_items, no_fuel, no_furnace, no_pending_job, furnace_busy, timeout, or out_of_fuel; the message says how many ' +
     'were done. The result has `pending` (items still in the furnace) and `furnace`.'

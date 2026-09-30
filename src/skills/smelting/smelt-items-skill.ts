@@ -4,14 +4,17 @@ import { countItems } from '../../core/inventory-counts.js'
 import type { InventoryReader } from '../../core/inventory.port.js'
 import type { Navigator } from '../../core/navigator.port.js'
 import type { Position } from '../../core/position.types.js'
+import type { ItemCount } from '../../core/recipes.port.js'
 import { err, ok } from '../../core/result.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { Skill, SkillContext, SkillFailure, SkillResult } from '../../core/skill.types.js'
 import { sleep } from '../../core/sleep.js'
+import type { VitalsReader } from '../../core/vitals.port.js'
 import type { SmeltJob, SmeltJobs } from '../../state/smelt-jobs.js'
 import type { ItemCrafter } from '../crafting/craft-item-skill.js'
 import type { Workstations } from '../crafting/workstations.js'
-import { chooseFuel } from './fuel.js'
+import { chooseFuel, totalFuelCapacity } from './fuel.js'
+import { plain, readyAt } from './smelt-job-watcher.js'
 import { SMELTABLE_ITEMS, SMELTING_TABLE } from './smelting-table.js'
 
 const FURNACE = 'furnace'
@@ -47,7 +50,10 @@ export interface SmeltOutput {
   readonly produced: string
   readonly smelted: number
   readonly requested: number
+  /** The fuel the job started with. */
   readonly fuel: string
+  /** Fuel that was burned in this call (put in, less what was taken back out), by item: it may be several kinds. */
+  readonly fuelUsed: readonly ItemCount[]
   /** Items still cooking or waiting in the furnace (a job left for later); 0 when everything is collected. */
   readonly pending: number
   /** The furnace block. */
@@ -71,6 +77,8 @@ export interface SmeltItemsDeps {
   readonly navigator: Navigator
   /** Jobs left burning by a wait that was cut short. */
   readonly jobs: SmeltJobs
+  /** Where the bot is (the dimension a job's furnace stands in). Without it every furnace is assumed reachable. */
+  readonly vitals?: VitalsReader
 }
 
 /** How a pass over the furnace ended. */
@@ -136,7 +144,18 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
             ? 'The bot has no fuel (coal, charcoal, planks, logs, or sticks).'
             : `The bot has no usable ${input.fuel} to burn.`,
       })
-    const toSmelt = Math.min(requested, fuel.capacity)
+    // All the fuel in the bag counts, not just the first kind: the rest is put in at the looks as the job goes on.
+    const toSmelt = Math.min(
+      requested,
+      Math.max(
+        fuel.capacity,
+        totalFuelCapacity({
+          inventory: counts,
+          reserved: { name: input.item, count: requested },
+          preferred: input.fuel,
+        }),
+      ),
+    )
 
     const furnace = await deps.workstations.ensure(FURNACE, context)
     if (!furnace.ok) return furnace
@@ -152,6 +171,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
           message: `The furnace is already smelting ${busy.input.name}.`,
         })
       await holder.session.putFuel(fuel.item, fuel.amount)
+      const used = new Map<string, number>([[fuel.item, fuel.amount]])
       const job: SmeltJob = {
         x: furnace.value.x,
         y: furnace.value.y,
@@ -163,9 +183,13 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         collected: 0,
         fuel: fuel.item,
         startedAt: deps.clock.now(),
+        dimension: plain(deps.vitals?.read()?.dimension ?? 'overworld'),
+        detached: false,
+        readyNotified: false,
       }
       deps.jobs.put(job)
-      return await this.finish(job, requested, holder, await this.drive(job, holder, wait, context))
+      const outcome = await this.drive(job, holder, wait, used, context)
+      return await this.finish(job, requested, holder, outcome, used)
     } catch (error) {
       await this.takeEverything(holder.session).catch(() => undefined)
       deps.jobs.remove(furnace.value)
@@ -201,6 +225,13 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
   ): Promise<SkillResult<SmeltOutput>> {
     const { deps } = this
     const at = { x: job.x, y: job.y, z: job.z }
+    const here = deps.vitals?.read()?.dimension
+    if (here !== undefined && plain(here) !== plain(job.dimension))
+      return err({
+        reason: 'furnace_far',
+        message: `The furnace at ${String(job.x)} ${String(job.y)} ${String(job.z)} is in the ${plain(job.dimension)}, and the bot is in the ${plain(here)}. Go back there to collect it; the job is kept.`,
+        detail: { furnace: at, dimension: job.dimension },
+      })
     const walked = await deps.navigator.goToPosition(at, FURNACE_REACH, { signal: context.signal })
     if (!walked.ok)
       return err({
@@ -215,10 +246,15 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         message: `The furnace at ${String(job.x)} ${String(job.y)} ${String(job.z)} could not be opened, so its job was dropped: ${opened.error}`,
       })
     }
+    // A task waits for this job from here on: no ready signal is needed until it is left again.
+    deps.jobs.update(at, { detached: false })
     const holder = { session: opened.value }
     try {
-      return await this.finish(job, job.count, holder, await this.drive(job, holder, wait, context))
+      const used = new Map<string, number>()
+      const outcome = await this.drive(job, holder, wait, used, context)
+      return await this.finish(job, job.count, holder, outcome, used)
     } catch (error) {
+      deps.jobs.update(at, { detached: true })
       return err({
         reason: 'furnace_failed',
         message: `The furnace could not be used: ${error instanceof Error ? error.message : String(error)}`,
@@ -234,19 +270,28 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     requested: number,
     holder: { session: FurnaceSession },
     outcome: Drive,
+    used: Map<string, number>,
   ): Promise<SkillResult<SmeltOutput>> {
-    const { jobs } = this.deps
+    const { jobs, clock } = this.deps
     const furnace = { x: job.x, y: job.y, z: job.z }
     const collected = jobs.forItem(job.item)?.collected ?? job.count
+    const burned = (): ItemCount[] =>
+      [...used].filter(([, count]) => count > 0).map(([name, count]) => ({ name, count }))
     const done = (extra: { pending: number }): SmeltOutput => ({
       item: job.item,
       produced: job.produced,
       smelted: outcome.smelted,
       requested,
       fuel: job.fuel,
+      fuelUsed: burned(),
       furnace,
       ...extra,
     })
+    if (outcome.leave) {
+      // Left in the furnace: from here on the ready signal watches it. When the estimate is already past and items
+      // remain, something is wrong (fuel, most likely), so the signal is not sent again.
+      jobs.update(furnace, { detached: true, readyNotified: readyAt(job) <= clock.now() })
+    }
     if (outcome.failure === undefined && outcome.leave)
       return ok(done({ pending: Math.max(0, job.count - collected) }))
     if (outcome.failure !== undefined && outcome.leave)
@@ -255,7 +300,8 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         message: `${outcome.failure.message} ${String(outcome.smelted)} ${job.produced} collected so far; the rest is still in the furnace at ${String(job.x)} ${String(job.y)} ${String(job.z)}: call smelt again (or with collect) to go on.`,
         detail: { pending: Math.max(0, job.count - collected), furnace },
       })
-    await this.takeEverything(holder.session)
+    const back = await this.takeEverything(holder.session)
+    if (back !== undefined) used.set(back.name, (used.get(back.name) ?? 0) - back.count)
     jobs.remove(furnace)
     if (outcome.failure !== undefined)
       return err({
@@ -285,6 +331,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     job: SmeltJob,
     holder: { session: FurnaceSession },
     wait: 'until_done' | 'start_only',
+    used: Map<string, number>,
     context: SkillContext,
   ): Promise<Drive> {
     const { clock, scheduler, jobs } = this.deps
@@ -319,6 +366,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         state.loaded += batch
         jobs.update(furnace, { loaded: state.loaded })
       }
+      await this.topUpFuel(session, job, state, used)
       const now = session.contents()
       if (now.input?.count !== lastInput) {
         lastInput = now.input?.count
@@ -374,10 +422,40 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     }
   }
 
-  /** Puts whatever is still in the furnace back into the inventory. */
-  private async takeEverything(session: FurnaceSession): Promise<void> {
+  /**
+   * Puts more fuel in when the fuel slot is empty and items are still to cook, from what the bot carries: the same
+   * kind the job started with while there is some, otherwise by the usual order. An empty slot proves nothing about
+   * the flame (the furnace takes a fuel item into its burn queue at once), but a spare item put in is not lost:
+   * whatever is unused comes back out when the job ends. The job is limited by the fuel in the bag, not by the first
+   * load, so a big job runs in stages.
+   */
+  private async topUpFuel(
+    session: FurnaceSession,
+    job: SmeltJob,
+    state: { loaded: number; collected: number },
+    used: Map<string, number>,
+  ): Promise<void> {
+    const left = job.count - state.collected
+    if (left <= 0 || state.loaded === 0 || session.contents().fuel !== undefined) return
+    const inventory = countItems(this.deps.inventory.snapshot())
+    const notLoaded = job.count - state.loaded
+    const options = {
+      inventory,
+      toSmelt: left,
+      reserved: notLoaded > 0 ? { name: job.item, count: notLoaded } : undefined,
+    }
+    const choice = chooseFuel({ ...options, preferred: job.fuel }) ?? chooseFuel(options)
+    if (choice === undefined) return
+    const amount = Math.min(choice.amount, STACK_SIZE)
+    await session.putFuel(choice.item, amount)
+    used.set(choice.item, (used.get(choice.item) ?? 0) + amount)
+  }
+
+  /** Puts whatever is still in the furnace back into the inventory. Returns the fuel that came back. */
+  private async takeEverything(session: FurnaceSession): Promise<ItemCount | undefined> {
     await session.takeOutput()
     await session.takeInput()
-    await session.takeFuel()
+    const fuel = await session.takeFuel()
+    return fuel === undefined ? undefined : { name: fuel.name, count: fuel.count }
   }
 }

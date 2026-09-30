@@ -171,6 +171,48 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
     expect([...h.bot.furnaces.values()].every((furnace) => furnace.closed)).toBe(true)
   })
 
+  it('a job left with start_only announces itself with smelt_ready, and collect takes the ingots', async () => {
+    const h = await start((bot) => {
+      bot.inventoryItems = [
+        { name: 'raw_iron', count: 3 },
+        { name: 'cobblestone', count: 8 },
+        { name: 'coal', count: 1 },
+        { name: 'crafting_table', count: 1 },
+      ]
+    })
+
+    const started = await call(h, 'smelt', {
+      item: 'raw_iron',
+      wait: 'start_only',
+      wait_seconds: 30,
+    })
+
+    expect(task(started)).toMatchObject({
+      status: 'succeeded',
+      result: { smelted: 0, pending: 3 },
+    })
+    const early = await call(h, 'wait_for_chat', { timeout_seconds: 1 })
+    expect((early.data as { events: { type: string }[] }).events).toEqual([])
+
+    // The bot is free meanwhile; when the estimate is up the agent is told.
+    h.scheduler.advance(31_000)
+    await h.settle()
+    const heard = await call(h, 'wait_for_chat', { timeout_seconds: 1 })
+    const events = (heard.data as { events: { type: string; message: string }[] }).events
+    expect(events.map((event) => event.type)).toContain('smelt_ready')
+    expect(events.find((event) => event.type === 'smelt_ready')?.message).toContain('collect: true')
+
+    const collected = await call(h, 'smelt', { collect: true, wait_seconds: 30 })
+
+    expect(task(collected)).toMatchObject({
+      status: 'succeeded',
+      result: { item: 'raw_iron', smelted: 3, pending: 0 },
+    })
+    expect(h.bot.count('iron_ingot')).toBe(3)
+    const again = await call(h, 'wait_for_chat', { timeout_seconds: 1 })
+    expect((again.data as { events: { type: string }[] }).events).toEqual([]) // told once
+  })
+
   it('mines stone with the wooden pickaxe, refuses iron ore until it has a stone pickaxe, then gets iron', async () => {
     const h = await start((bot) => {
       wall(bot, 'stone', 20, -5, 6)

@@ -13,6 +13,9 @@ const job = (over: Partial<SmeltJob> = {}): SmeltJob => ({
   collected: 0,
   fuel: 'coal',
   startedAt: 100,
+  dimension: 'overworld',
+  detached: false,
+  readyNotified: false,
   ...over,
 })
 
@@ -70,5 +73,54 @@ describe('SmeltJobs', () => {
     store.warnOnLoad = 'recovered'
 
     expect(await new SmeltJobs().attach(store)).toEqual(['recovered'])
+  })
+
+  it('tells listeners after every change, and after a world is opened or closed, until they stop', async () => {
+    const jobs = new SmeltJobs()
+    let calls = 0
+    const stop = jobs.subscribe(() => {
+      calls += 1
+    })
+
+    await jobs.attach(new InMemoryStateStore())
+    jobs.put(job())
+    jobs.update({ x: 1, y: 64, z: 2 }, { collected: 1 })
+    jobs.remove({ x: 1, y: 64, z: 2 })
+    jobs.detach()
+    expect(calls).toBe(5)
+
+    stop()
+    jobs.put(job())
+    expect(calls).toBe(5)
+  })
+
+  it('reads a job saved before dimension, detached, and readyNotified existed', async () => {
+    const store = new InMemoryStateStore()
+    store.files.set('smelt-jobs', {
+      version: 1,
+      data: {
+        jobs: [
+          {
+            x: 1,
+            y: 64,
+            z: 2,
+            item: 'raw_iron',
+            produced: 'iron_ingot',
+            count: 8,
+            loaded: 8,
+            collected: 0,
+            fuel: 'coal',
+            startedAt: 100,
+          },
+        ],
+      },
+    })
+    const jobs = new SmeltJobs()
+
+    await jobs.attach(store)
+
+    expect(jobs.all()).toMatchObject([
+      { dimension: 'overworld', detached: false, readyNotified: false },
+    ])
   })
 })

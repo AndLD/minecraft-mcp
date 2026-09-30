@@ -41,6 +41,7 @@ function setup() {
         smelted: count,
         requested: count,
         fuel: 'coal',
+        fuelUsed: [],
         pending: 0,
         furnace: { x: 0, y: 64, z: 0 },
       }),
@@ -464,6 +465,7 @@ describe('HuntAnimalsSkill', () => {
           smelted: 2,
           requested: 2,
           fuel: 'coal',
+          fuelUsed: [],
           pending: 0,
           furnace: { x: 0, y: 64, z: 0 },
         })
