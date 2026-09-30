@@ -19,6 +19,8 @@ const jobSchema = z.object({
   fuel: z.string(),
   /** Epoch milliseconds of the start. */
   startedAt: z.number(),
+  /** Which block smelts it: a furnace, or a blast furnace or a smoker (twice as fast). */
+  station: z.enum(['furnace', 'blast_furnace', 'smoker']).default('furnace'),
   /** The dimension the furnace stands in, so a job in another one is known to be out of reach. */
   dimension: z.string().default('overworld'),
   /** No smelt task is waiting for this job: it was started with `start_only` or its wait was cut short. */

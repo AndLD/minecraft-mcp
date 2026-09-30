@@ -3,9 +3,8 @@ import { distanceBetween } from '../../core/position.js'
 import type { Scheduler } from '../../core/scheduler.port.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { SmeltJob, SmeltJobs } from '../../state/smelt-jobs.js'
+import { STATIONS } from './stations.js'
 
-/** A furnace smelts one item in 10 seconds. */
-const SMELT_MS_PER_ITEM = 10_000
 /** A furnace farther than this from the bot is mentioned in the signal. */
 export const FAR_FURNACE_BLOCKS = 64
 
@@ -25,8 +24,9 @@ const keyOf = (job: SmeltJob): string =>
 /** `minecraft:the_nether` and `the_nether` are the same dimension. */
 export const plain = (dimension: string): string => dimension.replace(/^minecraft:/, '')
 
-/** When the furnace should be done: every item takes 10 seconds, one after the other. */
-export const readyAt = (job: SmeltJob): number => job.startedAt + job.count * SMELT_MS_PER_ITEM
+/** When the furnace should be done: the items are smelted one after the other, each in the station's time. */
+export const readyAt = (job: SmeltJob): number =>
+  job.startedAt + job.count * STATIONS[job.station].msPerItem
 
 /**
  * Tells the agent when a job that was left in a furnace should be done, so the bot can do other things meanwhile. It

@@ -213,6 +213,41 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
     expect((again.data as { events: { type: string }[] }).events).toEqual([]) // told once
   })
 
+  it('uses a blast furnace beside the bot for iron: done in half the time, and announced at the shorter estimate', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 13, y: 64, z: -5 }, 'blast_furnace')
+      bot.inventoryItems = [
+        { name: 'raw_iron', count: 6 },
+        { name: 'coal', count: 1 },
+      ]
+    })
+
+    const started = await call(h, 'smelt', {
+      item: 'raw_iron',
+      wait: 'start_only',
+      wait_seconds: 30,
+    })
+
+    expect(task(started)).toMatchObject({
+      status: 'succeeded',
+      result: { station: 'blast_furnace', pending: 6 },
+    })
+    // Six iron take a minute in a furnace and half of that here: the agent hears at 30 seconds.
+    h.scheduler.advance(31_000)
+    await h.settle()
+    const heard = await call(h, 'wait_for_chat', { timeout_seconds: 1 })
+    const events = (heard.data as { events: { type: string }[] }).events
+    expect(events.map((event) => event.type)).toContain('smelt_ready')
+
+    const collected = await call(h, 'smelt', { collect: true, wait_seconds: 30 })
+
+    expect(task(collected)).toMatchObject({
+      status: 'succeeded',
+      result: { smelted: 6, pending: 0, station: 'blast_furnace' },
+    })
+    expect(h.bot.count('iron_ingot')).toBe(6)
+  })
+
   it('mines stone with the wooden pickaxe, refuses iron ore until it has a stone pickaxe, then gets iron', async () => {
     const h = await start((bot) => {
       wall(bot, 'stone', 20, -5, 6)

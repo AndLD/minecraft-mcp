@@ -45,6 +45,8 @@ export function totalFuelCapacity(options: {
   readonly inventory: ReadonlyMap<string, number>
   readonly reserved?: ItemCount | undefined
   readonly preferred?: string | undefined
+  /** How much faster the station smelts than a furnace (a blast furnace and a smoker: 2): the fuel goes as much further. */
+  readonly speed?: number | undefined
 }): number {
   const candidates =
     options.preferred === undefined
@@ -52,7 +54,8 @@ export function totalFuelCapacity(options: {
       : [options.preferred]
   let total = 0
   for (const item of new Set(candidates)) {
-    const per = itemsPerUnit(item)
+    const base = itemsPerUnit(item)
+    const per = base === undefined ? undefined : base * (options.speed ?? 1)
     const have =
       (options.inventory.get(item) ?? 0) -
       (options.reserved?.name === item ? options.reserved.count : 0)
@@ -71,6 +74,8 @@ export function chooseFuel(options: {
   readonly toSmelt: number
   readonly reserved?: ItemCount | undefined
   readonly preferred?: string | undefined
+  /** How much faster the station smelts than a furnace (see `totalFuelCapacity`). */
+  readonly speed?: number | undefined
 }): FuelChoice | undefined {
   const available = (item: string): number =>
     (options.inventory.get(item) ?? 0) -
@@ -83,7 +88,8 @@ export function chooseFuel(options: {
 
   const usable: FuelChoice[] = []
   for (const item of candidates) {
-    const per = itemsPerUnit(item)
+    const base = itemsPerUnit(item)
+    const per = base === undefined ? undefined : base * (options.speed ?? 1)
     const have = available(item)
     if (per === undefined || have <= 0) continue
     const amount = Math.min(Math.ceil(options.toSmelt / per), have)

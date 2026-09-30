@@ -671,17 +671,26 @@ describe('MineflayerFurnaceAccess', () => {
     await expect(opened.value.putInput('unobtainium', 1)).rejects.toThrow('not an item')
   })
 
+  it.each(['blast_furnace', 'smoker'])('opens a %s as well as a furnace', async (block) => {
+    const bot = gameBot()
+    bot.setBlock(furnaceAt, block)
+
+    const opened = await new MineflayerFurnaceAccess(holderOf(bot)).open(furnaceAt)
+
+    expect(opened.ok).toBe(true)
+  })
+
   it('refuses a block that is not a furnace, and not connected', async () => {
     const bot = gameBot()
     bot.setBlock(furnaceAt, 'stone')
 
     expect(await new MineflayerFurnaceAccess(holderOf(bot)).open(furnaceAt)).toEqual({
       ok: false,
-      error: 'There is no furnace there.',
+      error: 'There is no furnace, blast furnace, or smoker there.',
     })
     expect(await new MineflayerFurnaceAccess(holderOf(bot)).open({ x: 9, y: 9, z: 9 })).toEqual({
       ok: false,
-      error: 'There is no furnace there.',
+      error: 'There is no furnace, blast furnace, or smoker there.',
     })
     expect(await new MineflayerFurnaceAccess(holderOf(undefined)).open(furnaceAt)).toEqual({
       ok: false,

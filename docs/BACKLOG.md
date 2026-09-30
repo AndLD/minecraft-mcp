@@ -102,7 +102,7 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Deposit cooked food in chests** once the storage feature exists.
 
 ### Gathering, crafting, smelting
-- **Blast furnace and smoker**: `smelt` only uses a regular furnace (twice as slow for ores and food).
+- **Blast furnace and smoker**: built, see [Gathering, crafting, smelting](features/gathering/gathering-crafting-smelting.md). Crafting one on the way, the campfire, and nuggets from tools and armor are not.
 - **Bare-floor mining**: asking for `stone` on a stone floor digs the floor blocks next to the bot (never the one underfoot). A "surface only" or "walls only" option could keep the ground intact.
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 

@@ -37,6 +37,12 @@ const schema = z.object({
       '"until_done" (default) waits until everything is smelted and collected. "start_only" loads the furnace and returns at once; ' +
         'the job stays in the furnace and is collected by a later smelt (same item) or smelt with collect.',
     ),
+  station: z
+    .enum(['auto', 'furnace', 'blast_furnace', 'smoker'])
+    .default('auto')
+    .describe(
+      'Which block smelts it. "auto" (default): a blast furnace (ores and raw metals) or a smoker (food) that stands nearby or is carried when it can smelt the item, a furnace otherwise. A blast furnace or smoker is twice as fast and the same fuel lasts twice as long. Naming one that is not there fails no_blast_furnace or no_smoker (it is not crafted); naming one that cannot smelt the item fails wrong_station.',
+    ),
   fuel_from_storage: z
     .boolean()
     .default(false)
@@ -64,8 +70,9 @@ export class SmeltTool implements ToolDefinition<typeof schema> {
     'left in a furnace announces itself with a smelt_ready event (in wait_for_chat) when it should be done, so the bot can do ' +
     'other work meanwhile. Fuel of every kind in the bag is used: more is put in at each look, so a big job is not cut to the ' +
     'first load (fuelUsed says what was burned); with fuel_from_storage: true the fuel the bag lacks is taken out of storage first ' +
-    '(fuelFetched says what). When a ' +
-    'job ends any other way, whatever is left in the furnace goes back to the inventory. Fails with not_smeltable, ' +
+    '(fuelFetched says what). A blast furnace or smoker that stands nearby is used for ores and food by itself (station: auto): ' +
+    'twice as fast, and the fuel goes twice as far. When a ' +
+    'job ends any other way, whatever is left in the furnace goes back to the inventory. Fails with not_smeltable, wrong_station, no_blast_furnace, no_smoker, ' +
     'missing_items, no_fuel, no_furnace, no_pending_job, furnace_busy, timeout, or out_of_fuel; the message says how many ' +
     'were done. The result has `pending` (items still in the furnace) and `furnace`.'
   readonly inputSchema = schema
@@ -93,6 +100,7 @@ export class SmeltTool implements ToolDefinition<typeof schema> {
               wait: input.wait,
               collect: input.collect,
               fuelFromStorage: input.fuel_from_storage,
+              station: input.station,
             },
             ctx,
           ),

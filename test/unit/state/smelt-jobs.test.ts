@@ -13,6 +13,7 @@ const job = (over: Partial<SmeltJob> = {}): SmeltJob => ({
   collected: 0,
   fuel: 'coal',
   startedAt: 100,
+  station: 'furnace',
   dimension: 'overworld',
   detached: false,
   readyNotified: false,

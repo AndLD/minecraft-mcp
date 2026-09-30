@@ -133,6 +133,8 @@ export class FakeFurnace implements FurnaceLike {
   constructor(
     private readonly bot: FakeBot,
     private readonly now: () => number,
+    /** A blast furnace and a smoker smelt twice as fast; the fuel burns at the same rate. */
+    private readonly speed = 1,
   ) {
     this.lastUpdate = now()
   }
@@ -213,11 +215,12 @@ export class FakeFurnace implements FurnaceLike {
         this.fuelSlot =
           this.fuelSlot.count > 1 ? { ...this.fuelSlot, count: this.fuelSlot.count - 1 } : null
       }
-      const step = Math.min(remaining, this.burnLeftMs, SMELT_MS_PER_ITEM - this.progressMs)
+      const itemMs = SMELT_MS_PER_ITEM / this.speed
+      const step = Math.min(remaining, this.burnLeftMs, itemMs - this.progressMs)
       this.burnLeftMs -= step
       this.progressMs += step
       remaining -= step
-      if (this.progressMs >= SMELT_MS_PER_ITEM) {
+      if (this.progressMs >= itemMs) {
         this.progressMs = 0
         const made = SMELTS_TO[this.input.name] ?? ''
         this.output = { name: made, count: (this.output?.count ?? 0) + 1 }
@@ -1066,7 +1069,8 @@ export class FakeBot implements BotLike {
   openFurnace(block: BlockLike): Promise<FurnaceLike> {
     const at = (block as FakeBlock).position
     const id = key(at)
-    const furnace = this.furnaces.get(id) ?? new FakeFurnace(this, () => this.now())
+    const speed = block.name === 'blast_furnace' || block.name === 'smoker' ? 2 : 1
+    const furnace = this.furnaces.get(id) ?? new FakeFurnace(this, () => this.now(), speed)
     furnace.closed = false
     this.furnaces.set(id, furnace)
     return Promise.resolve(furnace)

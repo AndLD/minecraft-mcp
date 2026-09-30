@@ -104,3 +104,23 @@ describe('totalFuelCapacity', () => {
     expect(totalFuelCapacity({ inventory: bag({ dirt: 5 }) })).toBe(0)
   })
 })
+
+describe('fuel for a faster station', () => {
+  const bag = (entries: Record<string, number>): Map<string, number> =>
+    new Map(Object.entries(entries))
+
+  it('goes twice as far in a blast furnace or a smoker', () => {
+    expect(chooseFuel({ inventory: bag({ coal: 2 }), toSmelt: 32, speed: 2 })).toMatchObject({
+      item: 'coal',
+      amount: 2,
+      capacity: 32,
+    })
+    expect(chooseFuel({ inventory: bag({ coal: 2 }), toSmelt: 32 })).toMatchObject({ capacity: 16 })
+    expect(totalFuelCapacity({ inventory: bag({ coal: 1, oak_planks: 4 }), speed: 2 })).toBe(28)
+  })
+
+  it('needs half the units for the same job', () => {
+    expect(chooseFuel({ inventory: bag({ coal: 9 }), toSmelt: 32, speed: 2 })?.amount).toBe(2)
+    expect(chooseFuel({ inventory: bag({ coal: 9 }), toSmelt: 32 })?.amount).toBe(4)
+  })
+})

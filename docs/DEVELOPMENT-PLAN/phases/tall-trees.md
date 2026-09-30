@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/tall-trees`. See [Tree farming](../../features/farming/tree-farming.md). Built as `harvest_trees` with `reach_tall`; the tower is planned once for the lowest log out of reach and raised a block at a time after that. Cutting leaves that block every column beside the trunk is not built (such a tree is left as `left`); `collect_block` on logs is unchanged.
 
 **Depends on:** [13 Construction engine and building](construction-building.md) (the `Scaffolder`), [18 Farming, crops, animals, and trees](farming.md) (`harvest_trees`), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`collect_block` for logs).  
-**Needed by:** [42 Hardening and polish](hardening-polish.md).
+**Needed by:** [43 Hardening and polish](hardening-polish.md).
 
 Today the bot works from the ground and stops at what it can reach, so the top logs of a tall tree stay (`left` in the `harvest_trees` result) and the tree is neither counted as felled nor replanted. This phase finishes such trees. It comes from the backlog item "Reaching high logs".
 

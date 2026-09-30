@@ -317,6 +317,47 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countInChest(at(6, -4), 'coal')).toBe(7)
   }, 200_000)
 
+  it('uses a blast furnace beside the bot for iron, in about half the furnace time', async () => {
+    await world.setBlock(at(4, -2), 'blast_furnace')
+    await world.give(bot(), 'raw_iron', 8)
+    await world.give(bot(), 'coal', 1)
+    await untilBotSees(['blast_furnace'], 1)
+    await untilBotCarries('raw_iron')
+    await untilBotCarries('coal')
+    const started = Date.now()
+
+    const smelted = await runToTheEnd('smelt', { item: 'raw_iron' }, 150_000)
+
+    expectSucceeded(smelted)
+    expect(smelted.task?.result).toMatchObject({ smelted: 8, station: 'blast_furnace' })
+    // Eight iron take 80 seconds in a furnace and 40 in a blast furnace.
+    expect(Date.now() - started).toBeLessThan(75_000)
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(8)
+  }, 200_000)
+
+  it('cooks in a smoker beside the bot, and only food: iron asked for by name is refused', async () => {
+    await world.setBlock(at(4, -2), 'smoker')
+    await world.give(bot(), 'beef', 8)
+    await world.give(bot(), 'raw_iron', 2)
+    await world.give(bot(), 'coal', 1)
+    await untilBotSees(['smoker'], 1)
+    await untilBotCarries('beef')
+    await untilBotCarries('raw_iron')
+    await untilBotCarries('coal')
+
+    const refused = await runToTheEnd('smelt', { item: 'raw_iron', station: 'smoker' })
+    expect(refused.failed).toBe(true)
+    expect(refused.text).toContain('wrong_station')
+
+    const started = Date.now()
+    const cooked = await runToTheEnd('smelt', { item: 'beef' }, 150_000)
+
+    expectSucceeded(cooked)
+    expect(cooked.task?.result).toMatchObject({ smelted: 8, station: 'smoker' })
+    expect(Date.now() - started).toBeLessThan(75_000)
+    expect(await world.countItem(bot(), 'cooked_beef')).toBe(8)
+  }, 200_000)
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)

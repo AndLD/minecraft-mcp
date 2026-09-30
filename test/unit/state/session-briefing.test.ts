@@ -164,6 +164,7 @@ describe('SessionBriefingBuilder: smelting jobs', () => {
       collected: 4,
       fuel: 'coal',
       startedAt: stack.clock.now() - 20_000,
+      station: 'furnace',
       dimension: 'overworld',
       detached: true,
       readyNotified: false,

@@ -68,6 +68,17 @@ describe('FuelSupply', () => {
     expect(s.world.inside(at(10), 'coal')).toBe(17)
   })
 
+  it('takes half as much for a blast furnace or a smoker, which stretch the fuel twice as far', async () => {
+    const s = await setup()
+    s.chest(10, 'fuel')
+    s.world.stock(at(10), 'coal', 20)
+    s.refresh(10)
+
+    const got = await s.supply.fetch(32, undefined, skillContext().context, 2)
+
+    expect(got).toEqual([{ name: 'coal', count: 2 }]) // 2 x 16 = 32
+  })
+
   it('takes charcoal before coal', async () => {
     const s = await setup()
     s.chest(10, 'fuel')
