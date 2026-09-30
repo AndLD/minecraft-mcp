@@ -7,6 +7,7 @@ export const STRUCTURE_LOCATE_IDS = {
   mineshaft: '#minecraft:mineshaft',
   ruined_portal: '#minecraft:ruined_portal',
   stronghold: 'minecraft:stronghold',
+  ancient_city: 'minecraft:ancient_city',
   /** A monster room is not a structure the server can locate. */
   dungeon: undefined,
 } as const satisfies Record<string, string | undefined>

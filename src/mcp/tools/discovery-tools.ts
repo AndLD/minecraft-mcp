@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { STRUCTURE_KINDS } from '../../core/structure-kinds.js'
 import type { VitalsReader } from '../../core/vitals.port.js'
 import type { WorldKnowledgeStore } from '../../knowledge/world-knowledge-store.js'
+import type { ExploreCavesSkill } from '../../skills/discovery/caves/explore-caves-skill.js'
 import type { ExploreForStructureSkill } from '../../skills/discovery/explore-for-structure-skill.js'
 import type { TaskLauncher } from '../task-launcher.js'
 import { toolFail, toolOk } from '../tool-result.js'
@@ -165,7 +166,12 @@ export class ListKnownStructuresTool implements ToolDefinition<typeof listStruct
       }))
       .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))
     const biomes = input.kind === undefined ? this.knowledge.biomes() : []
-    return toolOk({ count: structures.length, structures, biomes })
+    return toolOk({
+      count: structures.length,
+      structures,
+      biomes,
+      finds: input.kind === undefined ? this.knowledge.finds() : [],
+    })
   }
 }
 
@@ -246,5 +252,93 @@ export class RemoveLandmarkTool implements ToolDefinition<typeof removeLandmarkS
     return this.knowledge.removeLandmark(input.name)
       ? toolOk({ removed: input.name })
       : toolFail(`There is no landmark called "${input.name}".`)
+  }
+}
+
+const cavesSchema = z.object({
+  find: z
+    .array(z.string().min(1))
+    .max(20)
+    .optional()
+    .describe(
+      'What to look for: exact block names ("diamond_ore", "iron_ore"; the deepslate kind is included), "ores" for every ore, or leave out for the valuable ones (diamond, gold, redstone, lapis, emerald, ancient debris). Spawners, geodes, and structures (mineshaft, dungeon, stronghold, ancient city) are always reported.',
+    ),
+  mine: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Dig out the wanted ore veins it passes, under the same lava, water, and falling-block rules as excavate. Default false: only report them. Set it only when the player asked for the ore.',
+    ),
+  max_distance: z
+    .number()
+    .int()
+    .min(10)
+    .max(300)
+    .default(80)
+    .describe('How far from the cave mouth it may go, in blocks (10-300, default 80).'),
+  max_minutes: z
+    .number()
+    .min(1)
+    .max(60)
+    .default(10)
+    .describe('How long it may explore, in minutes (1-60, default 10).'),
+  min_light: z
+    .number()
+    .int()
+    .min(1)
+    .max(14)
+    .default(5)
+    .describe(
+      'A torch goes where the block light is below this (1-14, default 5), with at least 6 blocks between torches.',
+    ),
+  ...taskOptionsShape,
+})
+
+export class ExploreCavesTool implements ToolDefinition<typeof cavesSchema> {
+  readonly name = 'explore_caves'
+  readonly description =
+    "Explores a cave or ravine on foot: from the bot's spot (or the nearest cave mouth within 40 blocks) it goes to the " +
+    'nearest part it has not seen, lights dark spots with torches (right-hand side going in, so the way out is lit; ' +
+    'torches are crafted from coal or charcoal and sticks), reports ores, spawners, geodes, and structures as it sees ' +
+    'them (only ones with an open face: it does not see through rock), saves them (list_known_structures shows finds), and ' +
+    'walks back out. It stays away from lava and water, never plans a drop over 3 blocks, and keeps away from an ancient ' +
+    'city (reported, never entered). Reflexes stay active. It ends with stopped: explored (nothing new within ' +
+    'max_distance), time, low_health, hungry, no_torches (none left and none craftable: tell the player), warden, or ' +
+    'stuck. The result lists finds, structures, mined (with mine: true), skipped veins (hazard, protected, no_tool: ' +
+    'name the pickaxe to craft), torchesPlaced, and returned. Fails with no_cave, bad_find, wrong_dimension (Overworld ' +
+    'only), or aborted. Long trips continue in the background: poll get_task_status. Only one task runs at a time; pass ' +
+    'replace=true to interrupt the current one.'
+  readonly inputSchema = cavesSchema
+
+  constructor(
+    private readonly skill: ExploreCavesSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof cavesSchema>, context: ToolContext) {
+    const { wait_seconds: _wait, replace: _replace, ...resume } = input
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: 'Explore a cave',
+        resume: { tool: this.name, arguments: resume },
+        run: (ctx) =>
+          this.skill.run(
+            {
+              find: input.find,
+              mine: input.mine,
+              maxDistance: input.max_distance,
+              maxMinutes: input.max_minutes,
+              minLight: input.min_light,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
   }
 }

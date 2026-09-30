@@ -199,10 +199,16 @@ import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
 import { SignRegistry } from './state/sign-registry.js'
 import { WorldKnowledgeStore } from './knowledge/world-knowledge-store.js'
+import { CaveMap } from './skills/discovery/caves/cave-map.js'
+import { ExploreCavesSkill } from './skills/discovery/caves/explore-caves-skill.js'
+import { FindDetector } from './skills/discovery/caves/find-rules.js'
+import { LightManager } from './skills/discovery/caves/light-manager.js'
+import { VeinMiner } from './skills/discovery/caves/vein-miner.js'
 import { ExploreForStructureSkill } from './skills/discovery/explore-for-structure-skill.js'
 import { defaultSignatures } from './skills/discovery/structure-signatures.js'
 import { StructureScanner } from './skills/discovery/structure-scanner.js'
 import {
+  ExploreCavesTool,
   ExploreForStructureTool,
   ListKnownStructuresTool,
   ListLandmarksTool,
@@ -1177,17 +1183,43 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     botName: () => connection.target?.username,
   })
+  const structureScanner = new StructureScanner(blocks, entities, defaultSignatures())
   const exploreForStructure = new ExploreForStructureSkill({
     navigator,
     vitals,
     blocks,
     biomes: new MineflayerBiomeReader(connection),
     entities,
-    scanner: new StructureScanner(blocks, entities, defaultSignatures()),
+    scanner: structureScanner,
     knowledge,
     clock,
     random,
     commands: serverCommands,
+  })
+  const exploreCaves = new ExploreCavesSkill({
+    navigator,
+    vitals,
+    blocks,
+    entities,
+    map: new CaveMap(blocks),
+    lights: new LightManager({
+      safety: new SiteSafety(blocks, new MineflayerLightReader(connection)),
+      placer: new MineflayerPlacer(connection),
+      blocks,
+      inventory,
+      supplies: new CraftingSupplies(craftItem),
+    }),
+    detector: new FindDetector(blocks),
+    miner: new VeinMiner({
+      navigator,
+      digger: constructionDigger,
+      blocks,
+      hazards: new HazardRule(blocks),
+      areas: protectedAreas,
+    }),
+    scanner: structureScanner,
+    knowledge,
+    clock,
   })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
@@ -1308,6 +1340,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new UnprotectAreaTool(protectedAreas))
     .register(new ListProtectedAreasTool(protectedAreas))
     .register(new ExploreForStructureTool(exploreForStructure, launcher))
+    .register(new ExploreCavesTool(exploreCaves, launcher))
     .register(new ListKnownStructuresTool(knowledge, vitals))
     .register(new SetLandmarkTool(knowledge, vitals))
     .register(new ListLandmarksTool(knowledge))

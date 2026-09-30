@@ -45,6 +45,8 @@ export const createMineflayerBot: BotFactory = (target: ConnectTarget): BotLike 
     const movements = new pathfinderPlugin.Movements(bot)
     movements.canDig = false
     movements.allow1by1towers = false
+    // Caves are full of edges: never plan a fall longer than 3 blocks (the pathfinder's own default is 4, which hurts).
+    movements.maxDropDown = 3
     movements.scafoldingBlocks = []
     // The plugin's own door option (canOpenDoors) was spiked and dropped: in a Docker e2e test it never
     // found a path through a closed door at all (4/4 runs, "no_path"), matching its own source comment

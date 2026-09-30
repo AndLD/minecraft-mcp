@@ -34,6 +34,17 @@ const biomeSchema = z.object({
   source: z.enum(['scan', 'locate']),
 })
 
+const findSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['ore', 'spawner', 'geode']),
+  name: z.string(),
+  ...coordinates,
+  /** How many blocks of the vein were in view. */
+  count: z.number().int(),
+  foundAt: z.string(),
+})
+
+export type FindRecord = z.infer<typeof findSchema>
 export type BiomeRecord = z.infer<typeof biomeSchema>
 export type Landmark = z.infer<typeof landmarkSchema>
 export type StructureRecord = z.infer<typeof structureSchema>
@@ -45,12 +56,14 @@ const knowledgeDocument = defineDocument({
     landmarks: z.array(landmarkSchema),
     structures: z.array(structureSchema),
     biomes: z.array(biomeSchema).default([]),
+    finds: z.array(findSchema).default([]),
     nextId: z.number().int(),
   }),
   initial: () => ({
     landmarks: [] as Landmark[],
     structures: [] as StructureRecord[],
     biomes: [] as BiomeRecord[],
+    finds: [] as FindRecord[],
     nextId: 1,
   }),
 })
@@ -80,6 +93,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
   private landmarkList: Landmark[] = []
   private structureList: StructureRecord[] = []
   private biomeList: BiomeRecord[] = []
+  private findList: FindRecord[] = []
   private nextId = 1
 
   constructor(private readonly clock: Clock) {}
@@ -90,6 +104,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
     this.landmarkList = [...loaded.value.landmarks]
     this.structureList = [...loaded.value.structures]
     this.biomeList = [...loaded.value.biomes]
+    this.findList = [...loaded.value.finds]
     this.nextId = loaded.value.nextId
     return loaded.warning === undefined ? [] : [loaded.warning]
   }
@@ -99,6 +114,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
     this.landmarkList = []
     this.structureList = []
     this.biomeList = []
+    this.findList = []
   }
 
   get active(): boolean {
@@ -202,6 +218,38 @@ export class WorldKnowledgeStore implements ProfileScoped {
     return ok({ entry, isNew: true })
   }
 
+  finds(name?: string): readonly FindRecord[] {
+    return name === undefined ? this.findList : this.findList.filter((entry) => entry.name === name)
+  }
+
+  /** Records an ore vein, spawner, or geode seen underground; one of the same name within 8 blocks is the same find. */
+  recordFind(
+    kind: FindRecord['kind'],
+    name: string,
+    position: Position,
+    count: number,
+  ): Result<{ entry: FindRecord; isNew: boolean }> {
+    if (this.store === undefined) return err(NOT_ACTIVE)
+    const known = this.findList.find(
+      (entry) =>
+        entry.name === name &&
+        Math.hypot(entry.x - position.x, entry.y - position.y, entry.z - position.z) <= 8,
+    )
+    if (known !== undefined) return ok({ entry: known, isNew: false })
+    const entry: FindRecord = {
+      id: `find-${String(this.nextId)}`,
+      kind,
+      name,
+      ...cell(position),
+      count,
+      foundAt: new Date(this.clock.now()).toISOString(),
+    }
+    this.nextId += 1
+    this.findList = [...this.findList, entry]
+    this.save()
+    return ok({ entry, isNew: true })
+  }
+
   biomes(name?: string): readonly BiomeRecord[] {
     return name === undefined
       ? this.biomeList
@@ -255,6 +303,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
       landmarks: this.landmarkList,
       structures: this.structureList,
       biomes: this.biomeList,
+      finds: this.findList,
       nextId: this.nextId,
     })
   }
