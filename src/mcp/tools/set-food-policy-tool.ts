@@ -8,12 +8,13 @@ const schema = z.object({
   policy: z
     .enum(LOW_FOOD_POLICIES)
     .describe(
-      '"ask": tell the player and wait (the default). "hunt_and_cook": hunt animals and cook the meat by itself. "stop": cancel the current task.',
+      '"ask": tell the player and wait (the default). "hunt_and_cook": hunt animals and cook the meat by itself. "fish_and_cook": fish (needs a rod) and cook the fish by itself. "stop": cancel the current task.',
     ),
 })
 
-const STANDING_TEXT: Record<'hunt_and_cook' | 'stop', string> = {
+const STANDING_TEXT: Record<'hunt_and_cook' | 'fish_and_cook' | 'stop', string> = {
   hunt_and_cook: 'When the bot is out of food, it hunts animals and cooks the meat by itself.',
+  fish_and_cook: 'When the bot is out of food, it fishes and cooks the fish by itself (it needs a fishing rod).',
   stop: 'When the bot is out of food, it cancels its current task and tells the player.',
 }
 
@@ -21,7 +22,8 @@ export class SetFoodPolicyTool implements ToolDefinition<typeof schema> {
   readonly name = 'set_food_policy'
   readonly description =
     'Saves what the bot does when it is hungry and has nothing to eat, as a standing rule for this world: "ask" (default: ' +
-    'you get a needs_decision event and ask the player), "hunt_and_cook" (the bot hunts by itself, no round trip), or "stop" ' +
+    'you get a needs_decision event and ask the player), "hunt_and_cook" (the bot hunts by itself, no round trip), "fish_and_cook" (it fishes and bakes the fish; it needs a ' +
+    'fishing rod), or "stop" ' +
     '(cancel the current task). Set it when the player says something like "if you run out of food, go hunt". It survives ' +
     'restarts and appears in the session briefing. Fails when no world is active.'
   readonly inputSchema = schema

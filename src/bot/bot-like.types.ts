@@ -200,6 +200,8 @@ export interface BotLike {
   equip(itemType: number, destination: EquipSlot): Promise<void>
   /** Eats or drinks the item in hand. */
   consume(): Promise<void>
+  /** Casts the rod in hand, waits for a bite, and reels in. Rejects when the line is pulled in early. */
+  fish(): Promise<void>
   /** Hits an entity taken from `entities`. */
   attack(entity: EntityLike): void
   /** Breaks a block returned by `blockAt`. Resolves when it is gone. */

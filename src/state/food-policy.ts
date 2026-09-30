@@ -5,9 +5,9 @@ import { defineDocument } from './define-document.js'
 import type { ProfileScoped } from './profile-scoped.types.js'
 
 /** What the bot does when it is hungry and has nothing to eat. */
-export type LowFoodPolicy = 'ask' | 'hunt_and_cook' | 'stop'
+export type LowFoodPolicy = 'ask' | 'hunt_and_cook' | 'fish_and_cook' | 'stop'
 
-export const LOW_FOOD_POLICIES = ['ask', 'hunt_and_cook', 'stop'] as const
+export const LOW_FOOD_POLICIES = ['ask', 'hunt_and_cook', 'fish_and_cook', 'stop'] as const
 
 const foodPolicyDocument = defineDocument({
   key: 'food-policy',

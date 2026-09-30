@@ -27,6 +27,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | Feature | What it covers | Depends on |
 |---|---|---|
 | [Gathering, crafting, smelting](gathering/gathering-crafting-smelting.md) | `collect_block` (also structured pits and quarries), `craft`, `smelt`, protected areas | Tasks, Persistent state, Storage (optional), Excavation (optional) |
+| [Fishing](gathering/fishing.md) | `fish`, the `fish_and_cook` food policy | Movement and perception, Gathering, crafting, smelting, Hunting and food |
 | [Hunting and food](gathering/hunting-and-food.md) | `hunt_animals`, the animal catalog, the low-food policy | Survival reflexes, Gathering, crafting, smelting, Persistent state, Storage (optional) |
 
 ## Storage and items
