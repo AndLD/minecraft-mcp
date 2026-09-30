@@ -103,7 +103,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | done (`feature/farming-extras`: `shear_sheep` and `milk_cows` take wool and milk from a pen without harming the animals; `melon` is a stem crop like `pumpkin`) |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | done (`feature/composter-bone-meal`: `fertilize_crops` ripens a field with bone meal on ask, from the bag, storage, or crafted bones; `use_composter` turns scraps into bone meal) |
 | [46 Take an item the player hands over](phases/receive-item.md) | done (`feature/receive-item`: `receive_item` walks up to the player and takes what they throw after the wait began, `use_it` equips the best gear, `nothing_received` ends the wait) |
-| [47 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [47 Honey farming, hives, bees, and honeycomb](phases/honey-farming.md) | not started (from the backlog: beehives and bee nests, smoke, honey and honeycomb, breeding bees, an apiary) |
+| [48 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -161,11 +162,12 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 1 session |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | ¾ session |
 | [46 Take an item the player hands over](phases/receive-item.md) | ½ session |
-| [47 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [47 Honey farming, hives, bees, and honeycomb](phases/honey-farming.md) | 1½ sessions |
+| [48 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 47 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 48 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -216,7 +218,8 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 7, 8, 18 | |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | 18, 44 | 7, 9 |
 | [46 Take an item the player hands over](phases/receive-item.md) | 3, 7, 10, 11 | |
-| [47 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [47 Honey farming, hives, bees, and honeycomb](phases/honey-farming.md) | 6, 7, 8, 13, 18, 43, 44, 45 | 9, 10 |
+| [48 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 

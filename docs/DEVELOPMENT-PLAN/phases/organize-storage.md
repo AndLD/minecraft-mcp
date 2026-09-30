@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/organize-storage`. See [Storage](../../features/storage/storage.md). Differences from this plan: no `on_inventory_full` option (the skill takes only what fits, keeps two slots free, and makes several trips, so a full inventory is never a reason to ask); the look-over refreshes the chosen containers and every rule target rather than calling `ScanContainers`; a dry run also walks to the containers to look inside (it changes nothing in them); a cancel puts carried items back before ending.
 
 **Depends on:** [9 Storage and containers](storage-containers.md) (`ContainerIndex`, `StorageRules`, `ContainerSelector`, `ContainerVisitor`, `ScanContainers`, `WindowTransfer`, the protected flag), [Tasks](../../features/core/tasks.md).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 Storage rules say where new items go, but what is already in the chests stays where it was put. This phase sorts it: "organize my storage" moves every item to the container its rule names. It comes from the backlog item `OrganizeStorage`.
 
