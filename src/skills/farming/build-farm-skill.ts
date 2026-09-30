@@ -69,7 +69,7 @@ export interface BuildFarmDeps {
   readonly plant?: PlantCropsSkill
 }
 
-const FARM_KINDS = ['field', 'pen', 'grove'] as const
+const FARM_KINDS = ['field', 'pen', 'grove', 'apiary'] as const
 const isFarmKind = (kind: string): kind is FarmEntry['kind'] =>
   (FARM_KINDS as readonly string[]).includes(kind)
 

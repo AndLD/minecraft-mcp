@@ -12,6 +12,7 @@ import type { PenGateGuard } from './pen-gate-guard.js'
 import type { FarmRegistry } from '../../state/farm-registry.js'
 import { individualProtection } from '../hunting/animal-catalog.js'
 import { foodFor } from './animal-table.js'
+import { holdBreedingFood } from './breeding-food.js'
 import { insideBounds, type Bounds } from './farm-area.types.js'
 
 /** How close the bot gets to a wild animal before it starts leading it (real "temptation" range is about 10). */
@@ -148,8 +149,8 @@ export class LureAnimalsSkill implements Skill<LureAnimalsInput, LureAnimalsOutp
       if (tried.has(candidate.id)) continue
       tried.add(candidate.id)
 
-      const held = await this.deps.interaction.hold(food)
-      if (!held.ok)
+      const held = await holdBreedingFood(this.deps.interaction, input.species)
+      if (held === undefined)
         return err({
           reason: 'no_food',
           message: `The bot has no ${food} to lure a ${input.species} with.`,

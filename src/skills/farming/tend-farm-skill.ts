@@ -3,6 +3,7 @@ import type { Skill, SkillContext, SkillResult } from '../../core/skill.types.js
 import type { FarmEntry, FarmRegistry } from '../../state/farm-registry.js'
 import type { CollectEggsSkill } from './collect-eggs-skill.js'
 import type { HarvestCropsSkill } from './harvest-crops-skill.js'
+import type { HarvestHoneySkill } from './harvest-honey-skill.js'
 import type { HerdManager } from './herd-manager.js'
 import type { PenGateGuard } from './pen-gate-guard.js'
 import type { PlantCropsSkill } from './plant-crops-skill.js'
@@ -30,6 +31,8 @@ export interface TendComponentResult {
   readonly eggsPickedUp: number | undefined
   readonly eggsStored: number | undefined
   readonly eggsReleased: number | undefined
+  /** Apiary: honey bottles taken from the ripe hives. */
+  readonly honeyBottles?: number
   readonly problem: string | undefined
 }
 
@@ -46,6 +49,8 @@ export interface TendFarmDeps {
   readonly collectEggs?: CollectEggsSkill
   /** Refills the empty spots of a grove; without it a grove is reported as not tended. */
   readonly plantTrees?: PlantTreesSkill
+  /** Takes honey from the ripe hives of an apiary; without it an apiary is reported as not tended. */
+  readonly harvestHoney?: HarvestHoneySkill
   /** Shuts a pen's gate at the end of tending it (culling walks in and out of the pen). */
   readonly gates?: PenGateGuard
 }
@@ -74,6 +79,10 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
       if (context.signal.aborted) return err({ reason: 'aborted', message: 'Cancelled.' })
       if (entry.kind === 'pen') {
         components.push(await this.tendPen(entry, context))
+        continue
+      }
+      if (entry.kind === 'apiary' && this.deps.harvestHoney !== undefined) {
+        components.push(await this.tendApiary(entry, context))
         continue
       }
       if (entry.kind === 'grove' && this.deps.plantTrees !== undefined) {
@@ -145,6 +154,36 @@ export class TendFarmSkill implements Skill<TendFarmInput, TendFarmOutput> {
       })
     }
     return ok({ components })
+  }
+
+  /** Takes honey from every ripe hive, smoked; a missing bottle or smoke is reported, not hidden. */
+  private async tendApiary(entry: FarmEntry, context: SkillContext): Promise<TendComponentResult> {
+    const harvested = await this.deps.harvestHoney?.run(
+      {
+        what: 'honey',
+        farm: entry.id,
+        at: undefined,
+        radius: 32,
+        count: undefined,
+        smoke: 'auto',
+        craftBottles: false,
+      },
+      context,
+    )
+    return {
+      id: entry.id,
+      kind: entry.kind,
+      harvested: 0,
+      replanted: 0,
+      planted: 0,
+      herdSizeBefore: undefined,
+      herdAction: undefined,
+      eggsPickedUp: undefined,
+      eggsStored: undefined,
+      eggsReleased: undefined,
+      honeyBottles: harvested?.ok === true ? harvested.value.honeyBottles : 0,
+      problem: harvested?.ok === false ? harvested.error.message : undefined,
+    }
   }
 
   /** Never fells: refills the spots where a tree is gone with the saplings the bot carries (`planted`). */

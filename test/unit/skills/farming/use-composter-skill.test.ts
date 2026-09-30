@@ -29,6 +29,11 @@ class Composter implements ComposterAccess, BlockUser {
   private reads = 0
   private n = 0
 
+  /** What emptying it does: by default the bone meal is in the bag at once (picked up). */
+  onEmpty: () => void = () => {
+    this.bag.give('bone_meal', 1)
+  }
+
   constructor(private readonly bag: Bag) {}
 
   levelAt(): number | undefined {
@@ -45,7 +50,7 @@ class Composter implements ComposterAccess, BlockUser {
     if (item === undefined) {
       if (this.level === 8) {
         this.level = 0
-        this.bag.give('bone_meal', 1) // the drop, picked up
+        this.onEmpty()
       }
       return Promise.resolve(ok(undefined))
     }
@@ -67,17 +72,28 @@ function setup(items: Record<string, number>) {
   const guard = new FakeAreaGuard()
   const navigator = new InstantNavigator()
   const clock = new FakeClock()
+  /** Bone meal that popped out but can only be picked up from the `giveAt`th look on. */
+  const collects = { count: 0, giveAt: 1, pending: 0 }
   const skill = new UseComposterSkill({
     blocks: scanner,
     composters: composter,
     user: composter,
     navigator,
     inventory: bag,
-    drops: { collect: () => Promise.resolve() },
+    drops: {
+      collect: () => {
+        collects.count += 1
+        if (collects.count >= collects.giveAt && collects.pending > 0) {
+          bag.give('bone_meal', collects.pending)
+          collects.pending = 0
+        }
+        return Promise.resolve()
+      },
+    },
     guard,
     scheduler: new AutoScheduler(clock),
   })
-  return { bag, composter, scanner, guard, skill, navigator }
+  return { bag, composter, scanner, guard, skill, navigator, collects }
 }
 
 const all = { at: undefined, items: undefined, collect: true }
@@ -127,6 +143,20 @@ describe('UseComposterSkill', () => {
     const result = await skill.run(all, context)
 
     expect(result).toMatchObject({ ok: true, value: { boneMeal: 1, level: 0 } })
+  })
+
+  it('looks for the bone meal again when it cannot be picked up at once', async () => {
+    const { skill, composter, collects } = setup({ wheat_seeds: 10 })
+    composter.onEmpty = () => {
+      collects.pending += 1
+    }
+    collects.giveAt = 3
+    const { context } = skillContext()
+
+    const result = await skill.run(all, context)
+
+    expect(result).toMatchObject({ ok: true, value: { boneMeal: 1 } })
+    expect(collects.count).toBe(3)
   })
 
   it('leaves the bone meal in when collect is false', async () => {

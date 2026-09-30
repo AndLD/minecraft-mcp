@@ -194,4 +194,20 @@ describe('threat policy', () => {
       ).toEqual({ kind: 'none' })
     })
   })
+
+  describe('bees', () => {
+    it('fights a bee that is angry, and leaves a calm one alone', () => {
+      const angry = entity('bee', 3, { category: 'passive', angry: true })
+      const calm = entity('bee', 3, { category: 'passive', angry: false })
+
+      expect(assess(reflexState({ entities: [angry] }), options)).toMatchObject({ kind: 'fight' })
+      expect(assess(reflexState({ entities: [calm] }), options)).toEqual({ kind: 'none' })
+    })
+
+    it('ignores an angry bee that is farther than six blocks', () => {
+      const far = entity('bee', 9, { category: 'passive', angry: true })
+
+      expect(assess(reflexState({ entities: [far] }), options)).toEqual({ kind: 'none' })
+    })
+  })
 })

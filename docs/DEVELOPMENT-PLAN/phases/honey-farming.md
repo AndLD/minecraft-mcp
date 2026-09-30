@@ -1,7 +1,7 @@
 # Phase 47: Honey farming, hives, bees, and honeycomb
 
 _Estimate: 1½ sessions._  
-**Status:** not started.
+**Status:** done on `feature/honey-farming`. See [Bees and honey](../../features/farming/bees-and-honey.md). Built differently from this page: `what: both` was dropped (either click empties the hive), a placed campfire is left in place, `move_hive` was not built (the inventory port has no enchantments, so a silk-touch tool cannot be recognised; it is back in the backlog), and there is no breeding e2e (peaceful `NoAI` bees never pair).
 
 **Depends on:** [6 Survival reflexes](survival-reflexes.md) (angry bees are a threat), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (glass bottles, beehives, `Workstations`), [8 Hunting and food](hunting-food.md) (the animal catalog and its protections), [13 Construction and building](construction-building.md) (placing blocks, `SiteSafety`), [18 Farming, crops, animals, and trees](farming.md) (`FarmRegistry`, `build_farm` layouts, `tend_farm`, `inspect_farm`, breeding), [43 Campfire cooking](campfire-cooking.md) (a campfire as smoke: what a campfire block is and how it is read), [44 Farming extras](farming-extras.md) (`AnimalInteraction.use`, shears, the animal-product tools), [45 Composter and bone meal](composter-bone-meal.md) (`BlockUser`, bone meal for flowers), [Tasks](../../features/core/tasks.md). Optional: [9 Storage and containers](storage-containers.md) and [10 Item handover](item-handover.md) (storing and giving honey).  
 **Needed by:** [48 Hardening and polish](hardening-polish.md).

@@ -147,4 +147,23 @@ describe('MineflayerAnimalScanner', () => {
     expect(unknown?.sheared).toBeUndefined()
     expect(other?.colour).toBeUndefined()
   })
+
+  it('reads whether a bee is angry from its remaining anger time', () => {
+    const bot = new FakeBot().useGameData()
+    const keys = bot.registry.entitiesByName['bee']?.metadataKeys ?? []
+    const bee = (id: number, anger: number): EntityLike => ({
+      id,
+      type: 'animal',
+      name: 'bee',
+      position: { x: 11 + id, y: 64, z: -5 },
+      metadata: metadata(keys, { remaining_anger_time: anger }),
+    })
+    bot.entities = { '1': bee(1, 0), '2': bee(2, 400), '3': cow(3, 20) }
+
+    const [calm, angry, other] = new MineflayerAnimalScanner(holderOf(bot)).nearby(30)
+
+    expect(calm?.angry).toBe(false)
+    expect(angry?.angry).toBe(true)
+    expect(other?.angry).toBeUndefined()
+  })
 })

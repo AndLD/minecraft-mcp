@@ -20,6 +20,8 @@ export interface AnimalInfo {
   readonly sheared?: boolean
   /** A sheep's wool colour (`white`, `light_blue`, ...); undefined for other animals. */
   readonly colour?: string
+  /** A bee that is angry (it stings); undefined for other animals. */
+  readonly angry?: boolean
   /** Dead, and still lingering for its death animation. */
   readonly dead: boolean
 }

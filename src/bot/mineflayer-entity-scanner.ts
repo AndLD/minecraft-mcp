@@ -1,6 +1,14 @@
 import type { EntityInfo, EntityScanner, PlayerInfo } from '../core/entity-scanner.port.js'
 import { distanceBetween } from '../core/position.js'
-import type { BotHolder } from './bot-like.types.js'
+import type { BotHolder, BotLike, EntityLike } from './bot-like.types.js'
+
+/** A bee is angry while its `remaining_anger_time` (in ticks) is above zero. */
+function angryBee(bot: BotLike, entity: EntityLike): boolean {
+  const keys = bot.registry.entitiesByName['bee']?.metadataKeys
+  const index = keys?.indexOf('remaining_anger_time')
+  const left = index === undefined || index < 0 ? undefined : entity.metadata?.[index]
+  return typeof left === 'number' && left > 0
+}
 
 export class MineflayerEntityScanner implements EntityScanner {
   constructor(private readonly holder: BotHolder) {}
@@ -26,6 +34,7 @@ export class MineflayerEntityScanner implements EntityScanner {
         name: entity.username ?? entity.name ?? entity.type,
         position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },
         distance,
+        ...(entity.name === 'bee' ? { angry: angryBee(bot, entity) } : {}),
       })
     }
     return found.sort((a, b) => a.distance - b.distance)

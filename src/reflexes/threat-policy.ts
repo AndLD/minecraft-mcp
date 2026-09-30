@@ -52,7 +52,11 @@ export interface AssessOptions {
   readonly fleeing?: boolean
 }
 
+/** A bee only stings when it is angry: then it is fought like other hostile mobs; a calm one is left alone. */
+const ANGRY_BEE_RULE: MobRule = { action: 'fight', radius: 6 }
+
 function ruleFor(entity: EntityInfo): MobRule | undefined {
+  if (entity.name === 'bee') return entity.angry === true ? ANGRY_BEE_RULE : undefined
   const listed = MOB_RULES[entity.name]
   if (listed !== undefined) return listed
   return entity.category === 'hostile' ? DEFAULT_HOSTILE_RULE : undefined

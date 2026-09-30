@@ -311,6 +311,11 @@ import { PenGateGuard } from './skills/farming/pen-gate-guard.js'
 import { PlantCropsSkill } from './skills/farming/plant-crops-skill.js'
 import { PlantTreesSkill } from './skills/farming/plant-trees-skill.js'
 import { AnimalPenProvider } from './skills/farming/providers/animal-pen.js'
+import { ApiaryProvider } from './skills/farming/providers/apiary.js'
+import { HarvestHoneySkill } from './skills/farming/harvest-honey-skill.js'
+import { InspectHivesSkill } from './skills/farming/inspect-hives-skill.js'
+import { MineflayerHiveAccess } from './bot/mineflayer-hive.js'
+import { HarvestHoneyTool, InspectHivesTool } from './mcp/tools/honey-tools.js'
 import { CropFieldProvider } from './skills/farming/providers/crop-field.js'
 import { TendFarmSkill } from './skills/farming/tend-farm-skill.js'
 import { BuildRailwaySkill } from './skills/railway/build-railway-skill.js'
@@ -1079,6 +1084,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const farmLayouts = new FarmLayoutRegistry()
     .register(new CropFieldProvider())
     .register(new AnimalPenProvider())
+    .register(new ApiaryProvider())
   const plantCrops = new PlantCropsSkill({
     blocks,
     navigator,
@@ -1317,6 +1323,33 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     policy: eggPolicy,
     farms: farmRegistry,
   })
+  // Honey: hives are read, smoked with a campfire below, and harvested with a bottle or shears.
+  const hiveAccess = new MineflayerHiveAccess(connection)
+  const campfireAccess = new MineflayerCampfireAccess(connection)
+  const inspectHives = new InspectHivesSkill({
+    blocks,
+    hives: hiveAccess,
+    campfires: campfireAccess,
+    guard: protectedAreas,
+    animals,
+    farms: farmRegistry,
+  })
+  const harvestHoney = new HarvestHoneySkill({
+    inspect: inspectHives,
+    blocks,
+    hives: hiveAccess,
+    campfires: campfireAccess,
+    user: blockUser,
+    placer: constructionPlacer,
+    navigator,
+    inventory,
+    guard: protectedAreas,
+    animals,
+    farms: farmRegistry,
+    vitals,
+    scheduler,
+    crafter: craftItem,
+  })
   const tendFarm = new TendFarmSkill({
     farms: farmRegistry,
     harvest: harvestCrops,
@@ -1324,10 +1357,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     herd: herdManager,
     collectEggs,
     plantTrees,
+    harvestHoney,
     gates: penGates,
   })
   const discoverFarm = new DiscoverFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry, vitals })
-  const inspectFarm = new InspectFarmSkill({ blocks, crops: cropAccess, animals, farms: farmRegistry })
+  const inspectFarm = new InspectFarmSkill({
+    blocks,
+    crops: cropAccess,
+    animals,
+    farms: farmRegistry,
+    hives: inspectHives,
+  })
   // Server commands (teleporting), which only work when the server lets the bot use them.
   const serverCommands = new MineflayerServerCommands(connection, scheduler)
   const teleport = new TeleportSkill({
@@ -1541,6 +1581,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new BreedAnimalsTool(breedAnimals, launcher))
     .register(new ShearSheepTool(shearSheep, launcher))
     .register(new MilkCowsTool(milkCows, launcher))
+    .register(new InspectHivesTool(inspectHives))
+    .register(new HarvestHoneyTool(harvestHoney, launcher))
     .register(new FertilizeCropsTool(fertilizeCrops, launcher))
     .register(new UseComposterTool(useComposter, launcher))
     .register(new CollectEggsTool(collectEggs, launcher))

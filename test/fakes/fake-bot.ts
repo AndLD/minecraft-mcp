@@ -270,6 +270,9 @@ export class FakeBot implements BotLike {
       cooked_beef: { id: 100 },
       beef: { id: 1500 },
       bone_meal: { id: 1501 },
+      glass_bottle: { id: 1502 },
+      shears: { id: 1503 },
+      campfire: { id: 1504 },
       bread: { id: 101 },
       apple: { id: 102 },
       rotten_flesh: { id: 103 },
@@ -456,6 +459,8 @@ export class FakeBot implements BotLike {
         if (name.endsWith('_fence_gate') && this.gateFacings.has(cellKey))
           props['facing'] = this.gateFacings.get(cellKey)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
+        if (name === 'beehive' || name === 'bee_nest')
+          props['honey_level'] = String(this.honeyLevels.get(cellKey) ?? 0)
         if (name === 'composter') props['level'] = String(this.composterLevels.get(cellKey) ?? 0)
         if (name === 'campfire' || name === 'soul_campfire')
           props['lit'] = !this.campfiresOut.has(cellKey)
@@ -552,6 +557,14 @@ export class FakeBot implements BotLike {
 
   /** Minecarts put on rails, by rail cell. */
   readonly minecartsPlaced: Position[] = []
+
+  /** Beehives and bee nests: honey level 0 to 5. A glass bottle (honey bottle) or shears (3 honeycomb) on a full one empties it. */
+  private readonly honeyLevels = new Map<string, number>()
+  setHoneyLevel(position: Position, level: number): void {
+    this.honeyLevels.set(key(position), level)
+  }
+  /** Runs after every hive harvest, so a test can make the bees angry. */
+  onHiveHarvest: (position: Position) => void = () => undefined
 
   /** Composters: a right-click with a compostable item adds a level (a full one turns ready at once); an empty-handed click on a ready one pops bone meal. */
   private readonly composterLevels = new Map<string, number>()
@@ -700,6 +713,19 @@ export class FakeBot implements BotLike {
         name: 'minecart',
         position: { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
       }
+    } else if (
+      (block.name === 'beehive' || block.name === 'bee_nest') &&
+      (this.heldItem?.name === 'glass_bottle' || this.heldItem?.name === 'shears') &&
+      (this.honeyLevels.get(cellKey) ?? 0) >= 5
+    ) {
+      this.honeyLevels.set(cellKey, 0)
+      if (this.heldItem.name === 'glass_bottle') {
+        this.removeItems('glass_bottle', 1)
+        this.addItems('honey_bottle', 1)
+        this.heldItem =
+          this.count('glass_bottle') > 0 ? { name: 'glass_bottle', count: this.count('glass_bottle') } : null
+      } else this.addItems('honeycomb', 3)
+      this.onHiveHarvest(position)
     } else if (this.heldItem?.name === 'bone_meal' && classifyCrop(block.name) !== undefined) {
       const max = classifyCrop(block.name)?.maxAge ?? 7
       this.cropAges.set(cellKey, Math.min(max, (this.cropAges.get(cellKey) ?? 0) + this.boneMealStages))

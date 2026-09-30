@@ -15,7 +15,7 @@ const spotSchema = z.object({
 })
 const farmSchema = z.object({
   id: z.string(),
-  kind: z.enum(['field', 'pen', 'grove']),
+  kind: z.enum(['field', 'pen', 'grove', 'apiary']),
   /** The crop this field grows, or the tree species of a grove; null for anything else, or none set. */
   crop: z.string().nullable(),
   /** The animal species this pen keeps, or null for anything else, or a pen with none set. */
