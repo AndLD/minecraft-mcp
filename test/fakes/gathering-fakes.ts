@@ -262,12 +262,16 @@ export class FakeFurnaceSession implements FurnaceSession {
   output: ItemStackInfo | undefined
   burning = false
   closed = false
+  /** How often the window was closed, and how often it was read while closed (which the game would not allow). */
+  closes = 0
+  readsWhileClosed = 0
   readonly log: string[] = []
   /** Runs before every `contents()` call, so a test can advance the smelting. */
   onLook: () => void = () => undefined
   failPutFuel: Error | undefined
 
   contents(): FurnaceContents {
+    if (this.closed) this.readsWhileClosed += 1
     this.onLook()
     return { input: this.input, fuel: this.fuel, output: this.output, burning: this.burning }
   }
@@ -300,6 +304,7 @@ export class FakeFurnaceSession implements FurnaceSession {
 
   close(): Promise<void> {
     this.closed = true
+    this.closes += 1
     return Promise.resolve()
   }
 
@@ -318,7 +323,9 @@ export class FakeFurnaceAccess implements FurnaceAccess {
 
   open(position: Position): Promise<Result<FurnaceSession>> {
     this.opened.push(position)
-    return Promise.resolve(this.failure === undefined ? ok(this.session) : err(this.failure))
+    if (this.failure !== undefined) return Promise.resolve(err(this.failure))
+    this.session.closed = false
+    return Promise.resolve(ok(this.session))
   }
 }
 

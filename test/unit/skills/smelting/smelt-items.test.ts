@@ -4,6 +4,7 @@ import { SMELTABLE_ITEMS, SMELTING_TABLE } from '../../../../src/skills/smelting
 import { PlacementSpotFinder } from '../../../../src/skills/crafting/placement-spot.js'
 import { Workstations } from '../../../../src/skills/crafting/workstations.js'
 import { err, ok } from '../../../../src/core/result.js'
+import { SmeltJobs } from '../../../../src/state/smelt-jobs.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
 import {
   FakeBlockScanner,
@@ -52,6 +53,7 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     vitals,
     spots: new PlacementSpotFinder(scanner),
   })
+  const jobs = new SmeltJobs()
   const crafted: string[] = []
   const crafterResult: { value: SkillResult<CraftOutput> } = {
     value: ok({ item: 'furnace', produced: 1, steps: [], placedTable: false }),
@@ -72,6 +74,8 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     crafter,
     clock,
     scheduler: new AutoScheduler(clock),
+    navigator,
+    jobs,
   })
   /** Smelting completes the moment the furnace is looked at. */
   furnaces.session.onLook = () => {
@@ -81,7 +85,18 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     session.output = { name: made, count: (session.output?.count ?? 0) + session.input.count }
     session.input = undefined
   }
-  return { clock, scanner, inventory, furnaces, placer, navigator, skill, crafted, crafterResult }
+  return {
+    clock,
+    scanner,
+    inventory,
+    furnaces,
+    placer,
+    navigator,
+    skill,
+    crafted,
+    crafterResult,
+    jobs,
+  }
 }
 
 const smelt = (item: string, count?: number, fuel?: string) => ({ item, count, fuel })
@@ -95,7 +110,15 @@ describe('SmeltItemsSkill', () => {
 
     expect(result).toEqual({
       ok: true,
-      value: { item: 'raw_iron', produced: 'iron_ingot', smelted: 5, requested: 5, fuel: 'coal' },
+      value: {
+        item: 'raw_iron',
+        produced: 'iron_ingot',
+        smelted: 5,
+        requested: 5,
+        fuel: 'coal',
+        pending: 0,
+        furnace: { x: 3, y: 64, z: 0 },
+      },
     })
     expect(furnaces.session.log).toEqual([
       'fuel coal 1',
@@ -184,7 +207,7 @@ describe('SmeltItemsSkill', () => {
 
       expect(crafted).toEqual(['furnace'])
       expect(result.ok).toBe(true)
-      expect(furnaces.opened).toHaveLength(1)
+      expect(furnaces.opened.length).toBeGreaterThanOrEqual(1)
     })
 
     it('explains when one cannot be crafted', async () => {
@@ -234,8 +257,8 @@ describe('SmeltItemsSkill', () => {
       expect(clock.now()).toBeGreaterThan(3 * 10_000 + 30_000)
     })
 
-    it('stops when cancelled and puts everything back', async () => {
-      const { skill, furnaces } = setup({ raw_iron: 3, coal: 1 })
+    it('stops when cancelled but leaves the loaded furnace burning, and remembers the job', async () => {
+      const { skill, furnaces, jobs } = setup({ raw_iron: 3, coal: 1 })
       const { context, controller } = skillContext()
       furnaces.session.onLook = () => {
         if (furnaces.session.input !== undefined) controller.abort() // once the items are loaded
@@ -244,10 +267,11 @@ describe('SmeltItemsSkill', () => {
       const result = await skill.run(smelt('raw_iron'), context)
 
       expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
-      expect(furnaces.session.log).toEqual(
-        expect.arrayContaining(['took input raw_iron 3', 'took fuel coal 1']),
-      )
+      expect(!result.ok && result.error.message).toContain('call smelt again')
+      expect(furnaces.session.log).not.toContain('took input raw_iron 3')
+      expect(furnaces.session.log).not.toContain('took fuel coal 1')
       expect(furnaces.session.closed).toBe(true)
+      expect(jobs.all()).toMatchObject([{ item: 'raw_iron', count: 3, loaded: 3, collected: 0 }])
     })
 
     it('reports fuel running out', async () => {
@@ -315,6 +339,258 @@ describe('SmeltItemsSkill', () => {
       expect(!result.ok && result.error.message).toContain('window closed')
       expect(furnaces.session.closed).toBe(true)
     })
+  })
+})
+
+describe('SmeltItemsSkill, the wait', () => {
+  /** Smelting needs `ready` of the fake's looks before the output appears, so a wait has to be taken. */
+  function slow(setupItems: Record<string, number>, looksNeeded: number) {
+    const s = setup(setupItems)
+    let looks = 0
+    s.furnaces.session.onLook = () => {
+      const session = s.furnaces.session
+      if (session.input === undefined) return
+      looks += 1
+      if (looks < looksNeeded) return
+      const made = SMELTING_TABLE[session.input.name] ?? 'unknown'
+      session.output = { name: made, count: (session.output?.count ?? 0) + session.input.count }
+      session.input = undefined
+    }
+    return s
+  }
+
+  it('closes the window while the items cook, and never reads a closed furnace', async () => {
+    const { skill, furnaces } = slow({ raw_iron: 3, coal: 1 }, 4)
+
+    const result = await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 3 } })
+    expect(furnaces.session.closes).toBeGreaterThan(1)
+    expect(furnaces.opened.length).toBe(furnaces.session.closes)
+    expect(furnaces.session.readsWhileClosed).toBe(0)
+  })
+
+  it('waits longer between looks for a big job than for a small one, up to a minute', async () => {
+    const big = slow({ raw_iron: 64, coal: 8 }, 3)
+    const bigStart = big.clock.now()
+    await big.skill.run(smelt('raw_iron', 64), skillContext().context)
+    const bigFirst = big.clock.now() - bigStart
+
+    const small = slow({ raw_iron: 1, coal: 1 }, 2)
+    const smallStart = small.clock.now()
+    await small.skill.run(smelt('raw_iron', 1), skillContext().context)
+    const smallFirst = small.clock.now() - smallStart
+
+    expect(smallFirst).toBe(5_000)
+    expect(bigFirst).toBeGreaterThan(smallFirst)
+    expect(bigFirst).toBeLessThanOrEqual(2 * 60_000)
+  })
+
+  it('forgets the job when everything is collected', async () => {
+    const { skill, jobs } = setup({ raw_iron: 3, coal: 1 })
+
+    await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(jobs.all()).toEqual([])
+  })
+
+  it('loads the furnace and returns at once with start_only, keeping the job', async () => {
+    const { skill, furnaces, jobs } = slow({ raw_iron: 5, coal: 1 }, 99)
+
+    const result = await skill.run(
+      { ...smelt('raw_iron'), wait: 'start_only' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { smelted: 0, pending: 5, furnace: { x: 3, y: 64, z: 0 } },
+    })
+    expect(furnaces.session.input).toEqual({ name: 'raw_iron', count: 5 })
+    expect(furnaces.session.closed).toBe(true)
+    expect(jobs.all()).toMatchObject([{ item: 'raw_iron', count: 5, collected: 0 }])
+  })
+
+  it('collects a job left for later and ends it when everything is done', async () => {
+    const { skill, furnaces, jobs, navigator } = slow({ raw_iron: 4, coal: 1 }, 99)
+    await skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    furnaces.session.onLook = () => {
+      furnaces.session.output = { name: 'iron_ingot', count: 4 }
+      furnaces.session.input = undefined
+    }
+    navigator.trips.length = 0
+
+    const result = await skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { item: 'raw_iron', smelted: 4, pending: 0 } })
+    expect(navigator.trips).toEqual([{ target: { x: 3, y: 64, z: 0 }, within: 2.5 }])
+    expect(jobs.all()).toEqual([])
+  })
+
+  it('collect takes what is done so far and leaves the rest cooking', async () => {
+    const { skill, furnaces, jobs } = slow({ raw_iron: 4, coal: 1 }, 99)
+    await skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    furnaces.session.onLook = () => {
+      furnaces.session.output = { name: 'iron_ingot', count: 1 }
+      furnaces.session.input = { name: 'raw_iron', count: 3 }
+    }
+
+    const result = await skill.run(
+      { item: 'raw_iron', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 1, pending: 3 } })
+    expect(jobs.all()).toMatchObject([{ collected: 1 }])
+    expect(furnaces.session.input).toEqual({ name: 'raw_iron', count: 3 })
+  })
+
+  it('says so when there is no job to collect', async () => {
+    const { skill } = setup({ raw_iron: 1, coal: 1 })
+
+    const any = await skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+    const named = await skill.run(
+      { item: 'sand', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(any).toMatchObject({ ok: false, error: { reason: 'no_pending_job' } })
+    expect(named).toMatchObject({ ok: false, error: { reason: 'no_pending_job' } })
+  })
+
+  it('a second smelt of the same item goes back to the job instead of loading again', async () => {
+    const { skill, furnaces } = slow({ raw_iron: 3, coal: 2 }, 99)
+    const { context, controller } = skillContext()
+    furnaces.session.onLook = () => {
+      if (furnaces.session.input !== undefined) controller.abort()
+    }
+    await skill.run(smelt('raw_iron'), context)
+    furnaces.session.onLook = () => {
+      furnaces.session.output = { name: 'iron_ingot', count: 3 }
+      furnaces.session.input = undefined
+    }
+    furnaces.session.log.length = 0
+
+    const again = await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(again).toMatchObject({ ok: true, value: { smelted: 3, pending: 0 } })
+    expect(furnaces.session.log.some((line) => line.startsWith('fuel'))).toBe(false)
+  })
+
+  it('drops a job whose furnace cannot be opened any more', async () => {
+    const { skill, furnaces, jobs } = slow({ raw_iron: 2, coal: 1 }, 99)
+    await skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    furnaces.failure = 'There is no furnace there.'
+
+    const result = await skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_failed' } })
+    expect(jobs.all()).toEqual([])
+  })
+
+  it('reports a walk back to the furnace that failed, keeping the job', async () => {
+    const { skill, jobs, navigator } = slow({ raw_iron: 2, coal: 1 }, 99)
+    await skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    navigator.failures = [{ reason: 'unreachable', message: 'blocked' }]
+
+    const result = await skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_failed' } })
+    expect(jobs.all()).toHaveLength(1)
+  })
+
+  it('passes on a cancelled walk back to the furnace', async () => {
+    const { skill, navigator } = slow({ raw_iron: 2, coal: 1 }, 99)
+    await skill.run({ ...smelt('raw_iron'), wait: 'start_only' }, skillContext().context)
+    navigator.failures = [{ reason: 'aborted', message: 'Cancelled.' }]
+
+    const result = await skill.run(
+      { item: '', count: undefined, fuel: undefined, collect: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+  })
+
+  it('keeps the job when the furnace cannot be opened again in the middle of a wait', async () => {
+    const { skill, furnaces, jobs } = slow({ raw_iron: 3, coal: 1 }, 99)
+    furnaces.session.close = () => {
+      furnaces.session.closed = true
+      furnaces.failure = 'Chunk unloaded.'
+      return Promise.resolve()
+    }
+
+    const result = await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_failed' } })
+    expect(jobs.all()).toHaveLength(1)
+  })
+
+  it('drops the job and takes everything back when the server fails while loading', async () => {
+    const { skill, furnaces, jobs } = setup({ raw_iron: 3, coal: 1 })
+    furnaces.session.failPutFuel = new Error('window closed')
+
+    await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(jobs.all()).toEqual([])
+  })
+
+  it('does not believe an empty fuel slot and a flame that reads out while the items are still cooking (regression)', async () => {
+    // Found by the e2e run: once the window was closed and opened again, the fuel slot read empty and the flame
+    // out although the last fuel item was burning, and the skill gave up with out_of_fuel and nothing smelted.
+    const { skill, furnaces } = slow({ raw_iron: 3, coal: 1 }, 4)
+    const session = furnaces.session
+    const base = session.onLook
+    session.onLook = () => {
+      if (session.input !== undefined) {
+        session.burning = false
+        session.fuel = undefined
+      }
+      base()
+    }
+
+    const result = await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 3 } })
+  })
+
+  it('gives up on a furnace that has not moved for half a minute with an empty fuel slot', async () => {
+    const { skill, furnaces, clock } = setup({ raw_iron: 3, coal: 1 })
+    furnaces.session.onLook = () => {
+      furnaces.session.burning = false
+      furnaces.session.fuel = undefined
+    }
+    const start = clock.now()
+
+    const result = await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'out_of_fuel' } })
+    expect(clock.now() - start).toBeGreaterThanOrEqual(30_000)
+  })
+
+  it('takes everything back and forgets the job when the fuel runs out', async () => {
+    const { skill, furnaces, jobs } = setup({ raw_iron: 3, coal: 1 })
+    furnaces.session.onLook = () => {
+      furnaces.session.burning = false
+      furnaces.session.fuel = undefined
+    }
+
+    await skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(furnaces.session.log).toContain('took input raw_iron 3')
+    expect(jobs.all()).toEqual([])
   })
 })
 

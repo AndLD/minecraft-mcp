@@ -11,6 +11,7 @@ describe('SessionBriefingBuilder', () => {
       previousSession: null,
       interruptedTasks: [],
       pendingDrops: [],
+      smeltJobs: [],
       standingInstructions: {},
       notes: [],
       recentHistory: [],
@@ -145,6 +146,45 @@ describe('SessionBriefingBuilder', () => {
   it('is an ok result type sanity check for ok/err helpers used above', () => {
     expect(ok(1).ok).toBe(true)
     expect(err('x').ok).toBe(false)
+  })
+})
+
+describe('SessionBriefingBuilder: smelting jobs', () => {
+  it('lists a furnace that still holds a job and tells the agent to collect it', async () => {
+    const stack = buildStateStack()
+    await stack.worldState.open(SEED_A)
+    stack.smeltJobs.put({
+      x: 10,
+      y: 64,
+      z: -3,
+      item: 'raw_iron',
+      produced: 'iron_ingot',
+      count: 12,
+      loaded: 12,
+      collected: 4,
+      fuel: 'coal',
+      startedAt: 0,
+    })
+
+    const briefing = stack.briefing.build()
+
+    expect(briefing.smeltJobs).toEqual([
+      {
+        item: 'raw_iron',
+        produced: 'iron_ingot',
+        furnace: { x: 10, y: 64, z: -3 },
+        count: 12,
+        collected: 4,
+      },
+    ])
+    expect(briefing.nextSteps.join(' ')).toContain('collect')
+  })
+
+  it('lists no jobs when there are none', async () => {
+    const stack = buildStateStack()
+    await stack.worldState.open(SEED_A)
+
+    expect(stack.briefing.build().smeltJobs).toEqual([])
   })
 })
 

@@ -194,6 +194,7 @@ import { ContainerIndex } from './state/container-index.js'
 import { EggPolicy } from './state/egg-policy.js'
 import { ExcavationRecords } from './state/excavation-records.js'
 import { FarmRegistry } from './state/farm-registry.js'
+import { SmeltJobs } from './state/smelt-jobs.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
 import { BedRegistry } from './state/bed-registry.js'
@@ -469,6 +470,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   const storageRules = new StorageRules()
   const storagePolicy = new StoragePolicy()
   const dropRecords = new DropRecords(clock)
+  const smeltJobs = new SmeltJobs()
   const dropPolicy = new DropRecoveryPolicy()
   const journal = new TaskJournal(clock, tasks)
   const worldState = new WorldStateManager({
@@ -498,6 +500,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       storageRules,
       storagePolicy,
       dropRecords,
+      smeltJobs,
       dropPolicy,
     ],
     logger,
@@ -586,6 +589,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     standing,
     history,
     drops: dropRecords,
+    smeltJobs,
   })
 
   const inbox = new AgentInbox({
@@ -1121,6 +1125,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     crafter: craftItem,
     clock,
     scheduler,
+    navigator,
+    jobs: smeltJobs,
   })
 
   // Fishing.

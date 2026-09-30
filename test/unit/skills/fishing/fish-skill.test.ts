@@ -41,8 +41,11 @@ function setup(carried: Record<string, number> = { fishing_rod: 1 }) {
         item: input.item,
         produced: `cooked_${input.item}`,
         smelted: input.count ?? 0,
-        fuelUsed: 'coal',
-      } as unknown as SmeltOutput
+        fuel: 'coal',
+        requested: input.count ?? 0,
+        pending: 0,
+        furnace: { x: 0, y: 64, z: 0 },
+      }
       return Promise.resolve(ok(output) as SkillResult<SmeltOutput>)
     },
   }
