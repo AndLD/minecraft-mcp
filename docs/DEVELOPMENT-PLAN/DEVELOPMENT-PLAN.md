@@ -93,7 +93,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [34 Tall trees completion](phases/tall-trees.md) | done (`feature/tall-trees`: `harvest_trees` climbs a dirt tower beside a tall trunk, `reach_tall` `pillar` or `skip`, and always takes the tower down) |
 | [35 Fishing](phases/fishing.md) | done (`feature/fishing`: `fish` from the shore with a rod, sorting fish, treasure, and junk, optional cooking, and the `fish_and_cook` food policy) |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | done (`feature/smelting-wait`: the furnace window is closed between looks, a cancelled wait leaves the furnace burning and remembers the job in `SmeltJobs`, `smelt` again or `collect: true` takes it, `wait: start_only`, and out of fuel is judged by a stalled furnace) |
-| [37 Organize storage](phases/organize-storage.md) | not started (from the backlog: sort what is already in the chests by the rules) |
+| [37 Organize storage](phases/organize-storage.md) | done (`feature/organize-storage`: `organize_storage` looks into the containers, plans the moves against the room each will have, and carries them out one trip per source; `dry_run` is the default) |
 | [38 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases

@@ -22,12 +22,14 @@ import {
 import {
   DepositItemsTool,
   FindItemsTool,
+  OrganizeStorageTool,
   ScanContainersTool,
   WithdrawItemsTool,
 } from '../../../../src/mcp/tools/storage-task-tools.js'
 import type { ToolContext } from '../../../../src/mcp/tool.types.js'
 import type { DepositItemsSkill } from '../../../../src/skills/storage/deposit-items-skill.js'
 import type { FindItemsSkill } from '../../../../src/skills/storage/find-items-skill.js'
+import type { OrganizeStorageSkill } from '../../../../src/skills/storage/organize-storage-skill.js'
 import type { ScanContainersSkill } from '../../../../src/skills/storage/scan-containers-skill.js'
 import type { WithdrawItemsSkill } from '../../../../src/skills/storage/withdraw-items-skill.js'
 import { ContainerIndex } from '../../../../src/state/container-index.js'
@@ -428,6 +430,32 @@ describe('storage task tools', () => {
     })
     expect(result).toMatchObject({ ok: true, data: { description: 'Withdraw iron_ingot / coal' } })
     expect(tool.inputSchema.safeParse({ items: [] }).success).toBe(false)
+  })
+
+  it('organize_storage plans by default, and passes the containers and the time limit', async () => {
+    const { launcher } = await state()
+    const { skill, inputs } = stub('organize_storage')
+    const tool = new OrganizeStorageTool(skill as unknown as OrganizeStorageSkill, launcher)
+
+    const plan = await tool.execute(tool.inputSchema.parse({}), context)
+    const real = await tool.execute(
+      tool.inputSchema.parse({
+        containers: ['stone', 'container-2'],
+        dry_run: false,
+        max_minutes: 5,
+        replace: true,
+      }),
+      context,
+    )
+
+    expect(inputs).toEqual([
+      { containers: undefined, dryRun: true, maxMinutes: 10 },
+      { containers: ['stone', 'container-2'], dryRun: false, maxMinutes: 5 },
+    ])
+    expect(plan).toMatchObject({ ok: true, data: { description: 'Plan organizing storage' } })
+    expect(real).toMatchObject({ ok: true, data: { description: 'Organize storage' } })
+    expect(tool.inputSchema.safeParse({ containers: [] }).success).toBe(false)
+    expect(tool.inputSchema.safeParse({ max_minutes: 0 }).success).toBe(false)
   })
 
   it('find_items and scan_containers pass their options', async () => {

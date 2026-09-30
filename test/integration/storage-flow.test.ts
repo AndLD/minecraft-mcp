@@ -172,6 +172,49 @@ describe('containers, rules, and depositing', () => {
     )
   })
 
+  it('organizes what is in the chests: plans first, moves after the second call, and spares a protected chest', async () => {
+    const h = await start((bot) => {
+      chests(bot)
+      bot.stock(at(28), 'cobblestone', 100)
+      bot.stock(at(28), 'raw_iron', 12)
+      bot.stock(at(28), 'feather', 5)
+      bot.stock(at(16), 'diamond', 9)
+      bot.inventoryItems = [{ name: 'iron_pickaxe', count: 1 }]
+    })
+    await h.call('register_container', { x: 16, y: 64, z: -5, label: 'treasure', protected: true })
+    await h.call('register_container', { x: 22, y: 64, z: -5, label: 'metal' })
+    await h.call('register_container', { x: 28, y: 64, z: -5, label: 'misc' })
+    await h.call('set_storage_rule', { container: 'metal', items: ['ores', 'cobblestone'] })
+    await h.call('set_storage_rule', { container: 'treasure', items: ['diamond', 'feather'] })
+
+    const plan = await call(h, 'organize_storage', { wait_seconds: 30 })
+
+    expect(task(plan)).toMatchObject({
+      status: 'succeeded',
+      result: { dryRun: true, moved: 0, skipped: [{ reason: 'protected' }] },
+    })
+    expect(h.bot.inContainer(at(28), 'cobblestone')).toBe(100)
+    expect(h.bot.inContainer(at(22), 'cobblestone')).toBe(0)
+
+    const real = await call(h, 'organize_storage', { dry_run: false, wait_seconds: 30 })
+
+    expect(task(real)).toMatchObject({
+      status: 'succeeded',
+      result: { dryRun: false, moved: 112, left: [], carried: [] },
+    })
+    expect(h.bot.inContainer(at(22), 'cobblestone')).toBe(100)
+    expect(h.bot.inContainer(at(22), 'raw_iron')).toBe(12)
+    expect(h.bot.inContainer(at(28), 'feather')).toBe(5) // its rule points at a protected chest: stays
+    expect(h.bot.inContainer(at(16), 'diamond')).toBe(9)
+    expect(h.bot.inContainer(at(16), 'feather')).toBe(0)
+    expect(h.bot.count('iron_pickaxe')).toBe(1)
+    const listed = data(await h.call('list_containers')) as {
+      containers: { label: string; items: { name: string; count: number }[] }[]
+    }
+    const metal = listed.containers.find((container) => container.label === 'metal')
+    expect(metal?.items).toContainEqual({ name: 'cobblestone', count: 100 })
+  })
+
   it('never touches a protected chest', async () => {
     const h = await start((bot) => {
       chests(bot)
