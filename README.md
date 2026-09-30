@@ -58,6 +58,7 @@ npm run build
 | `MC_AUTH` | `offline` | `offline` or `microsoft` |
 | `MC_OWNER` | *(empty)* | Your in-game name. If set, only your chat messages are treated as instructions |
 | `MC_AUTO_CONNECT` | `false` | Connect on startup. Otherwise the agent calls the `connect` tool |
+| `MC_RECONNECT_ATTEMPTS` | `6` | How many times to try to rejoin after the connection is lost (5, 10, 20, 40, then 60 s apart). Not after a kick or a `disconnect`. `0` turns it off |
 | `DATA_DIR` | `./data` | Where per-world state is persisted (`DATA_DIR/<profile>/`: landmarks, structures, chests, rules, task journal, history, notes) |
 | `WORLD_PROFILE` | *(empty)* | Fallback world name, used only when the world cannot be identified automatically (the bot normally recognizes your world by itself from its seed, spawn point, and name). The `connect` tool can also take a `profile` |
 | `LOW_HEALTH_THRESHOLD` | `8` | Health points (of 20) at or below which the bot flees from any threat |

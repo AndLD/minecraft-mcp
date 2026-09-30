@@ -37,7 +37,10 @@ const shape = {
     .optional()
     .describe('Straight ahead as the player faces (1-64). See width.'),
   origin: z
-    .object({ x: z.number().int(), z: z.number().int() })
+    .object({
+      x: z.number().int().describe('x block coordinate of the corner the rectangle starts from.'),
+      z: z.number().int().describe('z block coordinate of the corner the rectangle starts from.'),
+    })
     .optional()
     .describe(
       'Overrides where width/length starts (still needs width and length). Defaults to the player.',

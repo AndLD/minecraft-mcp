@@ -18,6 +18,8 @@ export function buildConfig(overrides: Partial<Config> = {}): Config {
     lowHealthThreshold: 8,
     unclaimedDropWaitSeconds: 60,
     reflexesEnabled: true,
+    // Off by default so a test that drops the connection is not rejoined behind its back.
+    reconnectAttempts: 0,
     logLevel: 'info',
     ...overrides,
   }

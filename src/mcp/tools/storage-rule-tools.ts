@@ -89,7 +89,9 @@ const removeSchema = z.object({
 
 export class RemoveStorageRuleTool implements ToolDefinition<typeof removeSchema> {
   readonly name = 'remove_storage_rule'
-  readonly description = 'Removes a storage rule.'
+  readonly description =
+    'Removes one storage rule by its id (see list_storage_rules); the containers and the items in them are not touched, ' +
+    'only the instruction for where such items go. Fails when there is no rule with that id.'
   readonly inputSchema = removeSchema
 
   constructor(private readonly rules: StorageRules) {}
