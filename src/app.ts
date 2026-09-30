@@ -200,6 +200,9 @@ import { BedRegistry } from './state/bed-registry.js'
 import { SignRegistry } from './state/sign-registry.js'
 import { WorldKnowledgeStore } from './knowledge/world-knowledge-store.js'
 import { OpenVeinGatherSkill } from './skills/gathering/open-vein-gather-skill.js'
+import { LeadPlayerTool } from './mcp/tools/lead-player-tool.js'
+import { LeadPlayerSkill } from './skills/movement/lead-player-skill.js'
+import { LeadTargetResolver } from './skills/movement/lead-target.js'
 import { CaveMap } from './skills/discovery/caves/cave-map.js'
 import { ExploreCavesSkill } from './skills/discovery/caves/explore-caves-skill.js'
 import { FindDetector } from './skills/discovery/caves/find-rules.js'
@@ -1247,6 +1250,22 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inventory,
     clock,
   })
+  const leadPlayer = new LeadPlayerSkill({
+    navigator,
+    entities,
+    vitals,
+    gaze: new MineflayerGaze(connection),
+    chat,
+    scheduler,
+    clock,
+    blocks,
+  })
+  const leadTargets = new LeadTargetResolver({
+    knowledge,
+    containers: containerIndex,
+    farms: farmRegistry,
+    vitals,
+  })
   const launcher = new TaskLauncher(tasks, clock, reflexes)
   const invoke: ToolInvoker = (name, args, context) => registry.call(name, args, context)
   const registry = new ToolRegistry(logger, {
@@ -1279,6 +1298,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new GetInventoryTool(inventory))
     .register(new GoToTool(new GoToSkill(navigator, blockFinder), launcher))
     .register(new FollowPlayerTool(new FollowPlayerSkill(navigator), launcher, config.owner))
+    .register(new LeadPlayerTool(leadPlayer, launcher, leadTargets, vitals, config.owner))
     .register(new PressSwitchTool(pressSwitch, launcher, lookTarget, config.owner))
     .register(new OpenDoorTool(openDoor, launcher, lookTarget, config.owner))
     .register(new FindSwitchesTool(switchFinder, lookTarget, config.owner))
