@@ -1,7 +1,7 @@
 # Phase 43: Campfire cooking
 
 _Estimate: ½ session._  
-**Status:** not started.
+**Status:** done on `feature/campfire-cooking`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md).
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`smelt`, the stations, `Workstations`), [42 Blast furnace and smoker](blast-furnace-smoker.md) (`station` and the station table), [8 Hunting and food](hunting-food.md) (cooking after a hunt), [Tasks](../../features/core/tasks.md).  
 **Needed by:** [47 Hardening and polish](hardening-polish.md).
@@ -13,7 +13,7 @@ A campfire cooks raw food **without fuel**: up to four items at a time, 30 secon
 - **What it cooks.** Food only: beef, porkchop, mutton, chicken, rabbit, cod, salmon, potato (kelp is not, it is smoker only). `stationSmelts('campfire', item)` says which.
 - **The loop.** Put up to 4 items on the free slots, wait (the closed-loop wait of the smelt job: no standing over it; the injected `Scheduler` and `Clock`), pick up what popped out, put the next items on, and go on until everything is cooked or the time limit passes. A wait of 30 seconds is one look, so the job is short; a big batch (64 beef) takes 8 minutes, and the bot may be told to leave it (see below).
 - **`auto`.** For food: a smoker that stands nearby or is carried first (fastest, but it burns fuel), then a **campfire nearby when the bag has no usable fuel** or the batch is small (up to 8 items), then a furnace. `station: 'campfire'` names it. A campfire is never placed or crafted on the way (a campfire needs 3 sticks, 1 coal or charcoal, and 3 logs; the failure says so, like the blast furnace).
-- **Jobs.** A cut-short campfire job cannot be left cooking safely (the items are on the block and pop out into the world after 30 seconds, where they despawn in five minutes), so the wait is **not** interruptible into a job record: cancelling takes back what is still on the fire, if the server allows it (an item on a campfire can be taken by right-clicking with an empty hand), and picks up what has popped out. The `smelt_ready` signal does not apply.
+- **Jobs.** A cut-short campfire job cannot be left cooking safely (the items are on the block and pop out into the world after 30 seconds, where they despawn in five minutes), so the wait is **not** interruptible into a job record. **What was built:** the Java game has no way to take an item back off a campfire (only breaking the block does that), so cancelling picks up what has already popped out and the message says how many items are still on the fire (they pop out by themselves; the bot does not go back for them). `wait: start_only` and `collect` do not apply, and the `smelt_ready` signal does not apply.
 - **Safety.** Never on a campfire in a protected area (it is a player build); the bot stands on a free cell beside it, not on a fire, and steps away from a fire that is burning under it. Cooking near lava or water follows the `HazardRule` used for placing.
 - **Docs.** The gathering, crafting, and smelting page, the hunting and fishing pages (cooking uses `smelt`), AGENTS.md (the `station` note), the backlog entry.
 - **Tests:**

@@ -17,7 +17,17 @@ import { chooseFuel, totalFuelCapacity } from './fuel.js'
 import type { FuelFetcher } from './fuel-supply.js'
 import { plain, readyAt } from './smelt-job-watcher.js'
 import { SMELTABLE_ITEMS, SMELTING_TABLE } from './smelting-table.js'
-import { STATIONS, stationSmelts, stationsFor, type Station } from './stations.js'
+import type { CampfireCooker } from './campfire-cook-skill.js'
+import {
+  CAMPFIRE,
+  CAMPFIRE_BLOCKS,
+  STATIONS,
+  campfireCooks,
+  stationSmelts,
+  stationsFor,
+  type AnyStation,
+  type Station,
+} from './stations.js'
 
 const FURNACE = 'furnace'
 const TIMEOUT_SLACK_MS = 30_000
@@ -51,9 +61,11 @@ export interface SmeltInput {
   /**
    * Which block smelts it: a `blast_furnace` (ores and raw metals) or a `smoker` (food) is twice as fast and makes the
    * fuel last twice as long; a `furnace` does everything. `auto` (the default) uses a blast furnace or a smoker that
-   * stands nearby or is carried when it can smelt the item, and a furnace otherwise.
+   * stands nearby or is carried when it can smelt the item, and a furnace otherwise. A `campfire` cooks raw food on
+   * the block with no fuel and no window (up to four at a time, 30 seconds each); `auto` uses one that stands nearby
+   * when the bag has no fuel or the batch is small (up to 8) and no smoker is at hand.
    */
-  readonly station?: 'auto' | Station
+  readonly station?: 'auto' | AnyStation
 }
 
 export interface SmeltOutput {
@@ -62,7 +74,7 @@ export interface SmeltOutput {
   readonly smelted: number
   readonly requested: number
   /** The block that smelted it. */
-  readonly station: Station
+  readonly station: AnyStation
   /** The fuel the job started with. */
   readonly fuel: string
   /** Fuel taken out of storage for this job (`fuelFromStorage`), per kind. */
@@ -96,7 +108,12 @@ export interface SmeltItemsDeps {
   readonly vitals?: VitalsReader
   /** Takes fuel out of storage (`fuelFromStorage`). Without it the option does nothing. */
   readonly fuelSupply?: FuelFetcher
+  /** Cooks food on a campfire. Without it a campfire is never chosen. */
+  readonly campfire?: CampfireCooker
 }
+
+/** A campfire is chosen by itself for a batch this small even when the bag has fuel: it saves the coal. */
+const SMALL_CAMPFIRE_BATCH = 8
 
 /** How a pass over the furnace ended. */
 interface Drive {
@@ -135,8 +152,9 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     const waiting = deps.jobs.forItem(input.item)
     if (waiting !== undefined) return this.resume(waiting, wait, context)
 
-    const chosen = this.chooseStation(input.item, input.station ?? 'auto')
+    const chosen = this.chooseStation(input)
     if (!chosen.ok) return chosen
+    if (chosen.value === CAMPFIRE) return this.cookOnCampfire(input, produced, context)
     const station = chosen.value
     const speed = STATIONS[station].speed
     const ready = await this.ensureStation(station, context)
@@ -242,6 +260,30 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     } finally {
       await holder.session.close()
     }
+  }
+
+  /** Cooks on a campfire: no furnace, fuel, or job record (the food pops out of the fire by itself). */
+  private async cookOnCampfire(
+    input: SmeltInput,
+    produced: string,
+    context: SkillContext,
+  ): Promise<SkillResult<SmeltOutput>> {
+    const cooker = this.deps.campfire
+    if (cooker === undefined)
+      return err({ reason: 'no_campfire', message: 'Cooking on a campfire is not available.' })
+    const cooked = await cooker.cook({ item: input.item, produced, count: input.count }, context)
+    if (!cooked.ok) return cooked
+    return ok({
+      item: input.item,
+      produced,
+      smelted: cooked.value.cooked,
+      requested: input.count ?? cooked.value.cooked,
+      station: CAMPFIRE,
+      fuel: 'none',
+      fuelUsed: [],
+      pending: 0,
+      furnace: cooked.value.fire,
+    })
   }
 
   /** Takes what a waiting job has finished and lets it go on (or ends it when everything is done). */
@@ -358,16 +400,37 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
 
   /**
    * The block to smelt in. `auto` takes a blast furnace or a smoker that stands nearby or is carried when it can smelt
-   * the item (twice as fast), otherwise a furnace. A station that is asked for by name must be able to smelt the item
-   * and must be there: a blast furnace and a smoker are not crafted on the way (a furnace is).
+   * the item (twice as fast); then, for food, a campfire that stands nearby when the bag has no usable fuel or the
+   * batch is small; otherwise a furnace. A station that is asked for by name must be able to smelt the item and must
+   * be there: a blast furnace, a smoker, and a campfire are not crafted on the way (a furnace is).
    */
-  private chooseStation(item: string, wanted: 'auto' | Station): SkillResult<Station> {
-    const { workstations } = this.deps
+  private chooseStation(input: SmeltInput): SkillResult<AnyStation> {
+    const { workstations, campfire } = this.deps
+    const item = input.item
+    const wanted = input.station ?? 'auto'
+    const campfireStands =
+      campfire !== undefined && workstations.nearestOf(CAMPFIRE_BLOCKS) !== undefined
     if (wanted === 'auto') {
       const fast = stationsFor(item).find(
         (station) => station !== 'furnace' && workstations.available(STATIONS[station].block),
       )
-      return ok(fast ?? 'furnace')
+      if (fast !== undefined) return ok(fast)
+      if (campfireStands && campfireCooks(item) && this.campfireFits(input)) return ok(CAMPFIRE)
+      return ok('furnace')
+    }
+    if (wanted === CAMPFIRE) {
+      if (!campfireCooks(item))
+        return err({
+          reason: 'wrong_station',
+          message: `A campfire only cooks raw food (beef, porkchop, mutton, chicken, rabbit, cod, salmon, potato), not ${item}. Use a furnace.`,
+        })
+      if (!campfireStands)
+        return err({
+          reason: 'no_campfire',
+          message:
+            'There is no campfire nearby. A campfire is made from 3 sticks, 1 coal or charcoal, and 3 logs. Use a furnace, or make one first.',
+        })
+      return ok(CAMPFIRE)
     }
     if (!stationSmelts(wanted, item))
       return err({
@@ -387,6 +450,22 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         } Use a furnace, or craft one first.`,
       })
     return ok(wanted)
+  }
+
+  /** Whether a campfire is the sensible block for this batch: a small one, or the bag has no fuel for it. */
+  private campfireFits(input: SmeltInput): boolean {
+    const counts = countItems(this.deps.inventory.snapshot())
+    const requested = input.count ?? counts.get(input.item) ?? 0
+    if (requested <= SMALL_CAMPFIRE_BATCH) return true
+    return (
+      chooseFuel({
+        inventory: counts,
+        toSmelt: requested,
+        reserved: { name: input.item, count: requested },
+        preferred: input.fuel,
+        speed: 1,
+      }) === undefined
+    )
   }
 
   /** Makes sure the station stands nearby or is carried; only a furnace is crafted when the bot has neither. */

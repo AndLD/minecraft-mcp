@@ -248,6 +248,30 @@ describe('gathering, crafting, and smelting through the MCP server', () => {
     expect(h.bot.count('iron_ingot')).toBe(6)
   })
 
+  it('cooks raw chicken on a campfire beside the bot with no fuel, and picks up what pops out', async () => {
+    const h = await start((bot) => {
+      bot.setBlock({ x: 13, y: 64, z: -5 }, 'campfire')
+      bot.inventoryItems = [{ name: 'chicken', count: 4 }]
+    })
+    const state = { done: false }
+    const running = h.call('smelt', { item: 'chicken', wait_seconds: 55 }).finally(() => {
+      state.done = true
+    })
+    while (!state.done) {
+      h.scheduler.advance(500)
+      h.bot.popCampfires()
+      await h.settle()
+    }
+    const result = await running
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { station: 'campfire', smelted: 4, pending: 0, fuelUsed: [] },
+    })
+    expect(h.bot.count('cooked_chicken')).toBe(4)
+    expect(h.bot.count('chicken')).toBe(0)
+  })
+
   it('mines stone with the wooden pickaxe, refuses iron ore until it has a stone pickaxe, then gets iron', async () => {
     const h = await start((bot) => {
       wall(bot, 'stone', 20, -5, 6)

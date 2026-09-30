@@ -25,7 +25,7 @@ This page is the index. Each area has its own file under [features/](features/),
 | Area | Left out |
 |---|---|
 | [Survival reflexes](features/survival-reflexes.md) | fall-damage guard; night handling (a shelter, and long tasks stopping for night and mobs); an e2e for a reflex pausing a task |
-| [Hunting and food](features/hunting-and-food.md) | leashed animals; other pen materials; foraging (campfire cooking is [Phase 43](../DEVELOPMENT-PLAN/phases/campfire-cooking.md)) |
+| [Hunting and food](features/hunting-and-food.md) | leashed animals; other pen materials; foraging |
 | [Gathering](features/gathering.md) | bare-floor mining |
 | [Storage](features/storage.md) | craft and place a new chest; carried ender chests and shulker boxes; measured free space |
 | [Railways](features/railways.md) | junctions and crossings; detector and activator rails |
