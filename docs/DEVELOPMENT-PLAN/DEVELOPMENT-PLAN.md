@@ -90,7 +90,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [31 Open-vein gathering](phases/open-vein-gathering.md) | done (`feature/open-vein-gathering`: ores are gathered by veins the bot can walk to, exploring caves for them; tunnelling only on request) |
 | [32 Leading a player](phases/leading-a-player.md) | done (`feature/leading-a-player`: `lead_player` walks in legs, never farther than the lead distance from the player, waits and calls, goes back to a player who wanders) |
 | [33 Configurable Minecraft version](phases/minecraft-version.md) | in review (`feature/configurable-minecraft-version`: `MC_VERSION`, default 1.21.1, followed by the bot, the e2e server, and the player bots) |
-| [34 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [34 Tall trees completion](phases/tall-trees.md) | not started (from the backlog: pillar up to fell a tall tree completely) |
+| [35 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -135,11 +136,12 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [31 Open-vein gathering](phases/open-vein-gathering.md) | ½ session |
 | [32 Leading a player](phases/leading-a-player.md) | ½ session |
 | [33 Configurable Minecraft version](phases/minecraft-version.md) | ¼ session |
-| [34 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [34 Tall trees completion](phases/tall-trees.md) | ½ session |
+| [35 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 34 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 35 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -177,7 +179,8 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [31 Open-vein gathering](phases/open-vein-gathering.md) | 13, 14, 30 | |
 | [32 Leading a player](phases/leading-a-player.md) | 3 | 18, 30 |
 | [33 Configurable Minecraft version](phases/minecraft-version.md) | 2, 4 | |
-| [34 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [34 Tall trees completion](phases/tall-trees.md) | 5, 12, 18 | |
+| [35 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 
