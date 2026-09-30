@@ -176,7 +176,7 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [30 World discovery, including caves and canyons](phases/world-discovery.md) | 3, 5, 6 | 12, 14 |
 | [31 Open-vein gathering](phases/open-vein-gathering.md) | 13, 14, 30 | |
 | [32 Leading a player](phases/leading-a-player.md) | 3 | 18, 30 |
-| [33 Configurable Minecraft version](phases/minecraft-version.md) | 2, 9 | |
+| [33 Configurable Minecraft version](phases/minecraft-version.md) | 2, 4 | |
 | [34 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
