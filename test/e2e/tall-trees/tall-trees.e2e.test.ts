@@ -40,7 +40,7 @@ describe('felling a tall tree on a real Minecraft server', () => {
     if (!sessionOpen) return
     sessionOpen = false
     await session.close()
-    await world.fill(cell(6, 0, -7), cell(6, HEIGHT + 2, -7), 'air')
+    await world.fill(cell(2, 0, -11), cell(10, HEIGHT + 3, -3), 'air')
   })
 
   afterAll(async () => {
@@ -95,6 +95,26 @@ describe('felling a tall tree on a real Minecraft server', () => {
     await world.fill(TRUNK, cell(6, HEIGHT - 1, -7), 'oak_log')
     await untilBotSeesTrunk()
   }
+
+  it('cuts the leaves in the way of the tower when a canopy fills every column beside the trunk', async () => {
+    await world.give(bot(), 'dirt', 24)
+    await untilBotCarries('dirt', 24)
+    // A full crown: leaves out to 4 blocks from the trunk over the top five layers, the trunk through the middle.
+    await world.fill(cell(2, 7, -11), cell(10, 11, -3), 'oak_leaves')
+    await growTree()
+
+    const felled = await harvest({ replant: false })
+
+    if (felled.failed) throw new Error(`harvest_trees did not succeed: ${felled.text}`)
+    expect(felled.task.result).toMatchObject({ trees: 1, logs: HEIGHT, left: 0 })
+    expect((felled.task.result as { leavesCut: number }).leavesCut).toBeGreaterThan(0)
+    expect(await world.isBlock(cell(6, HEIGHT - 1, -7), 'air')).toBe(true)
+    // Only the tower column was cut (a few leaves of the 400 or so in the crown); the rest is left to decay.
+    expect((felled.task.result as { leavesCut: number }).leavesCut).toBeLessThan(25)
+    expect(await world.countItem(bot(), 'dirt')).toBeGreaterThanOrEqual(22)
+    const at = await world.playerPosition(bot())
+    expect(at.y).toBeLessThan(GROUND_Y + 2)
+  }, 300_000)
 
   it('climbs a tower of dirt, fells the whole tree, takes the tower down, and replants', async () => {
     await world.give(bot(), 'dirt', 16)

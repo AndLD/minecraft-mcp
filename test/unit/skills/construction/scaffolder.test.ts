@@ -101,6 +101,62 @@ describe('Scaffolder.plan', () => {
   })
 })
 
+describe('Scaffolder.plan, through leaves', () => {
+  /** Leaves fill every free column around the target, from the ground up to well above it. */
+  function canopy() {
+    const s = setup()
+    for (let x = -1; x <= 8; x += 1)
+      for (let z = 0; z <= 10; z += 1)
+        for (let y = 66; y <= 80; y += 1)
+          if (!(x === 3 && z === 5)) s.world.setBlock(at(x, y, z), 'oak_leaves')
+    return s
+  }
+  const leaf = (cell: Position): boolean => canopy_world?.nameAt(cell) === 'oak_leaves'
+  let canopy_world: ReturnType<typeof setup>['world'] | undefined
+
+  it('refuses a column of leaves unless told they may be cut', () => {
+    const { scaffolder, world } = canopy()
+    canopy_world = world
+
+    expect(scaffolder.plan(request())).toBeUndefined()
+  })
+
+  it('uses a column of leaves when they may be cut, and lists the cells to dig', () => {
+    const { scaffolder, world } = canopy()
+    canopy_world = world
+
+    const plan = scaffolder.plan(request({ passable: leaf, maxClear: 12 }))
+
+    expect(plan).toBeDefined()
+    expect(plan?.clear?.length).toBeGreaterThan(0)
+    for (const cell of plan?.clear ?? []) expect(world.nameAt(cell)).toBe('oak_leaves')
+  })
+
+  it('refuses a column that needs more cuts than the limit', () => {
+    const { scaffolder, world } = canopy()
+    canopy_world = world
+
+    expect(scaffolder.plan(request({ passable: leaf, maxClear: 1 }))).toBeUndefined()
+  })
+
+  it('prefers a clear column to one with leaves in it, even a little farther away', () => {
+    const { scaffolder, world } = setup()
+    canopy_world = world
+    world.setBlock(at(2, 66, 5), 'oak_leaves') // the nearest column has a leaf in it
+
+    const plan = scaffolder.plan(request({ target: at(3, 70, 5), passable: leaf, maxClear: 12 }))
+
+    expect(plan?.clear ?? []).toEqual([])
+  })
+
+  it('does not treat a leaf that is not passable as free', () => {
+    const { scaffolder, world } = canopy()
+    canopy_world = world
+
+    expect(scaffolder.plan(request({ passable: () => false, maxClear: 12 }))).toBeUndefined()
+  })
+})
+
 describe('Scaffolder.raise', () => {
   it('builds the tower and ends with the bot on top of it', async () => {
     const { world, scaffolder } = setup()
@@ -194,6 +250,69 @@ describe('Scaffolder.raise', () => {
     expect(more.ok).toBe(true)
     expect(raised.value.cells).toHaveLength(2)
     expect(world.bot.y).toBe(66)
+  })
+
+  it('digs the leaves that stand in the tower column before climbing into them', async () => {
+    const { world, scaffolder } = setup()
+    world.give('cobblestone', 10)
+    world.setBlock(at(2, 66, 3), 'oak_leaves')
+    world.setBlock(at(2, 67, 3), 'oak_leaves')
+    const plan = { base: at(2, 64, 3), height: 3, clear: [at(2, 66, 3), at(2, 67, 3)] }
+
+    const raised = await scaffolder.raise(plan, 'cobblestone', live())
+
+    expect(raised.ok).toBe(true)
+    expect(raised.ok && raised.value.leavesCut).toBe(2)
+    expect(world.nameAt(at(2, 66, 3))).toBe('cobblestone')
+    expect(world.log.filter((line) => line.startsWith('dig'))).toHaveLength(2)
+  })
+
+  it('digs a leaf above the planned height when the tower has to grow, if the plan allows it', async () => {
+    const { world, scaffolder } = setup()
+    world.give('cobblestone', 10)
+    world.setBlock(at(2, 67, 3), 'oak_leaves')
+    world.setBlock(at(2, 68, 3), 'oak_leaves')
+    const raised = await scaffolder.raise(
+      { base: at(2, 64, 3), height: 1, mayCut: (cell) => world.nameAt(cell) === 'oak_leaves' },
+      'cobblestone',
+      live(),
+    )
+    if (!raised.ok) throw new Error('setup failed')
+
+    const more = await scaffolder.pillarOnce(raised.value, live())
+    const evenMore = await scaffolder.pillarOnce(raised.value, live())
+
+    expect(more.ok && evenMore.ok).toBe(true)
+    expect(raised.value.leavesCut).toBe(2)
+    expect(raised.value.cells).toHaveLength(3)
+  })
+
+  it('only digs cells the plan named', async () => {
+    const { world, scaffolder } = setup()
+    world.give('cobblestone', 10)
+    world.setBlock(at(2, 66, 3), 'oak_leaves')
+
+    const raised = await scaffolder.raise({ base: at(2, 64, 3), height: 3 }, 'cobblestone', live())
+
+    // A leaf nobody said may be cut is left alone, and the bot cannot climb into it.
+    expect(world.log.filter((line) => line.startsWith('dig'))).toEqual([])
+    expect(raised.ok && raised.value.leavesCut).toBe(0)
+  })
+
+  it('stops when a leaf will not break, saying so', async () => {
+    const { world, scaffolder } = setup()
+    world.give('cobblestone', 10)
+    world.setBlock(at(2, 66, 3), 'oak_leaves')
+    world.digFailures = [{ reason: 'out_of_reach', message: 'too hard' }]
+
+    const raised = await scaffolder.raise(
+      { base: at(2, 64, 3), height: 3, clear: [at(2, 66, 3)] },
+      'cobblestone',
+      live(),
+    )
+
+    expect(raised.ok).toBe(false)
+    expect(!raised.ok && raised.error.message).toContain('oak_leaves')
   })
 
   it('needs a connection', async () => {

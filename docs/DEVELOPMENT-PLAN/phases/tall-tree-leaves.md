@@ -1,7 +1,7 @@
 # Phase 39: Tall trees, cutting leaves
 
 _Estimate: ¼ session._  
-**Status:** not started.
+**Status:** done on `feature/tall-tree-leaves`. See [Tree farming](../../features/farming/tree-farming.md). Differences from this plan: leaves of the tree's own kind are recognised by name (no `persistent` check: the block scanner does not read blockstates), so a leaf hedge of the same species inside a player build is protected only by the protected-area rule; the tower may cut leaves above its planned height when it has to grow, not only the cells named in the plan; the leaf limit is 12 per planned column.
 
 **Depends on:** [34 Tall trees completion](tall-trees.md) (`harvest_trees` climbing a dirt tower, the `Scaffolder`), [13 Construction engine and building](construction-building.md).  
 **Needed by:** [42 Hardening and polish](hardening-polish.md).

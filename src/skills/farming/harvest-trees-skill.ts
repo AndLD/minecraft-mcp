@@ -32,6 +32,8 @@ const SCAFFOLD_BLOCK = 'dirt'
 const MAX_TOWER_HEIGHT = 12
 /** Tries to reach one log from the tower (each try may add a block to it). */
 const TOWER_TRIES = MAX_TOWER_HEIGHT + 2
+/** A tower column that needs more leaves dug than this is not used. */
+const MAX_LEAVES_IN_COLUMN = 12
 
 export interface HarvestTreesInput {
   readonly farm: string | undefined
@@ -55,6 +57,8 @@ export interface HarvestTreesOutput {
   readonly saplingsMissing: number
   /** Dirt the bot lacked for the tower a tall tree needed (that tree's top logs stayed). */
   readonly scaffoldMissing: number
+  /** Leaves dug out of the way of a tower (the canopy is otherwise left to decay). */
+  readonly leavesCut: number
   readonly gained: readonly ItemCount[]
 }
 
@@ -127,6 +131,7 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     let replanted = 0
     let saplingsMissing = 0
     let scaffoldMissing = 0
+    let leavesCut = 0
     let aborted = false
 
     for (const base of this.baseCells(entry, bounds)) {
@@ -142,6 +147,7 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
       logs += felled.dug
       left += felled.left
       scaffoldMissing += felled.scaffoldMissing
+      leavesCut += felled.leavesCut
       if (felled.aborted) {
         aborted = true
         break
@@ -176,6 +182,7 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
       replanted,
       saplingsMissing,
       scaffoldMissing,
+      leavesCut,
       gained: gained(before, countItems(this.deps.inventory.snapshot())),
     }
     if (aborted)
@@ -215,6 +222,7 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     dug: number
     left: number
     scaffoldMissing: number
+    leavesCut: number
     bases: Position[]
     aborted: boolean
   }> {
@@ -226,14 +234,16 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     let dug = 0
     let left = 0
     for (const [index, log] of trunk.entries()) {
-      if (context.signal.aborted) return { dug, left, scaffoldMissing: 0, bases, aborted: true }
+      if (context.signal.aborted)
+        return { dug, left, scaffoldMissing: 0, leavesCut: 0, bases, aborted: true }
       if (this.isOthers(log, ownLabel)) {
         left += 1
         continue
       }
       if (this.deps.blocks.blockAt(log) !== logName) continue
       const outcome = await this.cut(log, context)
-      if (outcome === 'aborted') return { dug, left, scaffoldMissing: 0, bases, aborted: true }
+      if (outcome === 'aborted')
+        return { dug, left, scaffoldMissing: 0, leavesCut: 0, bases, aborted: true }
       if (outcome === 'dug') {
         dug += 1
         // Each log's drop is picked up as it falls, like collect_block does per block: a whole tree's drops at
@@ -246,17 +256,23 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
           dug: dug + high.dug,
           left: left + high.left,
           scaffoldMissing: high.missing,
+          leavesCut: high.leavesCut,
           bases,
           aborted: high.aborted,
         }
       } else left += 1
     }
-    return { dug, left, scaffoldMissing: 0, bases, aborted: false }
+    return { dug, left, scaffoldMissing: 0, leavesCut: 0, bases, aborted: false }
   }
 
   private isOthers(log: Position, ownLabel: string | undefined): boolean {
     const guarded = this.deps.guard.protectedAt(log)
     return guarded !== undefined && guarded.label !== ownLabel
+  }
+
+  /** A leaf of the tree's own kind that may be dug: not inside somebody else's protected area. */
+  private isOwnLeaf(cell: Position, leaves: string, ownLabel: string | undefined): boolean {
+    return this.deps.blocks.blockAt(cell) === leaves && !this.isOthers(cell, ownLabel)
   }
 
   private canPillar(): boolean {
@@ -273,22 +289,32 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     logName: string,
     ownLabel: string | undefined,
     context: SkillContext,
-  ): Promise<{ dug: number; left: number; missing: number; aborted: boolean }> {
+  ): Promise<{ dug: number; left: number; missing: number; leavesCut: number; aborted: boolean }> {
     const { scaffolder, vitals } = this.deps
+    const leaves = logName.replace(/_log$/, '_leaves')
     const first = logs[0]
     const here = vitals?.read()?.position
     if (scaffolder === undefined || first === undefined || here === undefined)
-      return { dug: 0, left: logs.length, missing: 0, aborted: false }
+      return { dug: 0, left: logs.length, missing: 0, leavesCut: 0, aborted: false }
     const tower = scaffolder.plan({
       target: first,
       from: here,
       reserved: new Set(),
       maxHeight: MAX_TOWER_HEIGHT,
+      passable: (cell) => this.isOwnLeaf(cell, leaves, ownLabel),
+      maxClear: MAX_LEAVES_IN_COLUMN,
     })
-    if (tower === undefined) return { dug: 0, left: logs.length, missing: 0, aborted: false }
+    if (tower === undefined)
+      return { dug: 0, left: logs.length, missing: 0, leavesCut: 0, aborted: false }
     const carried = countItems(this.deps.inventory.snapshot()).get(SCAFFOLD_BLOCK) ?? 0
     if (carried < tower.height)
-      return { dug: 0, left: logs.length, missing: tower.height - carried, aborted: false }
+      return {
+        dug: 0,
+        left: logs.length,
+        missing: tower.height - carried,
+        leavesCut: 0,
+        aborted: false,
+      }
 
     const raised = await scaffolder.raise(tower, SCAFFOLD_BLOCK, context.signal)
     const built = raised.ok ? raised.value : raised.error.tower
@@ -297,7 +323,13 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     let aborted = false
     try {
       if (!raised.ok)
-        return { dug, left: logs.length, missing: 0, aborted: raised.error.reason === 'aborted' }
+        return {
+          dug,
+          left: logs.length,
+          missing: 0,
+          leavesCut: built.leavesCut ?? 0,
+          aborted: raised.error.reason === 'aborted',
+        }
       for (const log of logs) {
         if (context.signal.aborted) {
           aborted = true
@@ -316,7 +348,7 @@ export class HarvestTreesSkill implements Skill<HarvestTreesInput, HarvestTreesO
     }
     // The drops of the high logs fell around the trunk and the tower's foot.
     await this.deps.drops.collectNear(first, context.signal)
-    return { dug, left, missing: 0, aborted }
+    return { dug, left, missing: 0, leavesCut: built.leavesCut ?? 0, aborted }
   }
 
   /** Digs one log from the tower, adding a block to the tower while it is still out of reach. */
