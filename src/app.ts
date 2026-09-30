@@ -206,6 +206,7 @@ import { LeadPlayerTool } from './mcp/tools/lead-player-tool.js'
 import { LeadPlayerSkill } from './skills/movement/lead-player-skill.js'
 import { LeadTargetResolver } from './skills/movement/lead-target.js'
 import { CaveMap } from './skills/discovery/caves/cave-map.js'
+import { TorchSupply } from './skills/discovery/caves/torch-supply.js'
 import { ExploreCavesSkill } from './skills/discovery/caves/explore-caves-skill.js'
 import { FindDetector } from './skills/discovery/caves/find-rules.js'
 import { LightManager } from './skills/discovery/caves/light-manager.js'
@@ -1281,6 +1282,12 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scanner: structureScanner,
     knowledge,
     clock,
+    torchSupply: new TorchSupply({
+      inventory,
+      withdraw: withdrawItems,
+      supplies: new CraftingSupplies(craftItem),
+      scanner: scanContainers,
+    }),
   })
   const openVeinGather = new OpenVeinGatherSkill({
     collect: collectBlocks,

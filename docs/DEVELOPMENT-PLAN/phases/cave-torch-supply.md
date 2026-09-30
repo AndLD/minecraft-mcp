@@ -1,7 +1,7 @@
 # Phase 40: Torches from storage for caves
 
 _Estimate: ¼ session._  
-**Status:** not started.
+**Status:** done on `feature/cave-torch-supply`. See [Cave exploration](../../features/world/cave-exploration.md). Differences from this plan: a mid-run fetch happens only when the torches are used up (the reserve of 8 applies before going in, not during the trip); after a fetch the bot goes back to where the torches ran out, not to the entrance; when memory holds no torches the bot looks into the known unprotected containers once (a registered chest that was never opened has no remembered contents), which needed `skipProtected` on `scan_containers`' input.
 
 **Depends on:** [30 World discovery, including caves and canyons](world-discovery.md) (`explore_caves`, `LightManager`), [9 Storage and containers](storage-containers.md) (`ContainerIndex`, `WithdrawItemsSkill`), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting torches).  
 **Needed by:** [42 Hardening and polish](hardening-polish.md).
