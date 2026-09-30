@@ -112,6 +112,7 @@ const FUEL_ITEMS_PER_UNIT: Record<string, number> = {
 const SMELTS_TO: Record<string, string> = {
   raw_iron: 'iron_ingot',
   beef: 'cooked_beef',
+  chicken: 'cooked_chicken',
   porkchop: 'cooked_porkchop',
   iron_ore: 'iron_ingot',
   oak_log: 'charcoal',
@@ -267,6 +268,7 @@ export class FakeBot implements BotLike {
     },
     itemsByName: {
       cooked_beef: { id: 100 },
+      beef: { id: 1500 },
       bread: { id: 101 },
       apple: { id: 102 },
       rotten_flesh: { id: 103 },
@@ -453,6 +455,8 @@ export class FakeBot implements BotLike {
         if (name.endsWith('_fence_gate') && this.gateFacings.has(cellKey))
           props['facing'] = this.gateFacings.get(cellKey)
         if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
+        if (name === 'campfire' || name === 'soul_campfire')
+          props['lit'] = !this.campfiresOut.has(cellKey)
         if (classifySwitch(name) !== undefined)
           props['powered'] = this.switchPowered.get(cellKey) ?? false
         // The real server reports this one as a numeric string ("7"), not a number.
@@ -546,6 +550,28 @@ export class FakeBot implements BotLike {
 
   /** Minecarts put on rails, by rail cell. */
   readonly minecartsPlaced: Position[] = []
+
+  /** Campfires: burning unless put out here. A right-click with an item takes it while fewer than `campfireRoom` are on. */
+  private readonly campfiresOut = new Set<string>()
+  setCampfireOut(position: Position, out: boolean): void {
+    if (out) this.campfiresOut.add(key(position))
+    else this.campfiresOut.delete(key(position))
+  }
+  /** Items on campfires, in the order they were put on. */
+  readonly onCampfire: { position: Position; item: string; at: number }[] = []
+  campfireRoom = 4
+  /** Food that has been on a campfire for 30 seconds pops out beside it as a dropped item; tests call this as time passes. */
+  popCampfires(): void {
+    for (const entry of [...this.onCampfire]) {
+      if (this.now() - entry.at < 30_000) continue
+      this.onCampfire.splice(this.onCampfire.indexOf(entry), 1)
+      this.dropItem(SMELTS_TO[entry.item] ?? entry.item, 1, {
+        x: entry.position.x + 0.5,
+        y: entry.position.y + 0.3,
+        z: entry.position.z + 1.5,
+      })
+    }
+  }
 
   /** Doors, gates, and trapdoors: closed unless set open here or toggled via `activateBlock`. */
   private readonly doorsOpen = new Map<string, boolean>()
@@ -664,6 +690,15 @@ export class FakeBot implements BotLike {
         name: 'minecart',
         position: { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
       }
+    } else if (
+      (block.name === 'campfire' || block.name === 'soul_campfire') &&
+      this.heldItem !== null &&
+      this.onCampfire.length < this.campfireRoom
+    ) {
+      const held = this.heldItem.name
+      this.onCampfire.push({ position, item: held, at: this.now() })
+      this.removeItems(held, 1)
+      this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
     } else if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
       this.setBlock(position, 'farmland')
     } else if (FakeBot.isSign(block.name)) {

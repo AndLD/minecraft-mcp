@@ -21,6 +21,7 @@ import { MineflayerInventoryWriter } from './bot/mineflayer-inventory-writer.js'
 import { MineflayerEater } from './bot/mineflayer-eater.js'
 import { MineflayerEntityScanner } from './bot/mineflayer-entity-scanner.js'
 import { MineflayerFoodCatalog } from './bot/mineflayer-food-catalog.js'
+import { MineflayerCampfireAccess } from './bot/mineflayer-campfire.js'
 import { MineflayerFurnaceAccess } from './bot/mineflayer-furnace.js'
 import { MineflayerInventory } from './bot/mineflayer-inventory.js'
 import { MineflayerItemFacts } from './bot/mineflayer-item-facts.js'
@@ -337,6 +338,7 @@ import { HUNTABLE_SPECIES_NAMES } from './skills/hunting/animal-catalog.js'
 import { HuntAnimalsSkill } from './skills/hunting/hunt-animals-skill.js'
 import { LowFoodResponder } from './skills/hunting/low-food-responder.js'
 import { PenDetector } from './skills/hunting/pen-detector.js'
+import { CampfireCookSkill } from './skills/smelting/campfire-cook-skill.js'
 import { SmeltItemsSkill } from './skills/smelting/smelt-items-skill.js'
 import { TeleportSkill } from './skills/commands/teleport-skill.js'
 import { AutoRecovery } from './skills/recovery/auto-recovery.js'
@@ -1156,6 +1158,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     navigator,
     jobs: smeltJobs,
     vitals,
+    campfire: new CampfireCookSkill({
+      fires: new MineflayerCampfireAccess(connection),
+      workstations,
+      navigator,
+      inventory,
+      drops: dropCollector,
+      guard: protectedAreas,
+      vitals,
+      scheduler,
+      clock,
+    }),
     fuelSupply: new FuelSupply({
       inventory,
       withdraw: withdrawItems,

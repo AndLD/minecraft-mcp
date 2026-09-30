@@ -99,7 +99,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [40 Torches from storage for caves](phases/cave-torch-supply.md) | done (`feature/cave-torch-supply`: `explore_caves` fetches torches, or coal and sticks, from storage before going in and after walking out when they run out; `restock`) |
 | [41 Smelting, fuel top-up and a ready signal](phases/smelting-fuel-and-ready.md) | done (`feature/smelting-fuel-and-ready`: fuel of every kind in the bag is used and topped up at each look, `fuelUsed`, `fuel_from_storage`, a `smelt_ready` event for a job left in a furnace, a far or other-dimension warning) |
 | [42 Blast furnace and smoker](phases/blast-furnace-smoker.md) | done (`feature/blast-furnace-smoker`: `smelt` uses a nearby or carried blast furnace for ores and a smoker for food, twice as fast and twice as far on the same fuel; `station` option) |
-| [43 Campfire cooking](phases/campfire-cooking.md) | not started (from the backlog: cook food on a campfire, without fuel) |
+| [43 Campfire cooking](phases/campfire-cooking.md) | done (`feature/campfire-cooking`: `smelt` cooks raw food on a campfire beside the bot with no fuel and no window, four at a time; `station: campfire`, and `auto` uses one when the bag has no fuel or the batch is small) |
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | not started (from the backlog) |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | not started (from the backlog: fertilize a whole field on ask) |
 | [46 Take an item the player hands over](phases/receive-item.md) | not started (from the backlog: `receive_item`, the reverse of `give_items`) |

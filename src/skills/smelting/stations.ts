@@ -59,3 +59,30 @@ export function stationsFor(item: string): Station[] {
     stationSmelts(station, item),
   )
 }
+
+/** The campfire cooks without a window and without fuel: the food goes on the block and pops out when it is done. */
+export const CAMPFIRE = 'campfire'
+/** The block names that count as the campfire station (a soul campfire cooks the same way). */
+export const CAMPFIRE_BLOCKS = ['campfire', 'soul_campfire'] as const
+/** A campfire holds four items, each cooks for 30 seconds. */
+export const CAMPFIRE_SLOTS = 4
+export const CAMPFIRE_MS_PER_ITEM = 30_000
+
+/** Every block that can smelt or cook: the three station blocks and the campfire. */
+export type AnyStation = Station | typeof CAMPFIRE
+
+/** What a campfire cooks: raw food. Not kelp (only a smoker or a furnace dries it), and nothing that is not food. */
+const CAMPFIRE_ITEMS: ReadonlySet<string> = new Set([
+  'beef',
+  'porkchop',
+  'mutton',
+  'chicken',
+  'rabbit',
+  'cod',
+  'salmon',
+  'potato',
+])
+
+export function campfireCooks(item: string): boolean {
+  return CAMPFIRE_ITEMS.has(item) && SMELTING_TABLE[item] !== undefined
+}

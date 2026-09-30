@@ -358,6 +358,22 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'cooked_beef')).toBe(8)
   }, 200_000)
 
+  it('cooks beef on a campfire beside the bot with no fuel, four at a time, and picks it up', async () => {
+    await world.setBlock(at(4, -2), 'campfire')
+    await world.give(bot(), 'beef', 8)
+    await untilBotSees(['campfire'], 1)
+    await untilBotCarries('beef')
+    const started = Date.now()
+
+    const cooked = await runToTheEnd('smelt', { item: 'beef' }, 170_000)
+
+    expectSucceeded(cooked)
+    expect(cooked.task?.result).toMatchObject({ smelted: 8, station: 'campfire', fuelUsed: [] })
+    // Two rounds of four, 30 seconds each.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(55_000)
+    expect(await world.countItem(bot(), 'cooked_beef')).toBe(8)
+  }, 220_000)
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)

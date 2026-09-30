@@ -73,6 +73,15 @@ export class Workstations {
         })
   }
 
+  /** The closest of several block names (a campfire and a soul campfire), within search distance. */
+  nearestOf(blockNames: readonly string[]): Position | undefined {
+    return this.deps.blocks.findBlocks({
+      names: [...blockNames],
+      maxDistance: SEARCH_DISTANCE,
+      count: 1,
+    })[0]?.position
+  }
+
   private nearest(blockName: string): Position | undefined {
     return this.deps.blocks.findBlocks({
       names: [blockName],

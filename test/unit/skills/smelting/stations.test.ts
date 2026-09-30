@@ -53,3 +53,21 @@ describe('stations', () => {
     expect(stationsFor('dirt')).toEqual([])
   })
 })
+
+describe('campfire', () => {
+  it('cooks raw food, but not kelp, ores, or blocks', async () => {
+    const { campfireCooks } = await import('../../../../src/skills/smelting/stations.js')
+    for (const item of [
+      'beef',
+      'porkchop',
+      'mutton',
+      'chicken',
+      'rabbit',
+      'cod',
+      'salmon',
+      'potato',
+    ])
+      expect(campfireCooks(item)).toBe(true)
+    for (const item of ['kelp', 'raw_iron', 'sand', 'dirt']) expect(campfireCooks(item)).toBe(false)
+  })
+})
