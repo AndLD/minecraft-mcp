@@ -243,11 +243,11 @@ export class OrganizeStorageSkill implements Skill<OrganizeInput, OrganizeOutput
     const left = [...plan.left]
     const carried = new Map<string, number>()
     let pending = plan.moves.map((move) => ({ ...move }))
-    let aborted = false
+    const flags = { aborted: false }
 
     while (pending.length > 0) {
       if (context.signal.aborted) {
-        aborted = true
+        flags.aborted = true
         break
       }
       if (deps.clock.now() >= deadline) {
@@ -267,9 +267,9 @@ export class OrganizeStorageSkill implements Skill<OrganizeInput, OrganizeOutput
       const slots = Math.max(0, (deps.inventory.snapshot()?.emptySlots ?? 0) - KEEP_FREE_SLOTS)
       const taken = await this.takeFrom(source, batch, slots, carried, context)
       if (!taken.ok) {
-        if (taken.error.reason === 'aborted') aborted = true
+        if (taken.error.reason === 'aborted') flags.aborted = true
         for (const move of batch) left.push(this.unmoved(move, taken.error.message))
-        if (aborted) break
+        if (flags.aborted) break
         continue
       }
       for (const move of taken.value.notTaken) pending.push(move)
@@ -293,17 +293,17 @@ export class OrganizeStorageSkill implements Skill<OrganizeInput, OrganizeOutput
         if (moved === undefined || target === undefined) continue
         for (const move of moved) done.push({ ...move, to: named(target) })
       }
-      aborted = context.signal.aborted // a cancel during the trip still puts the items back below
+      flags.aborted = wasCancelled(context) // a cancel during the trip still puts the items back below
       await this.putBack(source, carried, left)
-      if (aborted) break
+      if (flags.aborted) break
     }
 
-    if (aborted) for (const move of pending) left.push(this.unmoved(move, 'cancelled'))
+    if (flags.aborted) for (const move of pending) left.push(this.unmoved(move, 'cancelled'))
     const stuck = [...carried]
       .filter(([, count]) => count > 0)
       .map(([name, count]) => ({ name, count }))
     const output = this.output(false, done, { ...plan, left }, skipped, stuck)
-    if (aborted)
+    if (flags.aborted)
       return err({
         reason: 'aborted',
         message: `Cancelled after moving ${String(output.moved)} item(s).`,
@@ -436,5 +436,8 @@ export class OrganizeStorageSkill implements Skill<OrganizeInput, OrganizeOutput
     }
   }
 }
+
+/** Read through a function so the compiler does not assume the signal is still as it was at the top of the loop. */
+const wasCancelled = (context: SkillContext): boolean => context.signal.aborted
 
 const named = (entry: ContainerEntry): Named => ({ id: entry.id, label: entry.label })
