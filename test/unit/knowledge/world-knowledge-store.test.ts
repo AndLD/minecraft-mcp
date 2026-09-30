@@ -113,6 +113,57 @@ describe('WorldKnowledgeStore: structures', () => {
   })
 })
 
+describe('WorldKnowledgeStore: biomes', () => {
+  it('records where a biome was seen once, and finds the nearest of several names', async () => {
+    const { knowledge } = await active()
+
+    const first = knowledge.recordBiome('desert', at(100, 64, 0), { source: 'scan' })
+    const again = knowledge.recordBiome('desert', at(150, 64, 20), { source: 'scan' })
+    knowledge.recordBiome('desert', at(600, 64, 0), { source: 'scan' })
+    knowledge.recordBiome('badlands', at(-50, 64, 0), { source: 'scan' })
+
+    expect(first).toMatchObject({ ok: true, value: { isNew: true } })
+    expect(again).toMatchObject({ ok: true, value: { isNew: false, entry: { x: 100 } } })
+    expect(knowledge.biomes('desert')).toHaveLength(2)
+    expect(knowledge.nearestBiome(['desert', 'badlands'], at(0, 64, 0))).toMatchObject({
+      name: 'badlands',
+    })
+    expect(knowledge.nearestBiome(['jungle'], at(0, 64, 0))).toBeUndefined()
+  })
+
+  it('replaces a named place with the exact one, never the other way round', async () => {
+    const { knowledge } = await active()
+    knowledge.recordBiome('desert', at(200, 64, 200), { source: 'locate' })
+
+    const seen = knowledge.recordBiome('desert', at(215, 66, 190), { source: 'scan' })
+    const named = knowledge.recordBiome('desert', at(200, 64, 200), { source: 'locate' })
+
+    expect(seen).toMatchObject({
+      ok: true,
+      value: { isNew: false, entry: { x: 215, source: 'scan' } },
+    })
+    expect(named).toMatchObject({ ok: true, value: { entry: { source: 'scan' } } })
+  })
+
+  it('persists, refuses without a world, and reads a file from before biomes existed', async () => {
+    const { knowledge, store } = await active()
+    knowledge.recordBiome('desert', at(1, 64, 2), { source: 'scan' })
+    const later = new WorldKnowledgeStore(new FakeClock(0))
+    await later.attach(store)
+    store.files.set('knowledge', { version: 1, data: { landmarks: [], structures: [], nextId: 1 } })
+    const old = new WorldKnowledgeStore(new FakeClock(0))
+    await old.attach(store)
+
+    expect(later.biomes()).toMatchObject([{ name: 'desert', x: 1, z: 2 }])
+    expect(old.biomes()).toEqual([])
+    expect(
+      new WorldKnowledgeStore(new FakeClock(0)).recordBiome('desert', at(0, 0, 0), {
+        source: 'scan',
+      }),
+    ).toMatchObject({ ok: false })
+  })
+})
+
 describe('WorldKnowledgeStore: persistence', () => {
   it('lists the same landmarks and structures in a new instance on the same store', async () => {
     const { knowledge, store } = await active()

@@ -9,8 +9,8 @@ Branch `feature/world-discovery`. "Find a village": the bot walks the Overworld 
 
 | Tool | What it does |
 |---|---|
-| `explore_for_structure` | Searches for a `kind` (village, desert_temple, jungle_temple, pillager_outpost, mineshaft, ruined_portal, dungeon, stronghold). Options: `max_distance` (50-3000, default 500, measured from where the search starts), `max_minutes` (1-60, default 10), `strategy` (`frontier` default, or `spiral`), `use_locate` (default true), `only_new`, `return_to` (a landmark to walk back to when it ends). A task. |
-| `list_known_structures` | The structures found so far (`kind` filter), nearest first, with `source` and distance. |
+| `explore_for_structure` | Searches for exactly one of: a structure `kind` (village, desert_temple, jungle_temple, pillager_outpost, mineshaft, ruined_portal, dungeon, stronghold), a `biome` ("desert", "cherry grove"), or a `mob` ("fox", "wolf", "polar bear"). Options: `max_distance` (50-3000, default 500, measured from where the search starts), `max_minutes` (1-60, default 10), `strategy` (`frontier` default, or `spiral`), `use_locate` (default true), `only_new`, `return_to` (a landmark to walk back to when it ends). A task. |
+| `list_known_structures` | The structures found so far (`kind` filter), nearest first, with `source` and distance; also the biomes found (`biomes`, when no kind is given). |
 | `set_landmark`, `list_landmarks`, `remove_landmark` | Named places. `set_landmark` without coordinates names where the bot stands; a second landmark of the same name replaces the first. |
 
 Results: `found` (kind, coordinates, `source`, `detail`), `alreadyKnown`, `reached`, `distanceFromStart`, `discovered` (other structures seen on the way), `hops`, and `returned` when `return_to` was used. Failures: `not_found` (the detail has `stopped`: `exhausted`, `time`; how far it looked and what it saw), `stuck` (five trips in a row failed), `unknown_landmark`, `wrong_dimension`, `no_world_profile`, `aborted`.
@@ -31,6 +31,13 @@ Results: `found` (kind, coordinates, `source`, `detail`), `alreadyKnown`, `reach
 - **`ExploreForStructureSkill`**: scan where it stands; ask the server (`locate`); then loop: next waypoint, find the ground of that column (`findSurface`: not a treetop, not water or lava, two open blocks above), `goToPosition`, scan. Waypoints over water or lava, or in columns that are not loaded, are skipped. Every structure seen is recorded, not only the wanted one. It stops when the wanted kind is seen, the strategy runs out of ground inside `max_distance`, the time is up, or five trips in a row fail.
 - **`/locate`**: when `ServerCommands.available('locate')` is true the bot asks `locate structure <id>` first (dungeons cannot be located, and `only_new` skips it because the server names the nearest, which may be the known one). A reply is parsed for `[x, ~, z]`. Within `max_distance` the bot walks there in hops and the blocks it sees give the exact spot; beyond it, the place is only recorded (`reached: false`). A refusal or an unreadable reply falls back to walking.
 - **A known structure answers at once** when one of that kind is within `max_distance`; `only_new: true` looks for another.
+
+## Looking for a biome or a mob
+
+- **Names** (`name-match.ts`): the player's words are lower-cased, the `minecraft:` prefix is dropped, and spaces become underscores. An exact game name wins alone (`forest` is only `forest`); otherwise every name that contains the word is wanted (`jungle` is `sparse_jungle` and `bamboo_jungle`, `bear` is `polar_bear`). A name that matches nothing fails `unknown_biome` or `unknown_mob` and lists similar names. The lists come from the game data (`BiomeReader.knownBiomeNames`, `EntityScanner.knownEntityNames`).
+- **Biome**: the `BiomeReader` port (`MineflayerBiomeReader`, from the biome of the block the world reports) is sampled at the bot's spot and on three rings (16, 32, 48 blocks, 8 directions), nearest first, at every stop. The first sample in the wanted biome is the find; the bot then walks onto the ground there (`reached`). Finds are saved as biome records (`WorldKnowledgeStore.recordBiome`, same 96-block rule as structures) and a saved place within `max_distance` is answered at once (`only_new: true` looks for another). With one exact name and `use_locate`, the bot first asks `locate biome minecraft:<name>`.
+- **Mob**: the nearest entity of that type within 48 blocks is the find; the bot walks up to it and reports where it stands then, with `detail` saying how many were in view. Mobs move, so they are never saved and never answered from memory. Wild mobs the server has not sent to the bot (outside its tracking range) cannot be seen; the search simply goes on.
+- The structures seen on the way are recorded during a biome or mob search too.
 
 ## Gotchas
 

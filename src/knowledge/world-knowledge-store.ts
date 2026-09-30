@@ -26,6 +26,15 @@ const structureSchema = z.object({
   detail: z.string().optional(),
 })
 
+const biomeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  ...coordinates,
+  foundAt: z.string(),
+  source: z.enum(['scan', 'locate']),
+})
+
+export type BiomeRecord = z.infer<typeof biomeSchema>
 export type Landmark = z.infer<typeof landmarkSchema>
 export type StructureRecord = z.infer<typeof structureSchema>
 
@@ -35,9 +44,15 @@ const knowledgeDocument = defineDocument({
   schema: z.object({
     landmarks: z.array(landmarkSchema),
     structures: z.array(structureSchema),
+    biomes: z.array(biomeSchema).default([]),
     nextId: z.number().int(),
   }),
-  initial: () => ({ landmarks: [] as Landmark[], structures: [] as StructureRecord[], nextId: 1 }),
+  initial: () => ({
+    landmarks: [] as Landmark[],
+    structures: [] as StructureRecord[],
+    biomes: [] as BiomeRecord[],
+    nextId: 1,
+  }),
 })
 
 const NOT_ACTIVE =
@@ -64,6 +79,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
   private store: StateStore | undefined
   private landmarkList: Landmark[] = []
   private structureList: StructureRecord[] = []
+  private biomeList: BiomeRecord[] = []
   private nextId = 1
 
   constructor(private readonly clock: Clock) {}
@@ -73,6 +89,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
     this.store = store
     this.landmarkList = [...loaded.value.landmarks]
     this.structureList = [...loaded.value.structures]
+    this.biomeList = [...loaded.value.biomes]
     this.nextId = loaded.value.nextId
     return loaded.warning === undefined ? [] : [loaded.warning]
   }
@@ -81,6 +98,7 @@ export class WorldKnowledgeStore implements ProfileScoped {
     this.store = undefined
     this.landmarkList = []
     this.structureList = []
+    this.biomeList = []
   }
 
   get active(): boolean {
@@ -184,10 +202,59 @@ export class WorldKnowledgeStore implements ProfileScoped {
     return ok({ entry, isNew: true })
   }
 
+  biomes(name?: string): readonly BiomeRecord[] {
+    return name === undefined
+      ? this.biomeList
+      : this.biomeList.filter((entry) => entry.name === name)
+  }
+
+  /** The known place of any of these biomes nearest to a place (across, ignoring height). */
+  nearestBiome(names: readonly string[], from: Position): BiomeRecord | undefined {
+    let best: BiomeRecord | undefined
+    for (const entry of this.biomeList) {
+      if (!names.includes(entry.name)) continue
+      if (best === undefined || across(entry, from) < across(best, from)) best = entry
+    }
+    return best
+  }
+
+  /** Records where a biome was seen, with the same rules as `record` for structures. */
+  recordBiome(
+    name: string,
+    position: Position,
+    details: { source: 'scan' | 'locate' },
+  ): Result<{ entry: BiomeRecord; isNew: boolean }> {
+    if (this.store === undefined) return err(NOT_ACTIVE)
+    const known = this.biomeList.find(
+      (entry) => entry.name === name && across(entry, position) <= SAME_STRUCTURE_RADIUS,
+    )
+    if (known !== undefined) {
+      if (known.source === 'locate' && details.source === 'scan') {
+        const upgraded: BiomeRecord = { ...known, ...cell(position), source: 'scan' }
+        this.biomeList = this.biomeList.map((entry) => (entry === known ? upgraded : entry))
+        this.save()
+        return ok({ entry: upgraded, isNew: false })
+      }
+      return ok({ entry: known, isNew: false })
+    }
+    const entry: BiomeRecord = {
+      id: `biome-${String(this.nextId)}`,
+      name,
+      ...cell(position),
+      foundAt: new Date(this.clock.now()).toISOString(),
+      source: details.source,
+    }
+    this.nextId += 1
+    this.biomeList = [...this.biomeList, entry]
+    this.save()
+    return ok({ entry, isNew: true })
+  }
+
   private save(): void {
     this.store?.save(knowledgeDocument, {
       landmarks: this.landmarkList,
       structures: this.structureList,
+      biomes: this.biomeList,
       nextId: this.nextId,
     })
   }

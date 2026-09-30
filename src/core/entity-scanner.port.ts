@@ -23,6 +23,8 @@ export interface PlayerInfo {
 }
 
 export interface EntityScanner {
+  /** Every entity type name the game knows (`fox`, `wolf`, ...). Empty while not connected. */
+  knownEntityNames(): readonly string[]
   /** Entities within `maxDistance`, nearest first, excluding the bot itself. */
   nearby(maxDistance: number): readonly EntityInfo[]
   /** Case-insensitive lookup. Undefined when no such player is online. */

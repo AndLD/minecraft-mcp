@@ -40,6 +40,7 @@ import { MineflayerPlacer } from './bot/mineflayer-placer.js'
 import { MineflayerRecipes } from './bot/mineflayer-recipes.js'
 import { MineflayerServerCommands } from './bot/mineflayer-server-commands.js'
 import { MineflayerVitals } from './bot/mineflayer-vitals.js'
+import { MineflayerBiomeReader } from './bot/mineflayer-biome-reader.js'
 import { MinecraftServerStatusProbe } from './bot/minecraft-status-probe.js'
 import { MineflayerWorldIdentifier } from './bot/mineflayer-world-identifier.js'
 import { createPathGoals } from './bot/path-goals.js'
@@ -1180,6 +1181,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     navigator,
     vitals,
     blocks,
+    biomes: new MineflayerBiomeReader(connection),
+    entities,
     scanner: new StructureScanner(blocks, entities, defaultSignatures()),
     knowledge,
     clock,

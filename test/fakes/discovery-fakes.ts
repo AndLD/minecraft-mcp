@@ -1,3 +1,4 @@
+import type { BiomeReader } from '../../src/core/biome.port.js'
 import type { BlockInfo, BlockQuery, BlockScanner } from '../../src/core/block-scanner.port.js'
 import type { EntityInfo, EntityScanner, PlayerInfo } from '../../src/core/entity-scanner.port.js'
 import type {
@@ -18,12 +19,45 @@ const OPEN = new Set(['air', 'cave_air'])
  * A flat Overworld: stone up to y 63, air above. Blocks and mobs are put where a test says; the bot only sees within
  * `loaded` blocks of where it stands, like the chunks a server sends.
  */
-export class DiscoveryWorld implements BlockScanner, EntityScanner, VitalsReader {
+export class DiscoveryWorld implements BlockScanner, EntityScanner, VitalsReader, BiomeReader {
   bot: Position = { x: 0, y: GROUND + 1, z: 0 }
   dimension = 'minecraft:overworld'
   loaded = 160
   private readonly placed = new Map<string, string>()
   private mobs: EntityInfo[] = []
+  private readonly regions: { name: string; x1: number; z1: number; x2: number; z2: number }[] = []
+  biomeNames = [
+    'plains',
+    'desert',
+    'badlands',
+    'sparse_jungle',
+    'bamboo_jungle',
+    'forest',
+    'birch_forest',
+  ]
+  entityNames = ['villager', 'pillager', 'fox', 'wolf', 'cow', 'chest_minecart']
+
+  /** A rectangle of some biome; everywhere else is plains. */
+  biome(name: string, x1: number, z1: number, x2: number, z2: number): this {
+    this.regions.push({ name, x1, z1, x2, z2 })
+    return this
+  }
+
+  biomeAt(position: Position): string | undefined {
+    if (Math.hypot(position.x - this.bot.x, position.z - this.bot.z) > this.loaded) return undefined
+    const region = this.regions.find(
+      (r) => position.x >= r.x1 && position.x <= r.x2 && position.z >= r.z1 && position.z <= r.z2,
+    )
+    return region?.name ?? 'plains'
+  }
+
+  knownBiomeNames(): readonly string[] {
+    return this.biomeNames
+  }
+
+  knownEntityNames(): readonly string[] {
+    return this.entityNames
+  }
 
   put(x: number, y: number, z: number, name: string): this {
     this.placed.set(key(x, y, z), name)

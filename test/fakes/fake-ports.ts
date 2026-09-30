@@ -146,6 +146,11 @@ export class FakeBlockScanner implements BlockScanner {
 
 export class FakeEntityScanner implements EntityScanner {
   entities: EntityInfo[] = []
+  entityNames: string[] = ['cow', 'fox', 'wolf', 'zombie', 'villager']
+
+  knownEntityNames(): readonly string[] {
+    return this.entityNames
+  }
   players = new Map<string, PlayerInfo>()
 
   nearby(maxDistance: number): readonly EntityInfo[] {

@@ -6,14 +6,14 @@ import { dataOf } from '../support/app-under-test.js'
 import { E2EWorld, GROUND_Y } from '../support/e2e-world.js'
 import { readServerInfo, type ServerInfo } from '../support/server-config.js'
 import { startSession, type E2ESession } from '../support/session.js'
-import { waitUntil } from '../support/wait.js'
+import { pause, waitUntil } from '../support/wait.js'
 
 const cell = (x: number, dy: number, z: number): Position => ({ x, y: GROUND_Y + dy, z })
 
 interface TaskView {
   status: string
   result: {
-    found: { kind: string; x: number; y: number; z: number; source: string }
+    found: { kind: string; name?: string; x: number; y: number; z: number; source: string }
     reached: boolean
     discovered: { kind: string }[]
     returned?: boolean
@@ -27,6 +27,8 @@ describe('world discovery on a real Minecraft server', () => {
   let sessionOpen = false
   /** Blocks a test built outside the arena, cleared afterwards so the next test starts on bare ground. */
   const built: [Position, Position][] = []
+  /** Biome areas a test painted, set back to plains afterwards. */
+  const painted: [Position, Position][] = []
 
   beforeAll(async () => {
     info = readServerInfo()
@@ -48,6 +50,11 @@ describe('world discovery on a real Minecraft server', () => {
       await session.close()
     }
     for (const [from, to] of built.splice(0)) await world.fill(from, to, 'air')
+    for (const [from, to] of painted.splice(0))
+      await world.command(
+        `fillbiome ${String(from.x)} ${String(from.y)} ${String(from.z)} ${String(to.x)} ${String(to.y)} ${String(to.z)} minecraft:plains`,
+        true,
+      )
   })
 
   afterAll(async () => {
@@ -127,11 +134,15 @@ describe('world discovery on a real Minecraft server', () => {
     // The state is written after the disconnect event, a moment later: wait for the file instead of reading it at once.
     const kinds = await waitUntil(
       () => {
-        const saved = JSON.parse(
-          readFileSync(path.join(session.bot.dataDir, profile.name, 'knowledge.json'), 'utf8'),
-        ) as { data: { structures: { kind: string }[] } }
-        const found = saved.data.structures.map((entry) => entry.kind)
-        return found.includes('village') ? found : undefined
+        try {
+          const saved = JSON.parse(
+            readFileSync(path.join(session.bot.dataDir, profile.name, 'knowledge.json'), 'utf8'),
+          ) as { data: { structures: { kind: string }[] } }
+          const found = saved.data.structures.map((entry) => entry.kind)
+          return found.includes('village') ? found : undefined
+        } catch {
+          return undefined // not written yet
+        }
       },
       { description: 'the village to be saved' },
     )
@@ -177,4 +188,45 @@ describe('world discovery on a real Minecraft server', () => {
     expect(run.failed).toBe(true)
     expect(run.text).toContain('not_found')
   }, 300_000)
+
+  it('finds a desert biome painted 60 blocks away and stands in it', async () => {
+    // Kept thin: the command refuses areas over 32768 blocks, and the bot samples at its own height.
+    const from = cell(60, 0, -20)
+    const to = cell(110, 8, 20)
+    painted.push([from, to])
+    await world.command(
+      `fillbiome ${String(from.x)} ${String(from.y)} ${String(from.z)} ${String(to.x)} ${String(to.y)} ${String(to.z)} minecraft:desert`,
+    )
+    await pause(3_000) // the server resends the chunks; the bot reads the new biome from them
+
+    const run = await explore({ biome: 'desert', max_distance: 200, use_locate: false })
+
+    if (run.failed) throw new Error(`The search did not succeed: ${run.text}`)
+    expect(run.task.result?.found).toMatchObject({ kind: 'biome', name: 'desert', source: 'scan' })
+    expect(run.task.result?.found.x).toBeGreaterThanOrEqual(60)
+    const listed = dataOf<{ biomes: { name: string }[] }>(
+      await session.bot.call('list_known_structures'),
+    )
+    expect(listed.biomes).toMatchObject([{ name: 'desert' }])
+  }, 300_000)
+
+  it('finds a wolf standing 55 blocks away and walks up to it', async () => {
+    await world.summonWith('wolf', cell(45, 0, 30), '{NoAI:1b,Silent:1b}')
+
+    const run = await explore({ mob: 'wolf', max_distance: 200, use_locate: false })
+
+    if (run.failed) throw new Error(`The search did not succeed: ${run.text}`)
+    expect(run.task.result?.found).toMatchObject({ kind: 'mob', name: 'wolf' })
+    const at = await world.playerPosition(session.bot.username)
+    expect(Math.hypot(at.x - 45, at.z - 30)).toBeLessThan(12)
+  }, 300_000)
+
+  it('names the biomes and mobs that exist when the name is wrong', async () => {
+    const wrongBiome = await session.bot.call('explore_for_structure', { biome: 'deserts' })
+    const wrongMob = await session.bot.call('explore_for_structure', { mob: 'foxx' })
+
+    expect(wrongBiome.text).toContain('unknown_biome')
+    expect(wrongBiome.text).toContain('desert')
+    expect(wrongMob.text).toContain('unknown_mob')
+  }, 60_000)
 })

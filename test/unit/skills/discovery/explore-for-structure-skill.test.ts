@@ -56,6 +56,8 @@ describe('ExploreForStructureSkill', () => {
       navigator,
       vitals: world,
       blocks: world,
+      biomes: world,
+      entities: world,
       scanner: new StructureScanner(world, world, defaultSignatures()),
       knowledge,
       clock,
@@ -246,6 +248,8 @@ describe('ExploreForStructureSkill', () => {
       navigator,
       vitals: { read: () => undefined },
       blocks: world,
+      biomes: world,
+      entities: world,
       scanner: new StructureScanner(world, world, defaultSignatures()),
       knowledge,
       clock,
@@ -392,6 +396,178 @@ describe('ExploreForStructureSkill', () => {
       }
 
       expect(await run(wanted())).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    })
+  })
+  describe('looking for a biome', () => {
+    const seekBiome = (biome: string, patch: Partial<ExploreForStructureInput> = {}) =>
+      run({ ...wanted({ kind: undefined, biome }), ...patch })
+
+    it('reports the biome it stands in without walking', async () => {
+      world.biome('desert', -100, -100, 100, 100)
+
+      const result = await seekBiome('desert')
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { found: { kind: 'biome', name: 'desert', source: 'scan' }, reached: true },
+      })
+      expect(navigator.trips).toEqual([])
+      expect(knowledge.biomes()).toHaveLength(1)
+    })
+
+    it('walks until the ground around it is in the biome, then stands in it', async () => {
+      world.biome('desert', 120, -40, 220, 40)
+
+      const result = await seekBiome('desert')
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { found: { kind: 'biome', name: 'desert' }, reached: true },
+      })
+      const found = result.ok ? result.value.found : undefined
+      expect(found?.x).toBeGreaterThanOrEqual(120)
+      const last = navigator.trips.at(-1)
+      expect(
+        Math.hypot((last?.x ?? 0) - (found?.x ?? 0), (last?.z ?? 0) - (found?.z ?? 0)),
+      ).toBeLessThan(2)
+    })
+
+    it('accepts a general word for every biome that contains it', async () => {
+      world.biome('bamboo_jungle', 100, -30, 160, 30)
+
+      expect(await seekBiome('jungle')).toMatchObject({
+        ok: true,
+        value: { found: { name: 'bamboo_jungle' } },
+      })
+    })
+
+    it('answers from a saved place at once, and looks again for a new one with only_new', async () => {
+      knowledge.recordBiome('desert', at(150, 64, 0), { source: 'scan' })
+      world.biome('desert', 300, -30, 360, 30)
+
+      expect(await seekBiome('desert')).toMatchObject({
+        ok: true,
+        value: { alreadyKnown: true, found: { x: 150 } },
+      })
+      expect(navigator.trips).toEqual([])
+      expect(await seekBiome('desert', { onlyNew: true, maxDistance: 400 })).toMatchObject({
+        ok: true,
+        value: { alreadyKnown: false },
+      })
+      expect(knowledge.biomes('desert')).toHaveLength(2)
+    })
+
+    it('fails not_found with the biome in the message when there is none in range', async () => {
+      expect(await seekBiome('desert', { maxDistance: 60 })).toMatchObject({
+        ok: false,
+        error: { reason: 'not_found', message: expect.stringContaining('desert biome') },
+      })
+    })
+
+    it('says which names exist for one that does not', async () => {
+      expect(await seekBiome('deserts')).toMatchObject({
+        ok: false,
+        error: { reason: 'unknown_biome', message: expect.stringContaining('desert') },
+      })
+    })
+
+    it('asks the server with /locate biome when the name is exact', async () => {
+      commands.offered = ['locate']
+      commands.outcomes = [
+        ok({
+          kind: 'ok' as const,
+          reply: 'The nearest minecraft:desert is at [200, ~, 20] (200 blocks away)',
+        }),
+      ]
+      world.biome('desert', 190, 0, 260, 40)
+
+      const result = await seekBiome('desert')
+
+      expect(commands.sent).toEqual(['locate biome minecraft:desert'])
+      expect(result).toMatchObject({
+        ok: true,
+        value: { found: { kind: 'biome', name: 'desert' }, reached: true },
+      })
+    })
+
+    it('records a located biome it is not allowed to walk to, and does not ask for a general word', async () => {
+      commands.offered = ['locate']
+      commands.outcomes = [
+        ok({
+          kind: 'ok' as const,
+          reply: 'The nearest minecraft:desert is at [2000, ~, 0] (2000 blocks away)',
+        }),
+      ]
+
+      expect(await seekBiome('desert', { maxDistance: 300 })).toMatchObject({
+        ok: true,
+        value: { reached: false, found: { source: 'locate', x: 2000 } },
+      })
+      commands.sent.length = 0
+      await seekBiome('jungle', { maxDistance: 60 })
+      expect(commands.sent).toEqual([])
+    })
+
+    it('keeps recording structures it passes', async () => {
+      world.put(20, GROUND + 1, 20, 'end_portal_frame')
+      world.biome('desert', 120, -40, 220, 40)
+
+      const result = await seekBiome('desert')
+
+      expect(result.ok && result.value.discovered.map((entry) => entry.kind)).toEqual([
+        'stronghold',
+      ])
+    })
+  })
+
+  describe('looking for a mob', () => {
+    const seekMob = (mob: string, patch: Partial<ExploreForStructureInput> = {}) =>
+      run({ ...wanted({ kind: undefined, mob }), ...patch })
+
+    it('walks until one is in view and goes up to it', async () => {
+      world.mob('fox', 130, 20).mob('fox', 133, 22)
+
+      const result = await seekMob('fox')
+
+      expect(result).toMatchObject({
+        ok: true,
+        value: { found: { kind: 'mob', name: 'fox', detail: '2 in view' }, reached: true },
+      })
+      expect(Math.hypot(world.bot.x - 130, world.bot.z - 20)).toBeLessThan(10)
+    })
+
+    it('finds one already in view without walking far, and never answers from memory', async () => {
+      world.mob('wolf', 10, 10)
+
+      expect(await seekMob('wolf')).toMatchObject({
+        ok: true,
+        value: { found: { name: 'wolf', x: 10, z: 10 } },
+      })
+      expect(knowledge.structures()).toEqual([])
+    })
+
+    it('ignores other mobs, and fails not_found when there is none', async () => {
+      world.mob('cow', 20, 0)
+
+      expect(await seekMob('fox', { maxDistance: 60 })).toMatchObject({
+        ok: false,
+        error: { reason: 'not_found', message: expect.stringContaining('No fox') },
+      })
+    })
+
+    it('fails for a mob the game does not have', async () => {
+      expect(await seekMob('foxx')).toMatchObject({ ok: false, error: { reason: 'unknown_mob' } })
+    })
+  })
+
+  it('needs exactly one thing to look for', async () => {
+    expect(await run(wanted({ kind: undefined }))).toMatchObject({
+      ok: false,
+      error: { reason: 'bad_target' },
+    })
+    expect(await run(wanted({ mob: 'fox' }))).toMatchObject({
+      ok: false,
+      error: { reason: 'bad_target' },
     })
   })
 })

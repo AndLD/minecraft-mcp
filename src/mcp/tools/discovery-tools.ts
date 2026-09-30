@@ -10,53 +10,82 @@ import { taskOptionsShape } from './task-schema.js'
 
 const DEFAULT_WAIT_SECONDS = 55
 
-const exploreSchema = z.object({
-  kind: z.enum(STRUCTURE_KINDS).describe('Which structure to look for.'),
-  max_distance: z
-    .number()
-    .int()
-    .min(50)
-    .max(3000)
-    .default(500)
-    .describe('How far from where the search starts it may go, in blocks (50-3000, default 500).'),
-  max_minutes: z
-    .number()
-    .min(1)
-    .max(60)
-    .default(10)
-    .describe('How long it may search before giving up, in minutes (1-60, default 10).'),
-  strategy: z
-    .enum(['frontier', 'spiral'])
-    .default('frontier')
-    .describe(
-      'frontier (default): always head for the nearest ground not yet visited. spiral: circle outward from the start, ring by ring.',
-    ),
-  use_locate: z
-    .boolean()
-    .default(true)
-    .describe(
-      'Ask the server where the nearest one is first (the /locate command). It only helps when the bot is allowed to use it; otherwise the bot searches on foot.',
-    ),
-  only_new: z
-    .boolean()
-    .default(false)
-    .describe(
-      'Look for one that is not known yet. By default a known structure of that kind within max_distance is answered at once, without exploring.',
-    ),
-  return_to: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      'Name of a landmark (list_landmarks) to walk back to when the search ends, found or not.',
-    ),
-  ...taskOptionsShape,
-})
+const exploreSchema = z
+  .object({
+    kind: z.enum(STRUCTURE_KINDS).optional().describe('A structure to look for.'),
+    biome: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        'A biome to look for, as the player said it: "desert", "cherry grove", "badlands". A general word such as "jungle" or "forest" with no biome of exactly that name covers every biome containing it.',
+      ),
+    mob: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        'A mob type to look for: "fox", "wolf", "polar bear", "villager". Mobs move, so the position is where one stood when seen.',
+      ),
+    max_distance: z
+      .number()
+      .int()
+      .min(50)
+      .max(3000)
+      .default(500)
+      .describe(
+        'How far from where the search starts it may go, in blocks (50-3000, default 500).',
+      ),
+    max_minutes: z
+      .number()
+      .min(1)
+      .max(60)
+      .default(10)
+      .describe('How long it may search before giving up, in minutes (1-60, default 10).'),
+    strategy: z
+      .enum(['frontier', 'spiral'])
+      .default('frontier')
+      .describe(
+        'frontier (default): always head for the nearest ground not yet visited. spiral: circle outward from the start, ring by ring.',
+      ),
+    use_locate: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Ask the server where the nearest one is first (the /locate command). It only helps when the bot is allowed to use it; otherwise the bot searches on foot.',
+      ),
+    only_new: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Look for one that is not known yet. By default a known structure of that kind within max_distance is answered at once, without exploring.',
+      ),
+    return_to: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Name of a landmark (list_landmarks) to walk back to when the search ends, found or not.',
+      ),
+    ...taskOptionsShape,
+  })
+  .refine(
+    (input) => [input.kind, input.biome, input.mob].filter((v) => v !== undefined).length === 1,
+    {
+      message: 'Give exactly one of kind (a structure), biome, or mob.',
+    },
+  )
 
 export class ExploreForStructureTool implements ToolDefinition<typeof exploreSchema> {
   readonly name = 'explore_for_structure'
   readonly description =
-    'Searches the Overworld on foot for a structure (village, desert_temple, jungle_temple, pillager_outpost, mineshaft, ' +
+    'Searches the Overworld on foot for a structure, a biome, or a mob. Give exactly one of kind, biome, or mob. ' +
+    'Biome: "find a desert" walks until the ground it looks at is in that biome, stands in it, and records the place ' +
+    '(list_known_structures lists biomes too); found.name is the biome. Mob: "find a fox" walks until one is in view and ' +
+    'walks up to it; mobs move and are not saved, and found.detail says how many were in view. Unknown names fail with ' +
+    'unknown_biome or unknown_mob and suggestions. Structure (village, desert_temple, jungle_temple, pillager_outpost, mineshaft, ' +
     'ruined_portal, dungeon, stronghold): walks to a spot about 40 blocks away, looks at the loaded blocks and mobs, and ' +
     'repeats until it sees one, then answers with its coordinates and records it (list_known_structures shows it, also ' +
     'after a restart). Other structures seen on the way are recorded too and listed under discovered. A known one within ' +
@@ -65,7 +94,7 @@ export class ExploreForStructureTool implements ToolDefinition<typeof exploreSch
     'within max_minutes, goes round water and lava, and survival reflexes stay active. found.source is "scan" (seen by ' +
     'the bot) or "locate" (named by the server; reached false when it was beyond max_distance or unreachable). ' +
     'Fails with not_found (the detail says why it stopped and what was seen), stuck (five trips in a row failed), ' +
-    'unknown_landmark, wrong_dimension (Overworld only), no_world_profile, or aborted. Long searches continue in the ' +
+    'unknown_landmark, bad_target, wrong_dimension (Overworld only), no_world_profile, or aborted. Long searches continue in the ' +
     'background: poll get_task_status. Only one task runs at a time; pass replace=true to interrupt the current one.'
   readonly inputSchema = exploreSchema
 
@@ -79,12 +108,14 @@ export class ExploreForStructureTool implements ToolDefinition<typeof exploreSch
     return this.launcher.launch(
       {
         name: this.skill.name,
-        description: `Explore for a ${input.kind}`,
+        description: `Explore for a ${input.kind ?? input.biome ?? input.mob ?? 'target'}`,
         resume: { tool: this.name, arguments: resume },
         run: (ctx) =>
           this.skill.run(
             {
               kind: input.kind,
+              biome: input.biome,
+              mob: input.mob,
               maxDistance: input.max_distance,
               maxMinutes: input.max_minutes,
               strategy: input.strategy,
@@ -133,7 +164,8 @@ export class ListKnownStructuresTool implements ToolDefinition<typeof listStruct
             : Math.round(Math.hypot(entry.x - here.x, entry.z - here.z)),
       }))
       .sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0))
-    return toolOk({ count: structures.length, structures })
+    const biomes = input.kind === undefined ? this.knowledge.biomes() : []
+    return toolOk({ count: structures.length, structures, biomes })
   }
 }
 

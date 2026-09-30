@@ -96,10 +96,30 @@ describe('explore_for_structure', () => {
     })
   })
 
-  it('checks its input at the boundary', () => {
+  it('takes a biome or a mob instead of a structure', async () => {
+    await run({ biome: 'desert' })
+    await run({ mob: 'fox' })
+
+    expect(inputs).toMatchObject([
+      { kind: undefined, biome: 'desert' },
+      { kind: undefined, mob: 'fox' },
+    ])
+    expect(tasks.get('task-1')?.description).toBe('Explore for a desert')
+  })
+
+  it('needs exactly one of kind, biome, and mob', () => {
     const parse = (input: Record<string, unknown>) => tool.inputSchema.safeParse(input).success
 
     expect(parse({})).toBe(false)
+    expect(parse({ kind: 'village', biome: 'desert' })).toBe(false)
+    expect(parse({ biome: 'desert', mob: 'fox' })).toBe(false)
+    expect(parse({ biome: '  ' })).toBe(false)
+    expect(parse({ mob: 'polar bear' })).toBe(true)
+  })
+
+  it('checks its input at the boundary', () => {
+    const parse = (input: Record<string, unknown>) => tool.inputSchema.safeParse(input).success
+
     expect(parse({ kind: 'castle' })).toBe(false)
     expect(parse({ kind: 'village', max_distance: 10 })).toBe(false)
     expect(parse({ kind: 'village', max_distance: 5000 })).toBe(false)
@@ -131,6 +151,7 @@ describe('the knowledge tools', () => {
     knowledge.record('dungeon', at(10, 30, 0), { source: 'scan' })
     const tool = new ListKnownStructuresTool(knowledge, world)
 
+    knowledge.recordBiome('desert', at(200, 64, 0), { source: 'scan' })
     const all = tool.execute(tool.inputSchema.parse({}))
     const villages = tool.execute(tool.inputSchema.parse({ kind: 'village' }))
 
@@ -145,7 +166,8 @@ describe('the knowledge tools', () => {
         ],
       },
     })
-    expect(villages).toMatchObject({ ok: true, data: { count: 2 } })
+    expect(villages).toMatchObject({ ok: true, data: { count: 2, biomes: [] } })
+    expect(all).toMatchObject({ data: { biomes: [{ name: 'desert', x: 200 }] } })
   })
 
   it('list_known_structures works without the bot in a world', () => {
