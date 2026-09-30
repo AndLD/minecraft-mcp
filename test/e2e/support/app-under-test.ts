@@ -50,6 +50,7 @@ export async function startApp(info: ServerInfo, options: StartAppOptions): Prom
     buildConfig({
       host: info.host,
       port: info.minecraftPort,
+      version: info.version,
       username: options.username,
       owner: options.owner,
       dataDir,

@@ -18,6 +18,7 @@ npm run test:integration
 npm run test:coverage
 npm run test:e2e -- test/e2e/movement-perception   # e2e for ONE feature (real server in Docker; slow)
 npm run test:e2e:all                            # complete e2e suite; only at the final gate / release
+                                                # MC_VERSION=<version> sets the Minecraft version of the bot and the e2e server (default 1.21.1)
 npm run lint        # eslint
 npm run typecheck   # tsc --noEmit
 ```

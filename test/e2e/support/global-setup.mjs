@@ -30,6 +30,8 @@ function readEnvironment() {
 export default async function globalSetup() {
   mkdirSync(E2E_DIR, { recursive: true })
   const environment = readEnvironment()
+  // MC_VERSION overrides the server version for the whole run (the app and the player bots follow it).
+  if (process.env.MC_VERSION) environment.VERSION = process.env.MC_VERSION
   const log = createWriteStream(SERVER_LOG_PATH)
 
   process.stderr.write(
@@ -63,6 +65,7 @@ export default async function globalSetup() {
     minecraftPort: container.getMappedPort(MINECRAFT_PORT),
     rconPort: container.getMappedPort(RCON_PORT),
     rconPassword: environment.RCON_PASSWORD ?? '',
+    version: environment.VERSION ?? '',
   }
   writeFileSync(SERVER_INFO_PATH, JSON.stringify(info))
   process.stderr.write(

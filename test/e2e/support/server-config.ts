@@ -12,6 +12,8 @@ export interface ServerInfo {
   readonly minecraftPort: number
   readonly rconPort: number
   readonly rconPassword: string
+  /** Minecraft version the server runs (VERSION in docker/e2e-server.env, or MC_VERSION when set). */
+  readonly version: string
 }
 
 export function readServerInfo(): ServerInfo {

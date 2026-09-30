@@ -35,7 +35,7 @@ Two layers of intelligence:
 ## Requirements
 
 - Node.js **22+** (Mineflayer 4.x requires it)
-- Minecraft Java Edition **1.21.1**, vanilla (installed via TLauncher). No Forge/Fabric/Optifine profile.
+- Minecraft Java Edition, vanilla (installed via TLauncher), **1.21.1** by default; set `MC_VERSION` to target another version (the game data and skills are written and tested for 1.21.1, so other versions may need fixes). No Forge/Fabric/Optifine profile.
 - An MCP client, e.g. Claude Code
 - Docker (only for running the e2e tests)
 
@@ -53,7 +53,7 @@ npm run build
 |---|---|---|
 | `MC_HOST` | `localhost` | Host of the Minecraft server |
 | `MC_PORT` | *(optional)* | Port of the server. When empty, the port is discovered from the LAN world's broadcast (your world announces it every second or so). Set it for a remote server or if multicast is blocked |
-| `MC_VERSION` | `1.21.1` | Minecraft protocol version to use |
+| `MC_VERSION` | `1.21.1` | Minecraft version to connect as. The e2e suite also reads it (`MC_VERSION=1.20.4 npm run test:e2e -- <folder>` starts a server of that version) |
 | `MC_USERNAME` | `ClaudeBot` | The bot's in-game name |
 | `MC_AUTH` | `offline` | `offline` or `microsoft` |
 | `MC_OWNER` | *(empty)* | Your in-game name. If set, only your chat messages are treated as instructions |
