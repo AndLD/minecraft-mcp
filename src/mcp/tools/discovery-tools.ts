@@ -291,6 +291,12 @@ const cavesSchema = z.object({
     .describe(
       'A torch goes where the block light is below this (1-14, default 5), with at least 6 blocks between torches.',
     ),
+  restock: z
+    .boolean()
+    .default(true)
+    .describe(
+      'Fetch torches from storage (registered, unprotected containers) before going in when fewer than 8 are carried, and again after walking out when they run out; coal or charcoal and sticks from storage are crafted into torches when there are no torches. false: use only what is carried.',
+    ),
   ...taskOptionsShape,
 })
 
@@ -299,13 +305,13 @@ export class ExploreCavesTool implements ToolDefinition<typeof cavesSchema> {
   readonly description =
     "Explores a cave or ravine on foot: from the bot's spot (or the nearest cave mouth within 40 blocks) it goes to the " +
     'nearest part it has not seen, lights dark spots with torches (right-hand side going in, so the way out is lit; ' +
-    'torches are crafted from coal or charcoal and sticks), reports ores, spawners, geodes, and structures as it sees ' +
+    'torches are taken from storage when the bot carries fewer than 8, and crafted from coal or charcoal and sticks), reports ores, spawners, geodes, and structures as it sees ' +
     'them (only ones with an open face: it does not see through rock), saves them (list_known_structures shows finds), and ' +
     'walks back out. It stays away from lava and water, never plans a drop over 3 blocks, and keeps away from an ancient ' +
     'city (reported, never entered). Reflexes stay active. It ends with stopped: explored (nothing new within ' +
-    'max_distance), time, low_health, hungry, no_torches (none left and none craftable: tell the player), warden, or ' +
+    'max_distance), time, low_health, hungry, no_torches (none left, none craftable, and none in storage: tell the player and say what storage was used), warden, or ' +
     'stuck. The result lists finds, structures, mined (with mine: true), skipped veins (hazard, protected, no_tool: ' +
-    'name the pickaxe to craft), torchesPlaced, and returned. Fails with no_cave, bad_find, wrong_dimension (Overworld ' +
+    'name the pickaxe to craft), torchesPlaced, restocked (torches fetched from storage, and in how many trips), and returned. Fails with no_cave, bad_find, wrong_dimension (Overworld ' +
     'only), or aborted. Long trips continue in the background: poll get_task_status. Only one task runs at a time; pass ' +
     'replace=true to interrupt the current one.'
   readonly inputSchema = cavesSchema
@@ -330,6 +336,7 @@ export class ExploreCavesTool implements ToolDefinition<typeof cavesSchema> {
               maxDistance: input.max_distance,
               maxMinutes: input.max_minutes,
               minLight: input.min_light,
+              restock: input.restock,
             },
             ctx,
           ),

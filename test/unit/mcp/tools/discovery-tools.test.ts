@@ -267,11 +267,11 @@ describe('explore_caves', () => {
 
     expect(result).toMatchObject({ ok: true, data: { status: 'succeeded' } })
     expect(inputs).toEqual([
-      { find: undefined, mine: false, maxDistance: 80, maxMinutes: 10, minLight: 5 },
+      { find: undefined, mine: false, maxDistance: 80, maxMinutes: 10, minLight: 5, restock: true },
     ])
     expect(tasks.get('task-1')?.resume).toEqual({
       tool: 'explore_caves',
-      arguments: { mine: false, max_distance: 80, max_minutes: 10, min_light: 5 },
+      arguments: { mine: false, max_distance: 80, max_minutes: 10, min_light: 5, restock: true },
     })
   })
 
@@ -290,7 +290,15 @@ describe('explore_caves', () => {
       maxDistance: 150,
       maxMinutes: 20,
       minLight: 8,
+      restock: true,
     })
+  })
+
+  it('can be told not to fetch torches from storage', async () => {
+    await run({ restock: false })
+
+    expect(inputs[0]).toMatchObject({ restock: false })
+    expect(tool.inputSchema.safeParse({ restock: 'no' }).success).toBe(false)
   })
 
   it('checks its input at the boundary', () => {

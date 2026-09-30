@@ -11,6 +11,8 @@ export interface ScanInput {
   readonly radius: number
   /** Visit the containers already known (true) or only look for new ones (false). */
   readonly refreshKnown: boolean
+  /** Leave protected containers unopened (by default a scan looks into them too: it only reads). */
+  readonly skipProtected?: boolean
 }
 
 export interface ScanOutput {
@@ -48,7 +50,9 @@ export class ScanContainersSkill implements Skill<ScanInput, ScanOutput>, ItemSc
     if (start === undefined)
       return err({ reason: 'not_connected', message: 'Not connected to a Minecraft world.' })
 
-    const queue: ContainerEntry[] = input.refreshKnown ? [...deps.index.all()] : []
+    const queue: ContainerEntry[] = input.refreshKnown
+      ? deps.index.all().filter((entry) => !(input.skipProtected === true && entry.protected))
+      : []
     let discovered = 0
     for (const found of deps.visitor.unknownNear(input.radius)) {
       const registered = deps.index.register(found.position, found.blockName, { auto: true })

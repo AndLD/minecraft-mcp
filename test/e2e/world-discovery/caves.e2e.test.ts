@@ -15,6 +15,7 @@ interface CaveView {
     stopped: string
     returned: boolean
     torchesPlaced: number
+    restocked: { torches: number; trips: number }
     finds: { kind: string; name: string; x: number; z: number }[]
     mined: Record<string, number>
     skipped: { name: string; reason: string }[]
@@ -47,6 +48,7 @@ describe('cave exploration on a real Minecraft server', () => {
       await session.close()
     }
     await world.fill(cell(20, 0, -6), cell(80, 9, 8), 'air')
+    await world.fill(cell(12, 0, -3), cell(12, 0, -3), 'air')
   })
 
   afterAll(async () => {
@@ -125,6 +127,50 @@ describe('cave exploration on a real Minecraft server', () => {
       await session.bot.call('list_known_structures'),
     )
     expect(saved.finds.map((find) => find.name)).toContain('diamond_ore')
+  }, 300_000)
+
+  it('fetches torches from a chest before going in when the bot has none, then lights the way', async () => {
+    await hillWithTunnel()
+    await world.setBlock(cell(68, 0, 1), 'diamond_ore')
+    await world.setBlock(cell(12, 0, -3), 'chest')
+    await world.fillSlot(cell(12, 0, -3), 0, 'torch', 64)
+    await world.teleport(session.bot.username, { x: 14.5, y: GROUND_Y, z: 0.5 })
+    await untilBotSees('chest')
+    await untilBotSees('diamond_ore')
+    expect(
+      (
+        await session.bot.call('register_container', {
+          x: 12,
+          y: GROUND_Y,
+          z: -3,
+          label: 'lamps',
+        })
+      ).isError,
+    ).toBe(false)
+
+    const run = await explore({ max_distance: 100, min_light: 5 })
+
+    if (run.failed) throw new Error(`The trip did not succeed: ${run.text}`)
+    const result = run.task.result
+    expect(result?.restocked).toMatchObject({ trips: 1 })
+    expect(result?.restocked.torches).toBeGreaterThanOrEqual(30)
+    expect(result?.torchesPlaced).toBeGreaterThanOrEqual(3)
+    expect(result?.finds).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'diamond_ore', x: 68 })]),
+    )
+    expect(result?.returned).toBe(true)
+    expect(await world.countInChest(cell(12, 0, -3), 'torch')).toBeLessThan(64)
+  }, 300_000)
+
+  it('says no_torches when the bot has none and no container holds any', async () => {
+    await hillWithTunnel()
+    await world.teleport(session.bot.username, { x: 14.5, y: GROUND_Y, z: 0.5 })
+    await untilBotSees('stone')
+
+    const run = await explore({ max_distance: 100 })
+
+    if (run.failed) throw new Error(`The trip did not succeed: ${run.text}`)
+    expect(run.task.result).toMatchObject({ stopped: 'no_torches', restocked: { trips: 0 } })
   }, 300_000)
 
   it('digs out an iron vein it passes when told to mine, with a pickaxe that can', async () => {

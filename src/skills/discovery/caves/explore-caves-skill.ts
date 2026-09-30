@@ -18,6 +18,7 @@ import { canStandBeside, reachedKeys, type CaveMap } from './cave-map.js'
 import { resolveFind, type SeenFind } from './find-rules.js'
 import type { FindDetector } from './find-rules.js'
 import type { LightManager } from './light-manager.js'
+import type { TorchRestocker } from './torch-supply.js'
 import type { VeinMiner } from './vein-miner.js'
 
 export interface ExploreCavesInput {
@@ -34,6 +35,8 @@ export interface ExploreCavesInput {
   readonly stopOnFind?: boolean | undefined
   /** Walk back to where the trip started when it ends (default true; not after `stopOnFind`). */
   readonly returnOut?: boolean | undefined
+  /** Fetch torches from storage before going in, and again after walking out when they run out (default true). */
+  readonly restock?: boolean | undefined
 }
 
 export type CaveStop =
@@ -56,6 +59,8 @@ export interface ExploreCavesOutput {
   readonly farthest: number
   /** The bot walked back to where it started. */
   readonly returned: boolean
+  /** Torches fetched from storage: how many, and in how many trips (before going in, or after they ran out). */
+  readonly restocked: { readonly torches: number; readonly trips: number }
 }
 
 export interface ExploreCavesDeps {
@@ -70,7 +75,15 @@ export interface ExploreCavesDeps {
   readonly scanner: StructureScanner
   readonly knowledge: WorldKnowledgeStore
   readonly clock: Clock
+  /** Fetches torches from storage. Without it only carried torches and crafted ones are used. */
+  readonly torchSupply?: TorchRestocker
 }
+
+/** Below this many torches the bot fetches more before going in, and it fetches up to the target. */
+export const TORCH_RESERVE = 8
+export const TORCH_TARGET = 64
+/** Trips out to storage for torches in one search, after the first before going in. */
+const MAX_MID_RESTOCKS = 2
 
 const MIN_HEALTH = 8
 const MIN_FOOD = 4
@@ -126,7 +139,24 @@ export class ExploreCavesSkill implements Skill<ExploreCavesInput, ExploreCavesO
     const wish = resolveFind(input.find, blocks.knownBlockNames())
     if (!wish.ok) return err({ reason: 'bad_find', message: wish.message })
 
-    const origin = floor(start.position)
+    // Torches come first, from storage, before the way to the cave: the chests are usually near home.
+    const startedAt = this.deps.clock.now()
+    const restocked = { torches: 0, trips: 0 }
+    const supply = this.deps.torchSupply
+    if (input.restock !== false && supply !== undefined && supply.carried() < TORCH_RESERVE) {
+      const got = await supply.restock(TORCH_TARGET, context)
+      if (got.torches > 0) {
+        restocked.torches += got.torches
+        restocked.trips += 1
+      }
+      if (context.signal.aborted)
+        return err({
+          reason: 'aborted',
+          message: 'The cave search was cancelled.',
+          detail: { restocked },
+        })
+    }
+    const origin = floor(vitals.read()?.position ?? start.position)
     let entrance = origin
     if (!map.roofed(origin, 6)) {
       const mouth = map.findMouth(origin, MOUTH_SEARCH)
@@ -149,7 +179,17 @@ export class ExploreCavesSkill implements Skill<ExploreCavesInput, ExploreCavesO
       }
     }
     const region = map.classify(map.reach(entrance, REACH_RADIUS).cells)
-    const trip = new CaveTrip(this.deps, input, wish.blocks, context, origin, entrance, region)
+    const trip = new CaveTrip(
+      this.deps,
+      input,
+      wish.blocks,
+      context,
+      origin,
+      entrance,
+      region,
+      startedAt,
+      restocked,
+    )
     return trip.run()
   }
 }
@@ -167,6 +207,7 @@ class CaveTrip {
   private readonly startedAt: number
   private torches = 0
   private hops = 0
+  private midRestocks = 0
   private failures = 0
   private farthest = 0
   private heading = { dx: 0, dz: 0 }
@@ -179,16 +220,18 @@ class CaveTrip {
     private readonly origin: Position,
     private readonly entrance: Position,
     private readonly region: 'cave' | 'ravine',
+    startedAt: number,
+    private readonly restocked: { torches: number; trips: number },
   ) {
     this.current = entrance
     this.breadcrumbs = [entrance]
-    this.startedAt = deps.clock.now()
+    this.startedAt = startedAt
   }
 
   async run(): Promise<SkillResult<ExploreCavesOutput>> {
     this.context.progress(`Entering a ${this.region}`)
     this.markExplored(this.current)
-    const first = await this.arrive()
+    const first = await this.restockIfOut(await this.arrive())
     let stopped: CaveStop | undefined = first
     while (stopped === undefined) {
       if (this.context.signal.aborted) return this.aborted()
@@ -222,12 +265,41 @@ class CaveTrip {
       this.context.progress(
         `Hop ${String(this.hops)}: ${String(this.farthest)} blocks from the entrance, ${String(this.torches)} torches placed, ${String(this.finds.length)} finds`,
       )
-      stopped = await this.arrive()
+      stopped = await this.restockIfOut(await this.arrive())
     }
     if (this.context.signal.aborted) return this.aborted()
     const staying = stopped === 'found' || this.input.returnOut === false
     const returned = staying ? false : await this.walkOut()
     return ok(this.output(stopped, returned))
+  }
+
+  /**
+   * With no torch left, walks back out, fetches some from storage, and goes back in, instead of ending the search.
+   * Ends it (`no_torches`) when storage has none either, or after a couple of trips.
+   */
+  private async restockIfOut(stopped: CaveStop | undefined): Promise<CaveStop | undefined> {
+    const supply = this.deps.torchSupply
+    if (stopped !== 'no_torches' || supply === undefined || this.input.restock === false)
+      return stopped
+    if (this.midRestocks >= MAX_MID_RESTOCKS) return stopped
+    this.midRestocks += 1
+    const resumeAt = this.current
+    this.context.progress('Out of torches: walking out to fetch more from storage')
+    if (!(await this.walkOut())) return stopped
+    const got = await supply.restock(TORCH_TARGET, this.context)
+    if (got.torches <= 0) return stopped
+    this.restocked.torches += got.torches
+    this.restocked.trips += 1
+    // Back to where the torches ran out, so the search goes on from there and not from the entrance again; the
+    // entrance is the fallback when that place cannot be reached.
+    let back = await this.deps.navigator.goToPosition(resumeAt, 1, { signal: this.context.signal })
+    if (!back.ok && back.error.reason !== 'aborted')
+      back = await this.deps.navigator.goToPosition(this.entrance, 1, {
+        signal: this.context.signal,
+      })
+    if (!back.ok) return stopped
+    this.current = floor(back.value)
+    return undefined
   }
 
   /** Time, health, hunger, and the warden. */
@@ -373,6 +445,7 @@ class CaveTrip {
       hops: this.hops,
       farthest: this.farthest,
       returned,
+      restocked: { ...this.restocked },
     }
   }
 

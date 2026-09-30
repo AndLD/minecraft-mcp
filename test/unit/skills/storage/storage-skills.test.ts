@@ -508,6 +508,25 @@ describe('ScanContainersSkill and FindItemsSkill', () => {
     })
   })
 
+  it('can leave protected containers unopened, and looks into them otherwise', async () => {
+    const s = await setup()
+    s.world.addContainer(at(10))
+    s.index.register(at(10), 'chest', { label: 'treasure', protected: true })
+    s.world.addContainer(at(20))
+    s.index.register(at(20), 'chest', { label: 'open' })
+
+    const skipping = await s.scan.run(
+      { radius: 1, refreshKnown: true, skipProtected: true },
+      skillContext().context,
+    )
+
+    expect(skipping).toMatchObject({ ok: true, value: { scanned: 1 } })
+    expect(s.world.opened).toEqual(['20,64,0'])
+
+    await s.scan.run({ radius: 1, refreshKnown: true }, skillContext().context)
+    expect(s.world.opened).toContain('10,64,0')
+  })
+
   it('forgets containers that are gone, and can skip the known ones', async () => {
     const s = await setup()
     s.world.addContainer(at(20))
