@@ -68,7 +68,7 @@ _Moved here from the development plan (it was Phase 28): not planned for now. Ro
 
 ### Farming extras
 
-Left out of the farming feature in the plan: shearing sheep, milking cows, honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, melons, cocoa, nether wart; composters; redstone auto-farms (observers, pistons, hoppers).
+Left out of the farming feature in the plan: honey (collecting eggs is now part of `feature/animal-farming`); sugar cane, bamboo, cocoa, nether wart; redstone auto-farms (observers, pistons, hoppers). Shearing sheep, milking cows, and melons are planned as [Phase 44](DEVELOPMENT-PLAN/phases/farming-extras.md), and the composter with bone meal fertilization of a whole field as [Phase 45](DEVELOPMENT-PLAN/phases/composter-bone-meal.md).
 
 ### Several connected rooms in one request
 
@@ -80,12 +80,7 @@ The planned `room` shape in Phase 15 digs one room per call. To connect rooms to
 
 ### Take an item the player hands over ("take this pickaxe")
 
-Today the player throws an item on the ground and asks the agent to pick it up: `pickup_items` with the item name walks onto it, and the digger and the combat code then use the best tool, weapon, or armour the bot carries, so a diamond pickaxe replaces a wooden one without any crafting chain. What is missing is one spoken step: "take this pickaxe" while the player holds it out or throws it.
-
-- **Idea:** a `receive_item` tool: the bot goes to the player, says what it expects (or names the item the agent passed), and watches for a matching item that the player drops or throws near it, then picks it up and confirms in chat what it got. It waits a short time (about 30 s) and reports `nothing_received` when nothing comes.
-- **Approach:** built from what exists: `give_items`' reverse. The player lookup and walking to 1.5 blocks, `DroppedItemScanner` filtered by the wanted name and the player's position at the throw, `DropCollector` to pick it up, and the `DropIgnoreList` left out of the check so items from the player are never mistaken for junk the bot threw away itself. Only items that appear near the player after the request count, so old drops on the ground are not taken.
-- **Extra:** an optional "and use it" step, which equips the received tool or armour at once (`equipBestGear`) and says so in chat.
-- **Effort:** small, well under a session; needs a Docker e2e scenario where the owner bot throws an item and the bot ends up carrying it.
+Planned as [Phase 46](DEVELOPMENT-PLAN/phases/receive-item.md): a `receive_item` tool, the reverse of `give_items`.
 
 ## Deferred from finished work
 
@@ -102,7 +97,7 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Deposit cooked food in chests** once the storage feature exists.
 
 ### Gathering, crafting, smelting
-- **Blast furnace and smoker**: built, see [Gathering, crafting, smelting](features/gathering/gathering-crafting-smelting.md). Crafting one on the way, the campfire, and nuggets from tools and armor are not.
+- **Blast furnace and smoker**: built, see [Gathering, crafting, smelting](features/gathering/gathering-crafting-smelting.md). Crafting one on the way and nuggets from tools and armor are not. The campfire is planned as [Phase 43](DEVELOPMENT-PLAN/phases/campfire-cooking.md).
 - **Bare-floor mining**: asking for `stone` on a stone floor digs the floor blocks next to the bot (never the one underfoot). A "surface only" or "walls only" option could keep the ground intact.
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 

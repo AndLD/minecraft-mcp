@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/smelting-fuel-and-ready`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md). Differences from this plan: fuel from storage (`fuel_from_storage`) was built afterwards on the same branch, at the start of a job only (not mid-job); the far-furnace warning is in the `smelt_ready` message and the collect refusal (`furnace_far` for another dimension), not a separate record field; the distance is checked when the signal is sent, not while the bot walks about.
 
 **Depends on:** [36 Smelting wait strategy](smelting-wait.md) (`SmeltJobs`, the closed-window wait, `collect`), [9 Storage and containers](storage-containers.md) (optional: fuel from storage), [Tasks](../../features/core/tasks.md).  
-**Needed by:** [43 Hardening and polish](hardening-polish.md).
+**Needed by:** [47 Hardening and polish](hardening-polish.md).
 
 Phase 36 stopped the bot from standing at the furnace, but two things stayed out: the fuel for the whole job is chosen up front (so a big job is cut to what the fuel covers), and while a job cooks the bot cannot usefully go elsewhere because nothing tells the agent when it is ready.
 
