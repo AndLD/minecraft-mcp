@@ -1,7 +1,7 @@
 # Phase 46: Take an item the player hands over
 
 _Estimate: ½ session._  
-**Status:** not started.
+**Status:** done on `feature/receive-item`. See [Handing items over](../../features/storage/handing-items-over.md). The wait is `timeout_seconds` (the plan's `wait_seconds` already means how long a tool call blocks).
 
 **Depends on:** [3 Movement and perception](movement-perception.md) (walking to a player, facing them, the player lookup), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`DropCollector`, `DroppedItemScanner`), [10 Item handover](item-handover.md) (`give_items`, `DropIgnoreList`, chat lines), [11 Drop recovery](drop-recovery.md) (unclaimed drops, so the two do not fight over the same item), [Tasks](../../features/core/tasks.md).  
 **Needed by:** [47 Hardening and polish](hardening-polish.md).
