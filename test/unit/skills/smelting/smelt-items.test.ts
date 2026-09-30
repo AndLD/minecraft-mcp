@@ -4,6 +4,7 @@ import { SMELTABLE_ITEMS, SMELTING_TABLE } from '../../../../src/skills/smelting
 import { PlacementSpotFinder } from '../../../../src/skills/crafting/placement-spot.js'
 import { Workstations } from '../../../../src/skills/crafting/workstations.js'
 import { err, ok } from '../../../../src/core/result.js'
+import type { FuelFetcher } from '../../../../src/skills/smelting/fuel-supply.js'
 import { SmeltJobs } from '../../../../src/state/smelt-jobs.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
 import {
@@ -22,7 +23,11 @@ import {
 import type { CraftOutput, ItemCrafter } from '../../../../src/skills/crafting/craft-item-skill.js'
 import type { SkillResult } from '../../../../src/core/skill.types.js'
 
-function setup(items: Record<string, number>, options: { furnaceStands?: boolean } = {}) {
+function setup(
+  items: Record<string, number>,
+  options: { furnaceStands?: boolean } = {},
+  fetcher?: FuelFetcher,
+) {
   const clock = new FakeClock()
   const scanner = new FakeBlockScanner()
   for (let x = -3; x <= 3; x += 1) {
@@ -77,6 +82,7 @@ function setup(items: Record<string, number>, options: { furnaceStands?: boolean
     navigator,
     jobs,
     vitals,
+    ...(fetcher === undefined ? {} : { fuelSupply: fetcher }),
   })
   /** Smelting completes the moment the furnace is looked at. */
   furnaces.session.onLook = () => {
@@ -771,6 +777,107 @@ describe('SmeltItemsSkill, jobs left in a furnace', () => {
     expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_far' } })
     expect(!result.ok && result.error.message).toContain('the_nether')
     expect(s.jobs.all()).toHaveLength(1)
+  })
+})
+
+describe('SmeltItemsSkill, fuel from storage', () => {
+  /** A fetcher that hands over what a test scripts, and notes what it was asked for. */
+  function fetching(give: Record<string, number>) {
+    const asked: { items: number; preferred: string | undefined }[] = []
+    let inventory: ReturnType<typeof setup>['inventory'] | undefined
+    const fetcher: FuelFetcher = {
+      fetch: (items, preferred) => {
+        asked.push({ items, preferred })
+        const value = inventory?.value
+        if (value !== undefined && inventory !== undefined) {
+          const stacks = [...value.stacks]
+          for (const [name, count] of Object.entries(give)) stacks.push({ name, count })
+          inventory.value = { ...value, stacks }
+        }
+        return Promise.resolve(Object.entries(give).map(([name, count]) => ({ name, count })))
+      },
+    }
+    return {
+      asked,
+      fetcher,
+      attach: (target: ReturnType<typeof setup>['inventory']): void => {
+        inventory = target
+      },
+    }
+  }
+
+  it('takes the fuel the bag lacks out of storage first, and says what it took', async () => {
+    const f = fetching({ coal: 2 })
+    const s = setup({ raw_iron: 16 }, {}, f.fetcher)
+    f.attach(s.inventory)
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), fuelFromStorage: true },
+      skillContext().context,
+    )
+
+    expect(f.asked).toEqual([{ items: 16, preferred: undefined }])
+    expect(result).toMatchObject({
+      ok: true,
+      value: { smelted: 16, fuelFetched: [{ name: 'coal', count: 2 }] },
+    })
+  })
+
+  it('asks only for what the bag does not cover', async () => {
+    const f = fetching({ coal: 1 })
+    const s = setup({ raw_iron: 16, coal: 1 }, {}, f.fetcher)
+    f.attach(s.inventory)
+
+    await s.skill.run({ ...smelt('raw_iron'), fuelFromStorage: true }, skillContext().context)
+
+    expect(f.asked).toEqual([{ items: 8, preferred: undefined }])
+  })
+
+  it('does not go to storage when the bag already has enough fuel', async () => {
+    const f = fetching({ coal: 2 })
+    const s = setup({ raw_iron: 8, coal: 1 }, {}, f.fetcher)
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), fuelFromStorage: true },
+      skillContext().context,
+    )
+
+    expect(f.asked).toEqual([])
+    expect(result.ok && result.value.fuelFetched).toBeUndefined()
+  })
+
+  it('does not go to storage unless asked to', async () => {
+    const f = fetching({ coal: 2 })
+    const s = setup({ raw_iron: 8 }, {}, f.fetcher)
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(f.asked).toEqual([])
+    expect(result).toMatchObject({ ok: false, error: { reason: 'no_fuel' } })
+  })
+
+  it('passes on the fuel that was named, and still says no_fuel when storage has none', async () => {
+    const f = fetching({})
+    const s = setup({ raw_iron: 4 }, {}, f.fetcher)
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron', undefined, 'oak_planks'), fuelFromStorage: true },
+      skillContext().context,
+    )
+
+    expect(f.asked).toEqual([{ items: 4, preferred: 'oak_planks' }])
+    expect(result).toMatchObject({ ok: false, error: { reason: 'no_fuel' } })
+  })
+
+  it('does nothing extra when no supply is wired in', async () => {
+    const s = setup({ raw_iron: 4 })
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), fuelFromStorage: true },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'no_fuel' } })
   })
 })
 

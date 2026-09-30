@@ -14,6 +14,7 @@ import type { SmeltJob, SmeltJobs } from '../../state/smelt-jobs.js'
 import type { ItemCrafter } from '../crafting/craft-item-skill.js'
 import type { Workstations } from '../crafting/workstations.js'
 import { chooseFuel, totalFuelCapacity } from './fuel.js'
+import type { FuelFetcher } from './fuel-supply.js'
 import { plain, readyAt } from './smelt-job-watcher.js'
 import { SMELTABLE_ITEMS, SMELTING_TABLE } from './smelting-table.js'
 
@@ -43,6 +44,11 @@ export interface SmeltInput {
   readonly wait?: 'until_done' | 'start_only'
   /** Take what a waiting job has finished, without loading anything new. `item` may be empty to mean any job. */
   readonly collect?: boolean
+  /**
+   * Take fuel from storage (registered, unprotected containers) when the bag's fuel does not cover the job. Off by
+   * default: the bot uses only what it carries.
+   */
+  readonly fuelFromStorage?: boolean
 }
 
 export interface SmeltOutput {
@@ -52,6 +58,8 @@ export interface SmeltOutput {
   readonly requested: number
   /** The fuel the job started with. */
   readonly fuel: string
+  /** Fuel taken out of storage for this job (`fuelFromStorage`), per kind. */
+  readonly fuelFetched?: readonly ItemCount[]
   /** Fuel that was burned in this call (put in, less what was taken back out), by item: it may be several kinds. */
   readonly fuelUsed: readonly ItemCount[]
   /** Items still cooking or waiting in the furnace (a job left for later); 0 when everything is collected. */
@@ -79,6 +87,8 @@ export interface SmeltItemsDeps {
   readonly jobs: SmeltJobs
   /** Where the bot is (the dimension a job's furnace stands in). Without it every furnace is assumed reachable. */
   readonly vitals?: VitalsReader
+  /** Takes fuel out of storage (`fuelFromStorage`). Without it the option does nothing. */
+  readonly fuelSupply?: FuelFetcher
 }
 
 /** How a pass over the furnace ended. */
@@ -121,7 +131,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     const ready = await this.ensureFurnace(context)
     if (!ready.ok) return ready
 
-    const counts = countItems(deps.inventory.snapshot())
+    let counts = countItems(deps.inventory.snapshot())
     const have = counts.get(input.item) ?? 0
     const requested = input.count ?? have
     if (have === 0 || have < requested)
@@ -129,6 +139,23 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         reason: 'missing_items',
         message: `Cannot smelt ${String(requested)} ${input.item}: the bot has ${String(have)}.`,
       })
+
+    // With `fuelFromStorage`, what the bag's fuel does not cover is taken out of storage before the furnace is used.
+    let fetched: ItemCount[] = []
+    if (input.fuelFromStorage === true && deps.fuelSupply !== undefined) {
+      const capacity = totalFuelCapacity({
+        inventory: counts,
+        reserved: { name: input.item, count: requested },
+        preferred: input.fuel,
+      })
+      if (capacity < requested) {
+        context.progress(
+          `Fetching fuel from storage for ${String(requested - capacity)} more items`,
+        )
+        fetched = await deps.fuelSupply.fetch(requested - capacity, input.fuel, context)
+        counts = countItems(deps.inventory.snapshot())
+      }
+    }
 
     const fuel = chooseFuel({
       inventory: counts,
@@ -189,7 +216,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       }
       deps.jobs.put(job)
       const outcome = await this.drive(job, holder, wait, used, context)
-      return await this.finish(job, requested, holder, outcome, used)
+      return await this.finish(job, requested, holder, outcome, used, fetched)
     } catch (error) {
       await this.takeEverything(holder.session).catch(() => undefined)
       deps.jobs.remove(furnace.value)
@@ -271,6 +298,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     holder: { session: FurnaceSession },
     outcome: Drive,
     used: Map<string, number>,
+    fetched: readonly ItemCount[] = [],
   ): Promise<SkillResult<SmeltOutput>> {
     const { jobs, clock } = this.deps
     const furnace = { x: job.x, y: job.y, z: job.z }
@@ -284,6 +312,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       requested,
       fuel: job.fuel,
       fuelUsed: burned(),
+      ...(fetched.length === 0 ? {} : { fuelFetched: fetched }),
       furnace,
       ...extra,
     })

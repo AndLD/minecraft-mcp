@@ -1,7 +1,7 @@
 import type { ItemCount } from '../../core/recipes.port.js'
 
 /** How many items one unit of the fuel smelts (a furnace burns 200 ticks per item). */
-function itemsPerUnit(item: string): number | undefined {
+export function itemsPerUnit(item: string): number | undefined {
   const fixed: Readonly<Record<string, number>> = {
     coal: 8,
     charcoal: 8,

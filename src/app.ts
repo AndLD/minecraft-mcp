@@ -196,6 +196,7 @@ import { EggPolicy } from './state/egg-policy.js'
 import { ExcavationRecords } from './state/excavation-records.js'
 import { FarmRegistry } from './state/farm-registry.js'
 import { SmeltJobs } from './state/smelt-jobs.js'
+import { FuelSupply } from './skills/smelting/fuel-supply.js'
 import { SmeltJobWatcher } from './skills/smelting/smelt-job-watcher.js'
 import { DropRecords } from './state/drop-records.js'
 import { RailwayLog } from './state/railway-log.js'
@@ -1155,6 +1156,11 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     navigator,
     jobs: smeltJobs,
     vitals,
+    fuelSupply: new FuelSupply({
+      inventory,
+      withdraw: withdrawItems,
+      scanner: scanContainers,
+    }),
   })
 
   // Fishing.

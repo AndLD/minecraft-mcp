@@ -283,6 +283,40 @@ describe('gathering, crafting, and smelting on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
   }, 240_000)
 
+  it('takes fuel out of a chest when told to and the bag has none, and refuses without the option', async () => {
+    await world.setBlock(at(6, -4), 'chest')
+    await world.fillSlot(at(6, -4), 0, 'coal', 8)
+    await world.give(bot(), 'furnace')
+    await world.give(bot(), 'raw_iron', 3)
+    await untilBotSees(['chest'], 1)
+    await untilBotCarries('furnace')
+    await untilBotCarries('raw_iron')
+    expect(
+      (
+        await session.bot.call('register_container', {
+          x: 6,
+          y: GROUND_Y,
+          z: -4,
+          label: 'fuel',
+        })
+      ).isError,
+    ).toBe(false)
+
+    const refused = await runToTheEnd('smelt', { item: 'raw_iron' })
+    expect(refused.failed).toBe(true)
+    expect(refused.text).toContain('no_fuel')
+
+    const smelted = await runToTheEnd('smelt', { item: 'raw_iron', fuel_from_storage: true })
+
+    expectSucceeded(smelted)
+    expect(smelted.task?.result).toMatchObject({
+      smelted: 3,
+      fuelFetched: [{ name: 'coal', count: 1 }],
+    })
+    expect(await world.countItem(bot(), 'iron_ingot')).toBe(3)
+    expect(await world.countInChest(at(6, -4), 'coal')).toBe(7)
+  }, 200_000)
+
   it('stops collecting the moment the task is cancelled', async () => {
     await plantTree(-2, -3, 4)
     await untilBotSees(['oak_log'], 4)
