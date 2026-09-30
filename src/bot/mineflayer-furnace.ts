@@ -54,6 +54,8 @@ class MineflayerFurnaceSession implements FurnaceSession {
   }
 }
 
+const SMELTING_BLOCKS = new Set(['furnace', 'blast_furnace', 'smoker'])
+
 export class MineflayerFurnaceAccess implements FurnaceAccess {
   constructor(private readonly holder: BotHolder) {}
 
@@ -61,7 +63,8 @@ export class MineflayerFurnaceAccess implements FurnaceAccess {
     const bot = this.holder.current()
     if (bot === undefined) return err('Not connected to a Minecraft world.')
     const block = bot.blockAt(toVec3(position))
-    if (block === null || !block.name.endsWith('furnace')) return err('There is no furnace there.')
+    if (block === null || !SMELTING_BLOCKS.has(block.name))
+      return err('There is no furnace, blast furnace, or smoker there.')
     try {
       return ok(new MineflayerFurnaceSession(bot, await bot.openFurnace(block)))
     } catch (error) {

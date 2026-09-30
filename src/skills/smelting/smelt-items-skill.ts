@@ -17,10 +17,9 @@ import { chooseFuel, totalFuelCapacity } from './fuel.js'
 import type { FuelFetcher } from './fuel-supply.js'
 import { plain, readyAt } from './smelt-job-watcher.js'
 import { SMELTABLE_ITEMS, SMELTING_TABLE } from './smelting-table.js'
+import { STATIONS, stationSmelts, stationsFor, type Station } from './stations.js'
 
 const FURNACE = 'furnace'
-/** A furnace smelts one item in 10 seconds. */
-const SMELT_MS_PER_ITEM = 10_000
 const TIMEOUT_SLACK_MS = 30_000
 /** Nothing has moved in a furnace with an empty fuel slot for this long: the fuel is gone. */
 const STALL_MS = 30_000
@@ -49,6 +48,12 @@ export interface SmeltInput {
    * default: the bot uses only what it carries.
    */
   readonly fuelFromStorage?: boolean
+  /**
+   * Which block smelts it: a `blast_furnace` (ores and raw metals) or a `smoker` (food) is twice as fast and makes the
+   * fuel last twice as long; a `furnace` does everything. `auto` (the default) uses a blast furnace or a smoker that
+   * stands nearby or is carried when it can smelt the item, and a furnace otherwise.
+   */
+  readonly station?: 'auto' | Station
 }
 
 export interface SmeltOutput {
@@ -56,6 +61,8 @@ export interface SmeltOutput {
   readonly produced: string
   readonly smelted: number
   readonly requested: number
+  /** The block that smelted it. */
+  readonly station: Station
   /** The fuel the job started with. */
   readonly fuel: string
   /** Fuel taken out of storage for this job (`fuelFromStorage`), per kind. */
@@ -128,7 +135,11 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     const waiting = deps.jobs.forItem(input.item)
     if (waiting !== undefined) return this.resume(waiting, wait, context)
 
-    const ready = await this.ensureFurnace(context)
+    const chosen = this.chooseStation(input.item, input.station ?? 'auto')
+    if (!chosen.ok) return chosen
+    const station = chosen.value
+    const speed = STATIONS[station].speed
+    const ready = await this.ensureStation(station, context)
     if (!ready.ok) return ready
 
     let counts = countItems(deps.inventory.snapshot())
@@ -147,12 +158,13 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         inventory: counts,
         reserved: { name: input.item, count: requested },
         preferred: input.fuel,
+        speed,
       })
       if (capacity < requested) {
         context.progress(
           `Fetching fuel from storage for ${String(requested - capacity)} more items`,
         )
-        fetched = await deps.fuelSupply.fetch(requested - capacity, input.fuel, context)
+        fetched = await deps.fuelSupply.fetch(requested - capacity, input.fuel, context, speed)
         counts = countItems(deps.inventory.snapshot())
       }
     }
@@ -162,6 +174,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       toSmelt: requested,
       reserved: { name: input.item, count: requested },
       preferred: input.fuel,
+      speed,
     })
     if (fuel === undefined)
       return err({
@@ -180,11 +193,12 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
           inventory: counts,
           reserved: { name: input.item, count: requested },
           preferred: input.fuel,
+          speed,
         }),
       ),
     )
 
-    const furnace = await deps.workstations.ensure(FURNACE, context)
+    const furnace = await deps.workstations.ensure(STATIONS[station].block, context)
     if (!furnace.ok) return furnace
     const opened = await deps.furnaces.open(furnace.value)
     if (!opened.ok) return err({ reason: 'furnace_failed', message: opened.error })
@@ -195,7 +209,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       if (busy.input !== undefined && busy.input.name !== input.item)
         return err({
           reason: 'furnace_busy',
-          message: `The furnace is already smelting ${busy.input.name}.`,
+          message: `The ${station.replace('_', ' ')} is already smelting ${busy.input.name}.`,
         })
       await holder.session.putFuel(fuel.item, fuel.amount)
       const used = new Map<string, number>([[fuel.item, fuel.amount]])
@@ -210,6 +224,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         collected: 0,
         fuel: fuel.item,
         startedAt: deps.clock.now(),
+        station,
         dimension: plain(deps.vitals?.read()?.dimension ?? 'overworld'),
         detached: false,
         readyNotified: false,
@@ -311,6 +326,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       smelted: outcome.smelted,
       requested,
       fuel: job.fuel,
+      station: job.station,
       fuelUsed: burned(),
       ...(fetched.length === 0 ? {} : { fuelFetched: fetched }),
       furnace,
@@ -340,9 +356,45 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     return ok(done({ pending: 0 }))
   }
 
-  /** Makes sure a furnace stands nearby or is carried, crafting one when the bot has neither. */
-  private async ensureFurnace(context: SkillContext): Promise<SkillResult<undefined>> {
-    if (this.deps.workstations.available(FURNACE)) return ok(undefined)
+  /**
+   * The block to smelt in. `auto` takes a blast furnace or a smoker that stands nearby or is carried when it can smelt
+   * the item (twice as fast), otherwise a furnace. A station that is asked for by name must be able to smelt the item
+   * and must be there: a blast furnace and a smoker are not crafted on the way (a furnace is).
+   */
+  private chooseStation(item: string, wanted: 'auto' | Station): SkillResult<Station> {
+    const { workstations } = this.deps
+    if (wanted === 'auto') {
+      const fast = stationsFor(item).find(
+        (station) => station !== 'furnace' && workstations.available(STATIONS[station].block),
+      )
+      return ok(fast ?? 'furnace')
+    }
+    if (!stationSmelts(wanted, item))
+      return err({
+        reason: 'wrong_station',
+        message:
+          wanted === 'smoker'
+            ? `A smoker only cooks food (and dries kelp), not ${item}. Use a furnace.`
+            : `A blast furnace only smelts ores and raw metals, not ${item}. Use a furnace.`,
+      })
+    if (wanted !== 'furnace' && !workstations.available(STATIONS[wanted].block))
+      return err({
+        reason: `no_${wanted}`,
+        message: `There is no ${wanted.replace('_', ' ')} nearby and none in the inventory. ${
+          wanted === 'smoker'
+            ? 'A smoker is made from a furnace and 4 logs.'
+            : 'A blast furnace is made from 5 iron ingots, a furnace, and 3 smooth stone.'
+        } Use a furnace, or craft one first.`,
+      })
+    return ok(wanted)
+  }
+
+  /** Makes sure the station stands nearby or is carried; only a furnace is crafted when the bot has neither. */
+  private async ensureStation(
+    station: Station,
+    context: SkillContext,
+  ): Promise<SkillResult<undefined>> {
+    if (station !== 'furnace' || this.deps.workstations.available(FURNACE)) return ok(undefined)
     const crafted = await this.deps.crafter.run({ item: FURNACE, count: 1 }, context)
     return crafted.ok
       ? ok(undefined)
@@ -364,11 +416,11 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
     context: SkillContext,
   ): Promise<Drive> {
     const { clock, scheduler, jobs } = this.deps
+    const msPerItem = STATIONS[job.station].msPerItem
     const furnace = { x: job.x, y: job.y, z: job.z }
     const state = { loaded: job.loaded, collected: job.collected }
     const before = state.collected
-    const deadline =
-      clock.now() + (job.count - state.collected) * SMELT_MS_PER_ITEM + TIMEOUT_SLACK_MS
+    const deadline = clock.now() + (job.count - state.collected) * msPerItem + TIMEOUT_SLACK_MS
     // Whether the furnace is burning cannot be trusted once the window has been closed and opened again (the flame
     // reads out while the last fuel item is burning; found by the e2e run), and the furnace takes a fuel item into
     // its burn queue the instant it starts burning, so an empty fuel slot proves nothing either. What does prove that
@@ -430,7 +482,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
         }
 
       // Do not stand looking into the furnace: close the window, wait, and look again.
-      const remaining = (job.count - state.collected) * SMELT_MS_PER_ITEM
+      const remaining = (job.count - state.collected) * msPerItem
       await session.close()
       await sleep(
         scheduler,
@@ -472,6 +524,7 @@ export class SmeltItemsSkill implements Skill<SmeltInput, SmeltOutput>, ItemSmel
       inventory,
       toSmelt: left,
       reserved: notLoaded > 0 ? { name: job.item, count: notLoaded } : undefined,
+      speed: STATIONS[job.station].speed,
     }
     const choice = chooseFuel({ ...options, preferred: job.fuel }) ?? chooseFuel(options)
     if (choice === undefined) return

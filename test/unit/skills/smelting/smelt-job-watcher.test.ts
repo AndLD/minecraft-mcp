@@ -19,6 +19,7 @@ const job = (over: Partial<SmeltJob> = {}): SmeltJob => ({
   collected: 0,
   fuel: 'coal',
   startedAt: START,
+  station: 'furnace',
   dimension: 'overworld',
   detached: true,
   readyNotified: false,
@@ -61,6 +62,17 @@ describe('SmeltJobWatcher', () => {
     expect(s.events[0]?.message).toContain('10 64 -3')
     expect(s.events[0]?.message).toContain('6 raw_iron into iron_ingot')
     expect(s.events[0]?.message).toContain('collect: true')
+  })
+
+  it('counts a blast furnace or a smoker at half the time', async () => {
+    const s = await setup()
+    s.jobs.put(job({ station: 'blast_furnace' })) // 6 items at 5 seconds
+
+    s.scheduler.advance(29_000)
+    expect(s.events).toEqual([])
+    s.scheduler.advance(1_000)
+
+    expect(s.events).toHaveLength(1)
   })
 
   it('says it once, and remembers that it did', async () => {

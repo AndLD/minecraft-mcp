@@ -14,7 +14,13 @@ const SCAN_RADIUS = 4
 /** What smelting needs from a fuel supply: more fuel into the bag for `items` more items. */
 export interface FuelFetcher {
   /** Takes fuel that smelts `items` items out of storage; returns what came into the bag (nothing when none was found). */
-  fetch(items: number, preferred: string | undefined, context: SkillContext): Promise<ItemCount[]>
+  fetch(
+    items: number,
+    preferred: string | undefined,
+    context: SkillContext,
+    /** How much faster than a furnace the station smelts (2 for a blast furnace or a smoker). */
+    speed?: number,
+  ): Promise<ItemCount[]>
 }
 
 export interface FuelSupplyDeps {
@@ -39,12 +45,14 @@ export class FuelSupply implements FuelFetcher {
     items: number,
     preferred: string | undefined,
     context: SkillContext,
+    speed = 1,
   ): Promise<ItemCount[]> {
     const before = countItems(this.deps.inventory.snapshot())
     let missing = items
     let scanned = false
     for (const kind of preferred === undefined ? STORAGE_FUELS : [preferred]) {
-      const per = itemsPerUnit(kind)
+      const base = itemsPerUnit(kind)
+      const per = base === undefined ? undefined : base * speed
       if (per === undefined || missing <= 0 || cancelled(context)) continue
       const units = Math.ceil(missing / per)
       let got = await this.take(kind, units, context)

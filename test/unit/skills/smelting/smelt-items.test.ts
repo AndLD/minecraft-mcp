@@ -124,6 +124,7 @@ describe('SmeltItemsSkill', () => {
         smelted: 5,
         requested: 5,
         fuel: 'coal',
+        station: 'furnace',
         fuelUsed: [], // the fake furnace never burns what it is given, so all of it comes back
         pending: 0,
         furnace: { x: 3, y: 64, z: 0 },
@@ -878,6 +879,190 @@ describe('SmeltItemsSkill, fuel from storage', () => {
     )
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'no_fuel' } })
+  })
+})
+
+describe('SmeltItemsSkill, blast furnace and smoker', () => {
+  /** A world with a station beside the furnace: the blast furnace or smoker stands at x = 3, z = 2. */
+  function withStation(
+    items: Record<string, number>,
+    station: 'blast_furnace' | 'smoker' | undefined,
+    options: { furnaceStands?: boolean } = {},
+  ) {
+    const s = setup(items, options)
+    if (station !== undefined)
+      s.scanner.blocks = [
+        ...s.scanner.blocks,
+        { name: station, position: { x: 3, y: 64, z: 2 }, distance: 3.6 },
+      ]
+    return s
+  }
+
+  it('uses a blast furnace that stands nearby for ore, without being told', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1 }, 'blast_furnace')
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 3, station: 'blast_furnace' } })
+    expect(s.furnaces.opened[0]).toEqual({ x: 3, y: 64, z: 2 })
+  })
+
+  it('uses a smoker that stands nearby for food', async () => {
+    const s = withStation({ beef: 4, coal: 1 }, 'smoker')
+
+    const result = await s.skill.run(smelt('beef'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { smelted: 4, station: 'smoker' } })
+    expect(s.furnaces.opened[0]).toEqual({ x: 3, y: 64, z: 2 })
+  })
+
+  it('uses the furnace for what a blast furnace or a smoker cannot smelt', async () => {
+    const stone = withStation({ cobblestone: 3, coal: 1 }, 'blast_furnace')
+    const iron = withStation({ raw_iron: 3, coal: 1 }, 'smoker')
+
+    const a = await stone.skill.run(smelt('cobblestone'), skillContext().context)
+    const b = await iron.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(a).toMatchObject({ ok: true, value: { station: 'furnace' } })
+    expect(b).toMatchObject({ ok: true, value: { station: 'furnace' } })
+    expect(stone.furnaces.opened[0]).toEqual({ x: 3, y: 64, z: 0 })
+  })
+
+  it('places a blast furnace it carries, and does not craft a furnace it does not need', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1, blast_furnace: 1 }, undefined, {
+      furnaceStands: false,
+    })
+    s.placer.onPlace = () => undefined
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(s.placer.placed.map((p) => p.item)).toEqual(['blast_furnace'])
+    expect(s.crafted).toEqual([])
+    expect(result).toMatchObject({ ok: true, value: { station: 'blast_furnace' } })
+  })
+
+  it('crafts a furnace, as before, when there is no station at all', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1 }, undefined, { furnaceStands: false })
+
+    const result = await s.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(s.crafted).toEqual(['furnace'])
+    expect(result).toMatchObject({ ok: true, value: { station: 'furnace' } })
+  })
+
+  it('uses the furnace when told to, even with a blast furnace beside it', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1 }, 'blast_furnace')
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), station: 'furnace' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { station: 'furnace' } })
+    expect(s.furnaces.opened[0]).toEqual({ x: 3, y: 64, z: 0 })
+  })
+
+  it('uses the station that is named when it can smelt the item', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1 }, 'blast_furnace')
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), station: 'blast_furnace' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { station: 'blast_furnace' } })
+  })
+
+  it('refuses a station that cannot smelt the item', async () => {
+    const s = withStation({ beef: 3, coal: 1 }, 'blast_furnace')
+
+    const result = await s.skill.run(
+      { ...smelt('beef'), station: 'blast_furnace' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'wrong_station' } })
+    expect(!result.ok && result.error.message).toContain('only smelts ores')
+    expect(s.furnaces.opened).toEqual([])
+  })
+
+  it('refuses iron in a smoker, and says what a smoker is for', async () => {
+    const s = withStation({ raw_iron: 3, coal: 1 }, 'smoker')
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), station: 'smoker' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'wrong_station' } })
+    expect(!result.ok && result.error.message).toContain('only cooks food')
+  })
+
+  it('does not craft a station that was asked for by name and is not there', async () => {
+    const blast = withStation({ raw_iron: 3, coal: 1 }, undefined)
+    const smoke = withStation({ beef: 3, coal: 1 }, undefined)
+
+    const a = await blast.skill.run(
+      { ...smelt('raw_iron'), station: 'blast_furnace' },
+      skillContext().context,
+    )
+    const b = await smoke.skill.run({ ...smelt('beef'), station: 'smoker' }, skillContext().context)
+
+    expect(a).toMatchObject({ ok: false, error: { reason: 'no_blast_furnace' } })
+    expect(!a.ok && a.error.message).toContain('5 iron ingots')
+    expect(b).toMatchObject({ ok: false, error: { reason: 'no_smoker' } })
+    expect(!b.ok && b.error.message).toContain('4 logs')
+    expect(blast.crafted).toEqual([])
+    expect(smoke.crafted).toEqual([])
+  })
+
+  it('smelts twice as much on the same fuel', async () => {
+    const plain = setup({ raw_iron: 16, coal: 1 })
+    const fast = withStation({ raw_iron: 16, coal: 1 }, 'blast_furnace')
+
+    const slow = await plain.skill.run(smelt('raw_iron'), skillContext().context)
+    const quick = await fast.skill.run(smelt('raw_iron'), skillContext().context)
+
+    expect(slow).toMatchObject({ ok: true, value: { smelted: 8, requested: 16 } })
+    expect(quick).toMatchObject({ ok: true, value: { smelted: 16, requested: 16 } })
+  })
+
+  it('gives up sooner on a station that should be twice as fast', async () => {
+    const furnace = setup({ raw_iron: 3, coal: 1 })
+    furnace.furnaces.session.onLook = () => undefined
+    const blast = withStation({ raw_iron: 3, coal: 1 }, 'blast_furnace')
+    blast.furnaces.session.onLook = () => undefined
+
+    await furnace.skill.run(smelt('raw_iron'), skillContext().context)
+    await blast.skill.run(smelt('raw_iron'), skillContext().context)
+
+    // 3 items: 30 s + 30 s slack for a furnace, 15 s + 30 s for a blast furnace.
+    expect(blast.clock.now()).toBeLessThan(furnace.clock.now())
+    expect(blast.clock.now()).toBeGreaterThan(45_000)
+  })
+
+  it('writes the station into the job, so the ready estimate uses its speed', async () => {
+    const s = withStation({ raw_iron: 4, coal: 1 }, 'blast_furnace')
+    s.furnaces.session.onLook = () => undefined
+
+    const result = await s.skill.run(
+      { ...smelt('raw_iron'), wait: 'start_only' },
+      skillContext().context,
+    )
+
+    expect(result).toMatchObject({ ok: true, value: { station: 'blast_furnace', pending: 4 } })
+    expect(s.jobs.all()).toMatchObject([{ station: 'blast_furnace' }])
+  })
+
+  it('names the block in a refusal when it is busy with something else', async () => {
+    const s = withStation({ beef: 2, coal: 1 }, 'smoker')
+    s.furnaces.session.input = { name: 'potato', count: 3 }
+    s.furnaces.session.onLook = () => undefined
+
+    const result = await s.skill.run(smelt('beef'), skillContext().context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'furnace_busy' } })
+    expect(!result.ok && result.error.message).toContain('smoker')
   })
 })
 

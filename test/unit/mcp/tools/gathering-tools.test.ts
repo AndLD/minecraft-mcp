@@ -540,8 +540,8 @@ describe('PickupItemsTool, CraftTool, and SmeltTool', () => {
     const all = await tool.execute(tool.inputSchema.parse({ item: 'sand', replace: true }), context)
 
     expect(inputs).toEqual([
-      { item: 'raw_iron', count: 10, fuel: 'coal', wait: 'until_done', collect: false, fuelFromStorage: false },
-      { item: 'sand', count: undefined, fuel: undefined, wait: 'until_done', collect: false, fuelFromStorage: false },
+      { item: 'raw_iron', count: 10, fuel: 'coal', wait: 'until_done', collect: false, fuelFromStorage: false, station: 'auto' },
+      { item: 'sand', count: undefined, fuel: undefined, wait: 'until_done', collect: false, fuelFromStorage: false, station: 'auto' },
     ])
     expect(some).toMatchObject({ ok: true, data: { description: 'Smelt 10 raw_iron' } })
     expect(all).toMatchObject({ ok: true, data: { description: 'Smelt all sand' } })
@@ -559,8 +559,8 @@ describe('PickupItemsTool, CraftTool, and SmeltTool', () => {
     const collected = await tool.execute(tool.inputSchema.parse({ collect: true }), context)
 
     expect(inputs).toEqual([
-      { item: 'beef', count: undefined, fuel: undefined, wait: 'start_only', collect: false, fuelFromStorage: false },
-      { item: '', count: undefined, fuel: undefined, wait: 'until_done', collect: true, fuelFromStorage: false },
+      { item: 'beef', count: undefined, fuel: undefined, wait: 'start_only', collect: false, fuelFromStorage: false, station: 'auto' },
+      { item: '', count: undefined, fuel: undefined, wait: 'until_done', collect: true, fuelFromStorage: false, station: 'auto' },
     ])
     expect(started).toMatchObject({ ok: true, data: { description: 'Smelt all beef' } })
     expect(collected).toMatchObject({ ok: true, data: { description: 'Collect a smelting job' } })
