@@ -46,10 +46,10 @@ const exploreSchema = z
       .default(10)
       .describe('How long it may search before giving up, in minutes (1-60, default 10).'),
     strategy: z
-      .enum(['frontier', 'spiral'])
-      .default('frontier')
+      .enum(['guided', 'frontier', 'spiral'])
+      .default('guided')
       .describe(
-        'frontier (default): always head for the nearest ground not yet visited. spiral: circle outward from the start, ring by ring.',
+        'guided (default): for a structure whose biomes are known (village, desert_temple, jungle_temple, pillager_outpost) head for the biomes it generates in and away from ones it cannot be in; every other search is frontier. frontier: always head for the nearest ground not yet visited. spiral: circle outward from the start, ring by ring.',
       ),
     use_locate: z
       .boolean()

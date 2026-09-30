@@ -1,7 +1,7 @@
 # Phase 38: Biome-guided search
 
 _Estimate: ¾ session._  
-**Status:** not started.
+**Status:** done on `feature/biome-guided-search`. See [World discovery](../../features/world/world-discovery.md) and [Biome tables](../../features/world/biome-tables.md). Differences from this plan: the biome rules are in `src/knowledge/structure-biomes/` with the provider class `StructureBiomeTables` next to them; the tables cover village, desert temple, jungle temple, and pillager outpost (the other kinds have no biome rule and use the frontier search); the result has `searched` to say which strategy ran.
 
 **Depends on:** [30 World discovery, including caves and canyons](world-discovery.md) (`ExplorationStrategy`, `BiomeReader`, the structure kinds), [33 Configurable Minecraft version](minecraft-version.md) (the version the tables are chosen by).  
 **Needed by:** [39 Hardening and polish](hardening-polish.md).
