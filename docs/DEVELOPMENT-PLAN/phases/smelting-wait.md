@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** not started.
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`SmeltItemsSkill`, `FurnaceAccess`), [Tasks](../../features/core/tasks.md) (one active task, cancellation), [9 Storage and containers](storage-containers.md) (optional: the furnace stays a known place), [5 Persistent state](persistent-state.md) (a pending job survives a restart).  
-**Needed by:** [37 Hardening and polish](hardening-polish.md).
+**Needed by:** [38 Hardening and polish](hardening-polish.md).
 
 Today `smelt` opens the furnace and keeps it open, polling once a second until every item is done. Smelting takes 10 seconds per item, so a stack of 64 keeps the bot standing at the furnace for about 11 minutes, busy as far as the task manager is concerned, and it cannot react to anything the player says in chat. This phase changes the wait so the bot does not stand looking into the furnace, and stays available while it waits.
 

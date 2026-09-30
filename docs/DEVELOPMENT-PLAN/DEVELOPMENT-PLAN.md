@@ -93,7 +93,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [34 Tall trees completion](phases/tall-trees.md) | done (`feature/tall-trees`: `harvest_trees` climbs a dirt tower beside a tall trunk, `reach_tall` `pillar` or `skip`, and always takes the tower down) |
 | [35 Fishing](phases/fishing.md) | not started (from the backlog: fish and other food) |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | not started (poll the furnace with its window closed, so the bot can hear chat while it waits) |
-| [37 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [37 Organize storage](phases/organize-storage.md) | not started (from the backlog: sort what is already in the chests by the rules) |
+| [38 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -141,11 +142,12 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [34 Tall trees completion](phases/tall-trees.md) | ½ session |
 | [35 Fishing](phases/fishing.md) | 1 session |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | ½ session |
-| [37 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [37 Organize storage](phases/organize-storage.md) | ½ session |
+| [38 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 37 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 38 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -186,7 +188,8 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [34 Tall trees completion](phases/tall-trees.md) | 7, 13, 18 | |
 | [35 Fishing](phases/fishing.md) | 3, 7, 8 | 9, 30 |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | 5, 7 | 9 |
-| [37 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [37 Organize storage](phases/organize-storage.md) | 9 | |
+| [38 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 
