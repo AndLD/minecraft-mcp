@@ -1,7 +1,7 @@
 # Phase 37: Organize storage
 
 _Estimate: ½ session._  
-**Status:** not started.
+**Status:** done on `feature/organize-storage`. See [Storage](../../features/storage/storage.md). Differences from this plan: no `on_inventory_full` option (the skill takes only what fits, keeps two slots free, and makes several trips, so a full inventory is never a reason to ask); the look-over refreshes the chosen containers and every rule target rather than calling `ScanContainers`; a dry run also walks to the containers to look inside (it changes nothing in them); a cancel puts carried items back before ending.
 
 **Depends on:** [9 Storage and containers](storage-containers.md) (`ContainerIndex`, `StorageRules`, `ContainerSelector`, `ContainerVisitor`, `ScanContainers`, `WindowTransfer`, the protected flag), [Tasks](../../features/core/tasks.md).  
 **Needed by:** [38 Hardening and polish](hardening-polish.md).

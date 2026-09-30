@@ -133,6 +133,50 @@ describe('storage on a real Minecraft server', () => {
     expect(await world.countItem(bot(), 'cobblestone')).toBe(0)
   })
 
+  it('organizes what is already in the chests: a dry run only lists the moves, the real run makes them', async () => {
+    for (const x of [2, 4, 6]) await world.setBlock(at(x, -4), 'chest')
+    await untilBotSees(['chest'], 3)
+    // Everything sits in the last chest, the "misc" one; two rules say where it belongs.
+    await world.fillSlot(at(6, -4), 0, 'cobblestone', 64)
+    await world.fillSlot(at(6, -4), 1, 'cobblestone', 36)
+    await world.fillSlot(at(6, -4), 2, 'raw_iron', 12)
+    await world.fillSlot(at(6, -4), 3, 'feather', 5)
+    await world.give(bot(), 'iron_pickaxe')
+    await untilBotCarries('iron_pickaxe')
+    for (const [x, label] of [
+      [2, 'stone'],
+      [4, 'metal'],
+      [6, 'misc'],
+    ] as const)
+      expect(
+        (await session.bot.call('register_container', { x, y: GROUND_Y, z: -4, label })).isError,
+      ).toBe(false)
+    await session.bot.call('set_storage_rule', {
+      container: 'stone',
+      items: ['stone', 'cobblestone'],
+    })
+    await session.bot.call('set_storage_rule', { container: 'metal', items: ['ores', 'ingots'] })
+
+    const plan = await runToTheEnd('organize_storage', {})
+
+    succeeded(plan)
+    expect(plan.task?.result).toMatchObject({ dryRun: true, moved: 0 })
+    expect((plan.task?.result as { moves: unknown[] }).moves.length).toBeGreaterThanOrEqual(2)
+    expect(await world.countInChest(at(6, -4), 'cobblestone')).toBe(100)
+    expect(await world.countInChest(at(2, -4), 'cobblestone')).toBe(0)
+
+    const real = await runToTheEnd('organize_storage', { dry_run: false })
+
+    succeeded(real)
+    expect(real.task?.result).toMatchObject({ dryRun: false, moved: 112, left: [], carried: [] })
+    expect(await world.countInChest(at(2, -4), 'cobblestone')).toBe(100)
+    expect(await world.countInChest(at(4, -4), 'raw_iron')).toBe(12)
+    expect(await world.countInChest(at(6, -4), 'feather')).toBe(5) // no rule: stays
+    expect(await world.countInChest(at(6, -4), 'cobblestone')).toBe(0)
+    expect(await world.countItem(bot(), 'iron_pickaxe')).toBe(1)
+    expect(await world.countItem(bot(), 'cobblestone')).toBe(0)
+  }, 240_000)
+
   it('finds an item across several chests and takes it out', async () => {
     await world.setBlock(at(2, -4), 'chest')
     await world.setBlock(at(5, -4), 'chest')

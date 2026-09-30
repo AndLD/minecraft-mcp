@@ -125,6 +125,7 @@ import {
 import {
   DepositItemsTool,
   FindItemsTool,
+  OrganizeStorageTool,
   ScanContainersTool,
   WithdrawItemsTool,
 } from './mcp/tools/storage-task-tools.js'
@@ -346,6 +347,7 @@ import { ContainerVisitor } from './skills/storage/container-visitor.js'
 import { DepositItemsSkill } from './skills/storage/deposit-items-skill.js'
 import { FindItemsSkill } from './skills/storage/find-items-skill.js'
 import { InventoryFullHandler } from './skills/storage/inventory-full-handler.js'
+import { OrganizeStorageSkill } from './skills/storage/organize-storage-skill.js'
 import { ScanContainersSkill } from './skills/storage/scan-containers-skill.js'
 import { WithdrawItemsSkill } from './skills/storage/withdraw-items-skill.js'
 import { DoorOpeningNavigator } from './skills/movement/door-opening-navigator.js'
@@ -747,6 +749,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     facts: itemFacts,
   })
   const scanContainers = new ScanContainersSkill({ vitals, index: containerIndex, visitor })
+  const organizeStorage = new OrganizeStorageSkill({
+    inventory,
+    index: containerIndex,
+    selector,
+    visitor,
+    facts: itemFacts,
+    clock,
+  })
   const withdrawItems = new WithdrawItemsSkill({
     inventory,
     vitals,
@@ -1376,6 +1386,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new RemoveContainerTool(containerIndex, storageRules))
     .register(new ListContainersTool(containerIndex, storageRules))
     .register(new ScanContainersTool(scanContainers, launcher))
+    .register(new OrganizeStorageTool(organizeStorage, launcher))
     .register(new SetStorageRuleTool(containerIndex, storageRules, itemFacts))
     .register(new ListStorageRulesTool(containerIndex, storageRules))
     .register(new RemoveStorageRuleTool(storageRules))

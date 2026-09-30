@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { DepositItemsSkill } from '../../skills/storage/deposit-items-skill.js'
 import type { FindItemsSkill } from '../../skills/storage/find-items-skill.js'
+import type { OrganizeStorageSkill } from '../../skills/storage/organize-storage-skill.js'
 import type { ScanContainersSkill } from '../../skills/storage/scan-containers-skill.js'
 import type { WithdrawItemsSkill } from '../../skills/storage/withdraw-items-skill.js'
 import type { TaskLauncher } from '../task-launcher.js'
@@ -233,6 +234,61 @@ export class ScanContainersTool implements ToolDefinition<typeof scanSchema> {
         description: 'Scan containers',
         run: (ctx) =>
           this.skill.run({ radius: input.radius, refreshKnown: input.refresh_known }, ctx),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const organizeSchema = z.object({
+  containers: z
+    .array(z.string().min(1))
+    .min(1)
+    .optional()
+    .describe('Container ids or labels whose contents are sorted. Every known container when omitted.'),
+  dry_run: z
+    .boolean()
+    .default(true)
+    .describe(
+      'true (the default): only list what would move and change nothing. Show the player the list and ask before calling again with false.',
+    ),
+  max_minutes: z.number().min(1).max(60).default(10).describe('Stop after this many minutes.'),
+  ...taskOptionsShape,
+})
+
+export class OrganizeStorageTool implements ToolDefinition<typeof organizeSchema> {
+  readonly name = 'organize_storage'
+  readonly description =
+    'Sorts what is already in the chests by the storage rules (see list_storage_rules): every stack that a rule sends to ' +
+    'another container is carried there. Items with no rule stay where they are, protected containers are never opened, ' +
+    'nothing is thrown away, and the bot keeps its own gear. It first looks into the containers (so it walks to each one), ' +
+    'then plans the moves against the room each container will have. With dry_run (the DEFAULT) it only reports the ' +
+    'plan (moves, left, skipped, unchanged); call it again with dry_run false, after the player agreed, to do it. ' +
+    'Result: moves (item, count, from, to), moved, left (what could not move and why), skipped, carried (anything the ' +
+    'bot still holds), unchanged. Fails no_containers or unknown_container. Runs in the background: poll ' +
+    'get_task_status when the reply has status "running".'
+  readonly inputSchema = organizeSchema
+
+  constructor(
+    private readonly skill: OrganizeStorageSkill,
+    private readonly launcher: TaskLauncher,
+  ) {}
+
+  execute(input: z.output<typeof organizeSchema>, context: ToolContext) {
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: input.dry_run ? 'Plan organizing storage' : 'Organize storage',
+        resume: { tool: this.name, arguments: input },
+        run: (ctx) =>
+          this.skill.run(
+            { containers: input.containers, dryRun: input.dry_run, maxMinutes: input.max_minutes },
+            ctx,
+          ),
       },
       {
         replace: input.replace,

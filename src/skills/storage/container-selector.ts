@@ -36,13 +36,19 @@ export class ContainerSelector {
     private readonly facts: ItemFacts,
   ) {}
 
-  select(item: string, context: SelectionContext): StorageTarget | undefined {
+  /** The container the storage rules name for an item (highest priority first), or undefined when no rule applies. */
+  ruled(item: string, exclude: ReadonlySet<string> = new Set()): ContainerEntry | undefined {
     for (const rule of this.rules.ordered()) {
       if (!matchesAny(rule.specs, item, this.facts)) continue
       const entry = this.index.get(rule.containerId)
-      if (entry !== undefined && !entry.protected && !context.exclude.has(entry.id))
-        return { kind: 'known', entry }
+      if (entry !== undefined && !entry.protected && !exclude.has(entry.id)) return entry
     }
+    return undefined
+  }
+
+  select(item: string, context: SelectionContext): StorageTarget | undefined {
+    const ruled = this.ruled(item, context.exclude)
+    if (ruled !== undefined) return { kind: 'known', entry: ruled }
 
     const known = this.index
       .all()
