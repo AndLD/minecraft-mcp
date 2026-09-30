@@ -31,7 +31,7 @@ This page is the index. Each area has its own file under [features/](features/),
 | [Railways](features/railways.md) | junctions and crossings; detector and activator rails | not planned |
 | [Discovery and caves](features/discovery-and-caves.md) | night, a shipwreck signature, buried blocks in signatures, mobs and other dimensions in biome-guided search, boats, more version tables | not planned |
 | [Fishing](features/fishing.md) | a boat, a spare rod, the full-inventory policy, night and mobs | not planned |
-| [Smelting](features/smelting.md) | crafting a blast furnace or a smoker, nuggets, fuel from storage mid-job, a distance limit | not planned |
+| [Smelting](features/smelting.md) | crafting a blast furnace or a smoker when none stands nearby (using them is built, [Phase 42](../DEVELOPMENT-PLAN/phases/blast-furnace-smoker.md)); nuggets; fuel from storage mid-job; a distance limit | not planned |
 
 ## Maintenance
 
