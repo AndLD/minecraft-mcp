@@ -279,6 +279,9 @@ import { FarmLayoutRegistry } from './skills/farming/farm-layout-registry.js'
 import { GroveSpotFinder } from './skills/farming/grove-spots.js'
 import { HarvestCropsSkill } from './skills/farming/harvest-crops-skill.js'
 import { HarvestTreesSkill } from './skills/farming/harvest-trees-skill.js'
+import { FishSkill } from './skills/fishing/fish-skill.js'
+import { MineflayerFisher } from './bot/mineflayer-fisher.js'
+import { FishTool } from './mcp/tools/fishing-tools.js'
 import { HerdManager } from './skills/farming/herd-manager.js'
 import { InspectFarmSkill } from './skills/farming/inspect-farm-skill.js'
 import { LureAnimalsSkill } from './skills/farming/lure-animals-skill.js'
@@ -525,6 +528,14 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
       const result = await invoke(
         'hunt_animals',
         { species: HUNTABLE_SPECIES_NAMES, count: 3, cook: true, wait_seconds: 0 },
+        { signal: new AbortController().signal },
+      )
+      return { ok: result.ok, message: result.ok ? '' : result.error }
+    },
+    startFishing: async () => {
+      const result = await invoke(
+        'fish',
+        { count: 5, cook: true, wait_seconds: 0 },
         { signal: new AbortController().signal },
       )
       return { ok: result.ok, message: result.ok ? '' : result.error }
@@ -1112,6 +1123,20 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
   })
 
+  // Fishing.
+  const fishSkill = new FishSkill({
+    blocks,
+    navigator,
+    gaze: new MineflayerGaze(connection),
+    fisher: new MineflayerFisher(connection),
+    inventory,
+    vitals,
+    guard: protectedAreas,
+    scheduler,
+    clock,
+    smelter: smeltItems,
+  })
+
   // Hunting.
   const animals = new MineflayerAnimalScanner(connection)
   const pens = new PenDetector(blocks)
@@ -1371,6 +1396,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new PlantTreesTool(plantTrees, launcher))
     .register(new CollectSaplingsTool(collectSaplings, launcher))
     .register(new HarvestTreesTool(harvestTrees, launcher))
+    .register(new FishTool(fishSkill, launcher))
     .register(new LureAnimalsTool(lureAnimals, launcher))
     .register(new BreedAnimalsTool(breedAnimals, launcher))
     .register(new CollectEggsTool(collectEggs, launcher))

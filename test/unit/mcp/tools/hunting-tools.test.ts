@@ -289,6 +289,16 @@ describe('SetFoodPolicyTool', () => {
     expect(standing.all().food_policy).toContain('hunts animals')
   })
 
+  it('saves the fishing policy and says it needs a rod', async () => {
+    const { policy, standing, tool: t } = await tool()
+
+    const result = t.execute(t.inputSchema.parse({ policy: 'fish_and_cook' }))
+
+    expect(result).toEqual({ ok: true, data: { policy: 'fish_and_cook' } })
+    expect(policy.get()).toBe('fish_and_cook')
+    expect(standing.all().food_policy).toContain('fishing rod')
+  })
+
   it('removes the standing instruction when going back to asking', async () => {
     const { policy, standing, tool: t } = await tool()
     t.execute(t.inputSchema.parse({ policy: 'stop' }))

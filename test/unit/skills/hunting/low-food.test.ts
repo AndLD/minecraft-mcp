@@ -9,7 +9,7 @@ function setup(policy: LowFoodPolicy, startResult = { ok: true, message: '' }) {
   const clock = new FakeClock()
   const scheduler = new FakeScheduler(clock)
   const events: { type: string; message: string }[] = []
-  const calls = { hunts: 0, stops: 0 }
+  const calls = { hunts: 0, fishes: 0, stops: 0 }
   const responder = new LowFoodResponder({
     policy: { get: () => policy },
     emit: (type, message) => {
@@ -17,6 +17,10 @@ function setup(policy: LowFoodPolicy, startResult = { ok: true, message: '' }) {
     },
     startHunt: () => {
       calls.hunts += 1
+      return Promise.resolve(startResult)
+    },
+    startFishing: () => {
+      calls.fishes += 1
       return Promise.resolve(startResult)
     },
     stopTask: () => {
@@ -39,7 +43,7 @@ describe('LowFoodResponder', () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.type).toBe('needs_decision')
     expect(events[0]?.message).toContain('set_food_policy')
-    expect(calls).toEqual({ hunts: 0, stops: 0 })
+    expect(calls).toEqual({ hunts: 0, fishes: 0, stops: 0 })
   })
 
   it('starts a hunt by itself, after the eating reflex is done, when the policy is "hunt_and_cook"', async () => {
@@ -67,6 +71,33 @@ describe('LowFoodResponder', () => {
     await settle()
 
     expect(events[0]?.message).toBe('Out of food, but hunting could not start: A task is running.')
+  })
+
+  it('goes fishing by itself when the policy is "fish_and_cook"', async () => {
+    const { responder, scheduler, events, calls } = setup('fish_and_cook')
+
+    responder.respond()
+    expect(calls.fishes).toBe(0)
+    scheduler.advance(2000)
+    await settle()
+
+    expect(calls).toEqual({ hunts: 0, fishes: 1, stops: 0 })
+    expect(events[0]?.message).toContain('started fishing')
+  })
+
+  it('says why fishing could not start', async () => {
+    const { responder, scheduler, events } = setup('fish_and_cook', {
+      ok: false,
+      message: 'There is no fishing rod in the inventory.',
+    })
+
+    responder.respond()
+    scheduler.advance(2000)
+    await settle()
+
+    expect(events[0]?.message).toBe(
+      'Out of food, but fishing could not start: There is no fishing rod in the inventory.',
+    )
   })
 
   it('cancels the task and tells the agent when the policy is "stop"', async () => {

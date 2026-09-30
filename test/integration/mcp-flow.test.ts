@@ -133,6 +133,7 @@ describe('MCP server over an in-memory transport', () => {
         'list_landmarks',
         'explore_caves',
         'lead_player',
+        'fish',
         'remove_landmark',
         'register_farm',
       ].sort(),

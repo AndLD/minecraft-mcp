@@ -1011,6 +1011,8 @@ export class FakeBot implements BotLike {
    * point lies on the face between a solid block and the empty cell).
    */
   activateItem(): void {
+    this.pullIn?.()
+    this.pullIn = undefined
     const held = this.heldItem?.name ?? ''
     this.activated.push(held)
     const fluid = held === 'water_bucket' ? 'water' : held === 'lava_bucket' ? 'lava' : undefined
@@ -1149,6 +1151,23 @@ export class FakeBot implements BotLike {
     this.consumeCalls += 1
     this.food = Math.min(20, this.food + this.foodPerConsume)
     return Promise.resolve()
+  }
+
+  /** How each `fish` call ends: 'bite' resolves, 'never' waits until the line is pulled in (`activateItem`). */
+  fishScript: ('bite' | 'never' | 'error')[] = []
+  fishCalls = 0
+  private pullIn: (() => void) | undefined
+
+  fish(): Promise<void> {
+    this.fishCalls += 1
+    const next = this.fishScript.shift() ?? 'bite'
+    if (next === 'bite') return Promise.resolve()
+    if (next === 'error') return Promise.reject(new Error('Fishing cancelled'))
+    return new Promise<void>((_resolve, reject) => {
+      this.pullIn = () => {
+        reject(new Error('Fishing cancelled'))
+      }
+    })
   }
 
   /** Takes an entity out of the world (it died or left). */

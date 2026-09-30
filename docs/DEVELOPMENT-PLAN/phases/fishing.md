@@ -1,7 +1,7 @@
 # Phase 35: Fishing
 
 _Estimate: 1 session._  
-**Status:** not started.
+**Status:** done on `feature/fishing`. See [Fishing](../../features/gathering/fishing.md). Differences from this plan: a full inventory ends the task (`inventory_full`) instead of following `on_inventory_full`; `spot` is coordinates (`at`), not a landmark; the task ends with a result and `stopped` (`rod_broke`, `time`, ...) instead of an error; no early stop for night or hostile mobs (the reflexes still act); `count` counts fish, or only `item` when given.
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting a rod, cooking the catch), [8 Hunting and food](hunting-food.md) (the food policy and the low-food response), [9 Storage and containers](storage-containers.md) (optional: depositing the catch), [30 World discovery](world-discovery.md) (optional: finding water).  
 **Needed by:** [38 Hardening and polish](hardening-polish.md).

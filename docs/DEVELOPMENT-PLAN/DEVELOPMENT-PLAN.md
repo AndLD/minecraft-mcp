@@ -91,7 +91,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [32 Leading a player](phases/leading-a-player.md) | done (`feature/leading-a-player`: `lead_player` walks in legs, never farther than the lead distance from the player, waits and calls, goes back to a player who wanders) |
 | [33 Configurable Minecraft version](phases/minecraft-version.md) | in review (`feature/configurable-minecraft-version`: `MC_VERSION`, default 1.21.1, followed by the bot, the e2e server, and the player bots) |
 | [34 Tall trees completion](phases/tall-trees.md) | done (`feature/tall-trees`: `harvest_trees` climbs a dirt tower beside a tall trunk, `reach_tall` `pillar` or `skip`, and always takes the tower down) |
-| [35 Fishing](phases/fishing.md) | not started (from the backlog: fish and other food) |
+| [35 Fishing](phases/fishing.md) | done (`feature/fishing`: `fish` from the shore with a rod, sorting fish, treasure, and junk, optional cooking, and the `fish_and_cook` food policy) |
 | [36 Smelting wait strategy](phases/smelting-wait.md) | not started (poll the furnace with its window closed, so the bot can hear chat while it waits) |
 | [37 Organize storage](phases/organize-storage.md) | not started (from the backlog: sort what is already in the chests by the rules) |
 | [38 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |

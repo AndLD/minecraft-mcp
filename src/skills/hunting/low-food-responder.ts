@@ -10,6 +10,8 @@ export interface LowFoodDeps {
   emit(type: string, message: string): void
   /** Starts the standing hunt. Resolves with what happened. */
   startHunt(): Promise<{ readonly ok: boolean; readonly message: string }>
+  /** Starts the standing fishing trip (with cooking). Resolves with what happened. */
+  startFishing(): Promise<{ readonly ok: boolean; readonly message: string }>
   /** Cancels the running task. */
   stopTask(): Promise<void>
   readonly scheduler: Scheduler
@@ -48,6 +50,18 @@ export class LowFoodResponder {
               started.ok
                 ? 'Out of food: started hunting animals and cooking the meat, as the food policy says.'
                 : `Out of food, but hunting could not start: ${started.message}`,
+            )
+          })
+        })
+        return
+      case 'fish_and_cook':
+        deps.scheduler.after(START_DELAY_MS, () => {
+          void deps.startFishing().then((started) => {
+            deps.emit(
+              'reflex',
+              started.ok
+                ? 'Out of food: started fishing and cooking the fish, as the food policy says.'
+                : `Out of food, but fishing could not start: ${started.message}`,
             )
           })
         })
