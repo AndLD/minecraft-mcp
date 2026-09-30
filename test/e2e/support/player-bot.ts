@@ -15,7 +15,7 @@ export function joinAsPlayer(info: ServerInfo, username: string): Promise<Player
     host: info.host,
     port: info.minecraftPort,
     username,
-    version: '1.21.1',
+    version: info.version,
     auth: 'offline',
   })
 
