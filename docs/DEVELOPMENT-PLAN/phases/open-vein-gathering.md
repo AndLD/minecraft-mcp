@@ -1,4 +1,4 @@
-# Phase 33: Open-vein gathering
+# Phase 31: Open-vein gathering
 
 _Estimate: ½ session._  
 **Status:** done on `feature/open-vein-gathering`. Details in [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md) and [Cave exploration](../../features/world/cave-exploration.md).

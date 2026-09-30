@@ -3,7 +3,7 @@
 _Estimate: 3.25 sessions._
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md), [8 Hunting and food](hunting-food.md), [9 Storage and containers](storage-containers.md), [13 Construction engine and building](construction-building.md), [16 Site preparation: leveling, dug rooms, and opening doors](site-preparation.md) (optional).  
-**Needed by:** [31 Leading a player](leading-a-player.md) (optional).
+**Needed by:** [32 Leading a player](leading-a-player.md) (optional).
 
 Hunting takes animals from the world and never adds any, and food stops when the wild herds run out; gathering fells trees and never plants them. Farming closes those loops: grow crops, breed animals, plant forests, keep a steady supply.
 
