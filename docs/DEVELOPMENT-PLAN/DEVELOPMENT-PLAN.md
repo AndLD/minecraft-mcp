@@ -102,7 +102,8 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [43 Campfire cooking](phases/campfire-cooking.md) | not started (from the backlog: cook food on a campfire, without fuel) |
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | not started (from the backlog) |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | not started (from the backlog: fertilize a whole field on ask) |
-| [46 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [46 Take an item the player hands over](phases/receive-item.md) | not started (from the backlog: `receive_item`, the reverse of `give_items`) |
+| [47 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
 
 ## Phases
 
@@ -159,11 +160,12 @@ Each phase has its own detail file with the scope, tasks, tests, and exit criter
 | [43 Campfire cooking](phases/campfire-cooking.md) | ½ session |
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 1 session |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | ¾ session |
-| [46 Hardening and polish](phases/hardening-polish.md) | 1 session |
+| [46 Take an item the player hands over](phases/receive-item.md) | ½ session |
+| [47 Hardening and polish](phases/hardening-polish.md) | 1 session |
 
 ## Dependencies between phases
 
-What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 46 (hardening) needs every other phase.
+What each phase needs before it can be built or verified. "Optional" means it works without it but gains something (a better target, a safer default). Later phases build on the ports, state, and engines of the earlier ones, so a phase can be started once everything it needs is merged. Phase 47 (hardening) needs every other phase.
 
 | Phase | Needs | Optional |
 |---|---|---|
@@ -213,7 +215,8 @@ What each phase needs before it can be built or verified. "Optional" means it wo
 | [43 Campfire cooking](phases/campfire-cooking.md) | 7, 8, 42 | |
 | [44 Farming extras, shearing, milking, and melons](phases/farming-extras.md) | 7, 8, 18 | |
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | 18, 44 | 7, 9 |
-| [46 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
+| [46 Take an item the player hands over](phases/receive-item.md) | 3, 7, 10, 11 | |
+| [47 Hardening and polish](phases/hardening-polish.md) | all earlier phases | |
 
 Feature-level dependencies (which feature reuses which feature's classes) are listed in the [features index](../features/FEATURES.md) and at the top of each feature file.
 

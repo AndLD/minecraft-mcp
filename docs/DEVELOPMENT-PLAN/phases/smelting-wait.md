@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/smelting-wait`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md). Differences from this plan: the bot does not walk away between looks (no distance limit is needed; it waits where it stands, and goes back to the furnace only to resume a job); fuel is not topped up at a look (the fuel for the whole job is chosen up front); a timeout or `out_of_fuel` takes the leftovers back instead of leaving a job; and out of fuel is now judged by a furnace that has not moved for 30 seconds, because the flame reading is wrong after the window is reopened (this bug came out of the e2e run).
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`SmeltItemsSkill`, `FurnaceAccess`), [Tasks](../../features/core/tasks.md) (one active task, cancellation), [9 Storage and containers](storage-containers.md) (optional: the furnace stays a known place), [5 Persistent state](persistent-state.md) (a pending job survives a restart).  
-**Needed by:** [46 Hardening and polish](hardening-polish.md).
+**Needed by:** [47 Hardening and polish](hardening-polish.md).
 
 Today `smelt` opens the furnace and keeps it open, polling once a second until every item is done. Smelting takes 10 seconds per item, so a stack of 64 keeps the bot standing at the furnace for about 11 minutes, busy as far as the task manager is concerned, and it cannot react to anything the player says in chat. This phase changes the wait so the bot does not stand looking into the furnace, and stays available while it waits.
 

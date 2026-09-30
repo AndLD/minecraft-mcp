@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/blast-furnace-smoker`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md).
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`SmeltItemsSkill`, `Workstations`, `FurnaceAccess`), [36 Smelting wait strategy](smelting-wait.md) and [41 Smelting, fuel top-up and a ready signal](smelting-fuel-and-ready.md) (jobs, the ready signal, fuel).  
-**Needed by:** [46 Hardening and polish](hardening-polish.md).
+**Needed by:** [47 Hardening and polish](hardening-polish.md).
 
 `smelt` used only the plain furnace. A blast furnace smelts ores and raw metals in half the time, and a smoker cooks food in half the time; both burn fuel at the furnace's rate, so the same fuel goes twice as far. It comes from the backlog item "Blast furnace and smoker".
 

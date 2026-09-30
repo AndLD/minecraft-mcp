@@ -4,7 +4,7 @@ _Estimate: ¾ session._
 **Status:** done on `feature/biome-guided-search`. See [World discovery](../../features/world/world-discovery.md) and [Biome tables](../../features/world/biome-tables.md). Differences from this plan: the biome rules are in `src/knowledge/structure-biomes/` with the provider class `StructureBiomeTables` next to them; the tables cover village, desert temple, jungle temple, and pillager outpost (the other kinds have no biome rule and use the frontier search); the result has `searched` to say which strategy ran.
 
 **Depends on:** [30 World discovery, including caves and canyons](world-discovery.md) (`ExplorationStrategy`, `BiomeReader`, the structure kinds), [33 Configurable Minecraft version](minecraft-version.md) (the version the tables are chosen by).  
-**Needed by:** [46 Hardening and polish](hardening-polish.md).
+**Needed by:** [47 Hardening and polish](hardening-polish.md).
 
 `explore_for_structure` walks a spiral or a growing blob and knows nothing about the ground it is on, so a search for a desert temple can spend minutes in an ocean or a jungle where none can exist. Structures are tied to biomes, so the bot can steer by them. This phase adds a search strategy that uses biomes as clues, and the tables that say which biomes fit which structure, chosen per Minecraft version.
 
