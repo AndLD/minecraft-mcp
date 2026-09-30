@@ -1,0 +1,26 @@
+# Phase 36: Smelting wait strategy
+
+_Estimate: ½ session._  
+**Status:** not started.
+
+**Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`SmeltItemsSkill`, `FurnaceAccess`), [Tasks](../../features/core/tasks.md) (one active task, cancellation), [9 Storage and containers](storage-containers.md) (optional: the furnace stays a known place), [5 Persistent state](persistent-state.md) (a pending job survives a restart).  
+**Needed by:** [37 Hardening and polish](hardening-polish.md).
+
+Today `smelt` opens the furnace and keeps it open, polling once a second until every item is done. Smelting takes 10 seconds per item, so a stack of 64 keeps the bot standing at the furnace for about 11 minutes, busy as far as the task manager is concerned, and it cannot react to anything the player says in chat. This phase changes the wait so the bot does not stand looking into the furnace, and stays available while it waits.
+
+- Branch: `feature/smelting-wait`. No new port: the change is in `SmeltItemsSkill` and how it waits, plus a small record of pending jobs.
+- **Load, close, wait.** After loading fuel and input the bot **closes the furnace window** and waits with it closed. It does not hold the window open for the whole time.
+- **Poll, do not stare.** It computes when the first output should be ready (10 s per item, less what has already burned) and reopens the furnace only around then, takes what is done, tops up fuel and input for the next batch when needed, and closes it again. Between polls the interval grows with the remaining time (a few seconds near the end, up to about a minute for a long job), so a large batch costs a handful of reopenings, not one per second. All waiting goes through the injected `Scheduler` and `Clock`.
+- **Stay available for chat.** While it waits, the job is **interruptible**: a new instruction from the owner (or `stop`) does not have to wait 11 minutes. The waiting `smelt` task is paused or ended on request, the furnace keeps burning (the game does that by itself), and the bot goes on with the new work.
+- **A pending job is remembered.** A small per-world record (`SmeltJobs`, `ProfileScoped`, versioned JSON like the other state) holds the furnace position, what is inside, when it started, and what the caller asked for. It is kept when the wait is interrupted, when the task is cancelled, and across a restart. The session briefing lists pending jobs, so the agent can say "your furnace at 10 64 -3 has 12 iron ingots ready".
+- **Collecting later.** `smelt` with the same arguments, or a call with `collect: true`, finds the pending job, takes what is done, and finishes or restarts the wait. Whatever is left in the furnace is never lost: it stays in the furnace or is taken back on any exit, as today.
+- **Options.** `wait` on the `smelt` tool: `until_done` (default, as today but with the new polling: the task ends when everything is smelted and collected, and can be interrupted by a new instruction) or `start_only` (load, close, and return at once with the pending job; nothing waits). The result reports `smelted`, `pending` (items still cooking), and `furnace` (position).
+- **Safety.** The bot may walk away between polls, but never further than a set distance from the furnace while it is still waiting for it (default 32 blocks) so it does not lose the job; reflexes act as always and a job interrupted by one is picked up again by the same record. Fuel is checked at every poll: a furnace that runs out of fuel with input left reports `out_of_fuel` and asks, or follows the standing policy.
+- **Docs.** Update the gathering, crafting and smelting page (the wait strategy, the job record, the new options), the AGENTS.md tool table, the runtime protocol (what to do with a pending job), and the session briefing description.
+- **Tests:**
+  - unit: the skill over a fake `FurnaceAccess`, `Clock`, and `Scheduler` (the window is closed while waiting, the first poll comes at the computed time and not before, the interval grows, output is taken at each poll, fuel is topped up, `out_of_fuel`, abort and interruption leave the job recorded and the furnace intact, `start_only`, `collect`, a job for a furnace that has been broken), the job store (persist, reload, corrupt file, per world), and the briefing entry
+  - integration: `smelt` through the tool layer on a fake furnace with a scripted clock: it waits without holding the window, a chat message arrives during the wait and the agent can start another task, and the pending job is collected afterwards
+  - e2e (`test/e2e/gather-craft-smelt/`, extended): a batch of raw iron is smelted through the real server; the test checks that the window was closed between polls (the server log or the count of open events) and that the owner's chat message during the wait reaches `wait_for_chat` before the smelting ends
+- **Exit criteria:** "smelt 64 iron" loads the furnace and waits without standing over it, the bot answers a chat message during the wait, and the ingots are collected when they are done (or on the next `smelt`/`collect` call), with nothing lost if the wait was interrupted.
+
+[Back to the development plan](../DEVELOPMENT-PLAN.md)
