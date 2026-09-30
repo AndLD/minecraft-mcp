@@ -1,7 +1,7 @@
 # Phase 44: Farming extras, shearing, milking, and melons
 
 _Estimate: 1 session._  
-**Status:** not started.
+**Status:** done on `feature/farming-extras`. See [Animal products](../../features/farming/animal-products.md).
 
 **Depends on:** [18 Farming, crops, animals, and trees](farming.md) (`AnimalPen`, `HerdManager`, `crop-table.ts` with the stem crop `pumpkin`, `harvest_crops`, `tend_farm`), [8 Hunting and food](hunting-food.md) (the animal catalog), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting shears), [Tasks](../../features/core/tasks.md).  
 **Needed by:** [47 Hardening and polish](hardening-polish.md).

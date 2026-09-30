@@ -145,6 +145,8 @@ import {
 import { FlattenAreaTool, PreviewFlattenTool } from './mcp/tools/site-leveling-tools.js'
 import {
   BreedAnimalsTool,
+  MilkCowsTool,
+  ShearSheepTool,
   BuildFarmTool,
   CollectEggsTool,
   CollectSaplingsTool,
@@ -281,6 +283,8 @@ import { WallTarget } from './skills/excavation/wall-target.js'
 import { FlattenAreaSkill } from './skills/site-leveling/flatten-area-skill.js'
 import { MarkerFinder } from './skills/site-leveling/marker-finder.js'
 import { BreedAnimalsSkill } from './skills/farming/breed-animals-skill.js'
+import { MilkCowsSkill } from './skills/farming/milk-cows-skill.js'
+import { ShearSheepSkill } from './skills/farming/shear-sheep-skill.js'
 import { BuildFarmSkill } from './skills/farming/build-farm-skill.js'
 import { CollectEggsSkill } from './skills/farming/collect-eggs-skill.js'
 import { CollectSaplingsSkill } from './skills/farming/collect-saplings-skill.js'
@@ -1228,6 +1232,25 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     scheduler,
     farms: farmRegistry,
   })
+  const shearSheep = new ShearSheepSkill({
+    gates: penGates,
+    animals,
+    interaction: animalInteraction,
+    navigator,
+    inventory,
+    drops: dropCollector,
+    farms: farmRegistry,
+    scheduler,
+  })
+  const milkCows = new MilkCowsSkill({
+    gates: penGates,
+    animals,
+    interaction: animalInteraction,
+    navigator,
+    inventory,
+    farms: farmRegistry,
+    scheduler,
+  })
   const herdManager = new HerdManager({ animals, breed: breedAnimals, hunt: huntAnimals })
   const eggThrower = new EggThrower({
     gaze: new MineflayerGaze(connection),
@@ -1467,6 +1490,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new FishTool(fishSkill, launcher))
     .register(new LureAnimalsTool(lureAnimals, launcher))
     .register(new BreedAnimalsTool(breedAnimals, launcher))
+    .register(new ShearSheepTool(shearSheep, launcher))
+    .register(new MilkCowsTool(milkCows, launcher))
     .register(new CollectEggsTool(collectEggs, launcher))
     .register(new SetEggPolicyTool(eggPolicy, standing))
     .register(new TendFarmTool(tendFarm, launcher))

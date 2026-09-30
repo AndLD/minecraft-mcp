@@ -1,7 +1,7 @@
 # Animal farming
 
 **Depends on:** [Crop farming](crop-farming.md), [Hunting and food](../gathering/hunting-and-food.md), [Construction and building](../world/construction-and-building.md), [Opening ordinary doors](../world/opening-ordinary-doors.md) (optional).  
-**Used by:** [Egg collection](egg-collection.md), [Discovering farms](discovering-farms.md).
+**Used by:** [Egg collection](egg-collection.md), [Discovering farms](discovering-farms.md), [Animal products](animal-products.md).
 
 Phase 18's second sub-branch (`feature/animal-farming`; egg collection was in the plan's own text for this branch too, but was cut for scope into its own follow-up branch — see [Egg collection](egg-collection.md)). Covers pens, luring wild animals in, and breeding, matching the branch's own short name in the plan; `HerdManager` is the piece that ties breeding and culling into `tend_farm`.
 

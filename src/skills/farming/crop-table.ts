@@ -5,7 +5,7 @@ export interface CropSpec {
   readonly maxAge: number
   /**
    * `plain`: the crop itself is harvested in place and replanted (wheat). `stem`: the seed grows a stem that stays
-   * for good, and the fruit (`fruit`) grows on a free cell beside it and is the block to harvest (pumpkin).
+   * for good, and the fruit (`fruit`) grows on a free cell beside it and is the block to harvest (pumpkin, melon).
    */
   readonly kind: 'plain' | 'stem'
   /** A stem crop: the stem block's name (`pumpkin_stem`), and the fruit block the stem grows. */
@@ -13,7 +13,7 @@ export interface CropSpec {
   readonly fruit?: string
 }
 
-export const CROP_NAMES = ['wheat', 'carrots', 'potatoes', 'beetroots', 'pumpkin'] as const
+export const CROP_NAMES = ['wheat', 'carrots', 'potatoes', 'beetroots', 'pumpkin', 'melon'] as const
 export type CropName = (typeof CROP_NAMES)[number]
 
 const CROPS: Readonly<Record<CropName, CropSpec>> = {
@@ -27,6 +27,13 @@ const CROPS: Readonly<Record<CropName, CropSpec>> = {
     kind: 'stem',
     stem: 'pumpkin_stem',
     fruit: 'pumpkin',
+  },
+  melon: {
+    seed: 'melon_seeds',
+    maxAge: 7,
+    kind: 'stem',
+    stem: 'melon_stem',
+    fruit: 'melon',
   },
 }
 

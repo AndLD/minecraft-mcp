@@ -53,6 +53,9 @@ class FakeInteraction implements AnimalInteraction {
   feed(): Promise<Result<void, AnimalInteractionFailure>> {
     return Promise.resolve(ok(undefined))
   }
+  use(): Promise<Result<void, AnimalInteractionFailure>> {
+    return Promise.resolve(ok(undefined))
+  }
 }
 
 /** Moves a shared position exactly to the target on every trip (no partial movement, like other construction fakes). */

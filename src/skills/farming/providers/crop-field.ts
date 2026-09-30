@@ -74,7 +74,7 @@ const cropFieldParams = z.object({
   crop: z
     .enum(CROP_NAMES)
     .describe(
-      `What to plant: ${CROP_NAMES.join(', ')}. Pumpkin is planted in every second row only (the rows between are left free for the fruit); its seeds come from crafting a pumpkin.`,
+      `What to plant: ${CROP_NAMES.join(', ')}. Pumpkin and melon are planted in every second row only (the rows between are left free for the fruit); pumpkin seeds come from crafting a pumpkin, melon seeds from a melon slice.`,
     ),
   fence: z.boolean().default(true).describe('Build a fence with a gate around the field.'),
   torches: z
@@ -111,8 +111,8 @@ export class CropFieldProvider implements FarmLayoutProvider<CropFieldParams> {
     'one filled water bucket (fill_bucket makes them), so the preview says how many are needed. ' +
     'build_farm plants the chosen crop over the field right after building it. `gate_side` (north, south, east, ' +
     'west; default south) puts the gate in the middle of that side; a pen takes the same option. `crop: pumpkin` ' +
-    'makes a stem field: stems go in every second row and the rows between stay free for the pumpkins to grow ' +
-    'into (harvest_crops takes the pumpkins and leaves the stems). Needs a hoe, water buckets, and fence.'
+    'or `crop: melon` makes a stem field: stems go in every second row and the rows between stay free for the fruit to grow ' +
+    'into (harvest_crops takes the pumpkins or melons and leaves the stems). Needs a hoe, water buckets, and fence.'
   readonly params = cropFieldParams
 
   defaultOrigin(feet: Position): Position {

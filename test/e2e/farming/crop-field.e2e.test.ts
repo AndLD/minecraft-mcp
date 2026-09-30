@@ -391,4 +391,41 @@ describe('crop farming on a real Minecraft server', () => {
           await is({ x: origin.x + dx, y: origin.y + 1, z: origin.z + dz }, 'pumpkin_stem'),
         ).toBe(true)
   }, 240_000)
+
+  it('builds a melon field and harvests a melon without touching the stem', async () => {
+    await world.give(bot(), 'wooden_hoe', 1)
+    await world.give(bot(), 'melon_seeds', 8)
+    await world.give(bot(), 'water_bucket', 3)
+    await untilBotCarries('wooden_hoe')
+    await untilBotCarries('melon_seeds')
+    const origin = cell(2, -1, -10)
+
+    const built = await run('build_farm', {
+      kind: 'field',
+      params: { width: 3, length: 3, crop: 'melon', fence: false, torches: false },
+      origin,
+      label: 'melons',
+    })
+
+    if (built.failed) throw new Error(`build_farm did not succeed: ${built.text}`)
+    for (const dz of [0, 2])
+      for (const dx of [0, 2]) {
+        const plot = { x: origin.x + dx, y: origin.y, z: origin.z + dz }
+        expect(await is(plot, 'farmland')).toBe(true)
+        expect(await is({ ...plot, y: plot.y + 1 }, 'melon_stem')).toBe(true)
+      }
+
+    const stem = { x: origin.x, y: origin.y + 1, z: origin.z }
+    const fruit = { x: origin.x, y: origin.y + 1, z: origin.z + 1 }
+    await world.setBlock(stem, 'melon_stem[age=7]')
+    await world.setBlock(fruit, 'melon')
+    await untilBotSeesAt('melon', fruit)
+
+    const harvested = await run('harvest_crops', { farm: 'melons' })
+
+    if (harvested.failed) throw new Error(`harvest_crops did not succeed: ${harvested.text}`)
+    expect(harvested.task.result).toMatchObject({ harvested: 1, replanted: 0 })
+    expect(await is(fruit, 'air')).toBe(true)
+    expect(await is(stem, 'melon_stem')).toBe(true)
+  }, 240_000)
 })

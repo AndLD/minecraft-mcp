@@ -11,6 +11,8 @@ export interface AnimalInteractionFailure {
 export interface AnimalInteraction {
   /** Equips the item in hand. */
   hold(item: string): Promise<Result<void, AnimalInteractionFailure>>
+  /** Right-clicks the animal with whatever is in hand (shears, an empty bucket). Nothing is taken from the inventory by the call itself. */
+  use(entityId: number): Promise<Result<void, AnimalInteractionFailure>>
   /** Right-clicks the animal with whatever is in hand, consuming one of it. */
   feed(entityId: number): Promise<Result<void, AnimalInteractionFailure>>
 }

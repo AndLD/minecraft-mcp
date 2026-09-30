@@ -208,6 +208,46 @@ describe('animal farming on a real Minecraft server', () => {
     })
   })
 
+  it('shears the sheep and milks the cow of a pen and leaves them alive', async () => {
+    const penFrom = cell(0, 0, -10)
+    const penTo = cell(20, 0, 10)
+    await world.summonWith('sheep', cell(10, 0, -1), '{NoAI:1b}')
+    await world.summonWith('sheep', cell(12, 0, 0), '{NoAI:1b}')
+    await world.summonWith('cow', cell(10, 0, 2), '{NoAI:1b}')
+    await world.give(bot(), 'shears', 1)
+    await world.give(bot(), 'bucket', 1)
+    await untilBotCarries('shears')
+    await untilBotCarries('bucket')
+    await untilBotSeesEntity('sheep')
+    await untilBotSeesEntity('cow')
+    const registered = await session.bot.call('register_farm', {
+      kind: 'pen',
+      species: 'sheep',
+      from: penFrom,
+      to: penTo,
+      label: 'wool pen',
+    })
+    if (registered.isError) throw new Error(`register_farm failed: ${registered.text}`)
+
+    const sheared = await run('shear_sheep', { farm: 'wool pen' })
+    const milked = await run('milk_cows', { farm: 'wool pen' })
+
+    if (sheared.failed) throw new Error(`shear_sheep did not succeed: ${sheared.text}`)
+    if (milked.failed) throw new Error(`milk_cows did not succeed: ${milked.text}`)
+    expect(sheared.task.result).toMatchObject({ sheared: 2 })
+    expect(milked.task.result).toMatchObject({ buckets: 1, cows: 1 })
+    await untilBotCarries('milk_bucket')
+    const items = dataOf<{ items: { name: string; count: number }[] }>(
+      await session.bot.call('get_inventory'),
+    ).items
+    expect(items.filter((entry) => entry.name.endsWith('_wool')).length).toBeGreaterThan(0)
+    const around = dataOf<{ entities: { name: string }[] }>(
+      await session.bot.call('get_nearby_entities', { radius: 32 }),
+    ).entities
+    expect(around.filter((entity) => entity.name === 'sheep')).toHaveLength(2)
+    expect(around.filter((entity) => entity.name === 'cow')).toHaveLength(1)
+  }, 240_000)
+
   it('collects eggs from a chicken pen, storing a share and throwing the rest back in', async () => {
     const penFrom = cell(0, 0, -10)
     const penTo = cell(10, 0, 0)

@@ -16,6 +16,10 @@ export interface AnimalInfo {
   readonly saddled: boolean
   /** Somebody is riding it. */
   readonly ridden: boolean
+  /** A sheep whose wool has been cut (it regrows); undefined for other animals and when the game data has no such field. */
+  readonly sheared?: boolean
+  /** A sheep's wool colour (`white`, `light_blue`, ...); undefined for other animals. */
+  readonly colour?: string
   /** Dead, and still lingering for its death animation. */
   readonly dead: boolean
 }

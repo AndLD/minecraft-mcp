@@ -14,8 +14,36 @@ function field(bot: BotLike, entity: EntityLike, key: string): unknown {
 
 const present = (value: unknown): boolean => value !== undefined && value !== null
 
+/** Sheep wool colours by the low four bits of the `wool` byte. */
+const WOOL_COLOURS = [
+  'white',
+  'orange',
+  'magenta',
+  'light_blue',
+  'yellow',
+  'lime',
+  'pink',
+  'gray',
+  'light_gray',
+  'cyan',
+  'purple',
+  'blue',
+  'brown',
+  'green',
+  'red',
+  'black',
+] as const
+
+/** The sheep's flag byte: the colour in bits 0 to 3 and "sheared" in bit 4. */
+function woolOf(bot: BotLike, entity: EntityLike): Pick<AnimalInfo, 'sheared' | 'colour'> {
+  const flags = field(bot, entity, 'wool')
+  if (typeof flags !== 'number') return {}
+  return { sheared: (flags & 0x10) !== 0, colour: WOOL_COLOURS[flags & 0x0f] ?? 'white' }
+}
+
 function describe(bot: BotLike, entity: EntityLike, origin: BotLike['entity']): AnimalInfo {
   return {
+    ...woolOf(bot, entity),
     id: entity.id,
     species: entity.name ?? entity.type,
     position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },

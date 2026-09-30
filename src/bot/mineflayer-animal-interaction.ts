@@ -1,4 +1,7 @@
-import type { AnimalInteraction, AnimalInteractionFailure } from '../core/animal-interaction.port.js'
+import type {
+  AnimalInteraction,
+  AnimalInteractionFailure,
+} from '../core/animal-interaction.port.js'
 import { err, ok, type Result } from '../core/result.js'
 import type { BotHolder } from './bot-like.types.js'
 
@@ -21,6 +24,10 @@ export class MineflayerAnimalInteraction implements AnimalInteraction {
       })
     }
     return ok(undefined)
+  }
+
+  use(entityId: number): Promise<Result<void, AnimalInteractionFailure>> {
+    return this.feed(entityId)
   }
 
   async feed(entityId: number): Promise<Result<void, AnimalInteractionFailure>> {
