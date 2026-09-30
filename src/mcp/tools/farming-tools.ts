@@ -606,6 +606,13 @@ const harvestTreesSchema = z.object({
   ...farmOrAreaShape,
   replant: z.boolean().default(true).describe('Plant a sapling where each tree stood, once the whole tree is down.'),
   max_trees: z.number().int().min(1).optional().describe('Stop after felling this many trees.'),
+  reach_tall: z
+    .enum(['pillar', 'skip'])
+    .default('pillar')
+    .describe(
+      'What to do with logs too high for the ground: "pillar" (default) climbs a tower of dirt beside the trunk ' +
+        '(up to 12 blocks, needs dirt in the inventory) and takes it down again; "skip" leaves the top of the tree.',
+    ),
   ...taskOptionsShape,
 })
 
@@ -614,8 +621,10 @@ export class HarvestTreesTool implements ToolDefinition<typeof harvestTreesSchem
   readonly description =
     'Fells the grown trees of a grove (or of an area) and, by default, replants each spot with a sapling of the ' +
     'same wood. This is the deliberate way to cut a registered grove: collect_block leaves it alone. It works from ' +
-    'the ground, so the top of a tall tree can stay out of reach: that is reported as left, and such a tree is not ' +
-    'replanted. Leaves are left to decay (they drop saplings and apples). Reports what was gained. Runs in the ' +
+    'the ground and, for a tall tree, climbs a tower of dirt beside the trunk (reach_tall "pillar", the default; up ' +
+    'to 12 blocks, it needs dirt and takes the tower down again). A tree it cannot finish (no safe spot for the ' +
+    'tower, no dirt, too tall) keeps its top: that is reported as left (scaffoldMissing says how much dirt was ' +
+    'lacking) and the tree is not replanted. Leaves are left to decay (they drop saplings and apples). Reports what was gained. Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'
   readonly inputSchema = harvestTreesSchema
 
@@ -632,7 +641,13 @@ export class HarvestTreesTool implements ToolDefinition<typeof harvestTreesSchem
         resume: { tool: this.name, arguments: input },
         run: (ctx) =>
           this.skill.run(
-            { farm: input.farm, area: input.area, replant: input.replant, maxTrees: input.max_trees },
+            {
+              farm: input.farm,
+              area: input.area,
+              replant: input.replant,
+              maxTrees: input.max_trees,
+              reachTall: input.reach_tall,
+            },
             ctx,
           ),
       },

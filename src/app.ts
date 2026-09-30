@@ -875,6 +875,17 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
   // Construction: one engine (plans of block operations) and building as its first client.
   const constructionPlacer = new MineflayerPlacer(connection)
   const constructionDigger = new MineflayerDigger(connection)
+  const scaffolder = new Scaffolder({
+    blocks,
+    placer: constructionPlacer,
+    digger: constructionDigger,
+    locomotion,
+    navigator,
+    vitals,
+    guard: protectedAreas,
+    drops: dropCollector,
+    scheduler,
+  })
   const planExecutor = new PlanExecutor({
     blocks,
     placer: constructionPlacer,
@@ -892,17 +903,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     discarder: new SpoilDiscarder({ inventory, thrower, vitals, ignore: dropIgnore }),
     supplies: new CraftingSupplies(craftItem),
     tiller,
-    scaffolder: new Scaffolder({
-      blocks,
-      placer: constructionPlacer,
-      digger: constructionDigger,
-      locomotion,
-      navigator,
-      vitals,
-      guard: protectedAreas,
-      drops: dropCollector,
-      scheduler,
-    }),
+    scaffolder,
   })
   const blueprints = new BlueprintRegistry()
     .register(new FloorProvider())
@@ -1043,6 +1044,8 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     inventory,
     guard: protectedAreas,
     farms: farmRegistry,
+    scaffolder,
+    vitals,
   })
   const buildFarmSkill = new BuildFarmSkill({
     registry: farmLayouts,

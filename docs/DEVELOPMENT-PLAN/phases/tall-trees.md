@@ -1,7 +1,7 @@
 # Phase 34: Tall trees completion
 
 _Estimate: ½ session._  
-**Status:** not started.
+**Status:** done on `feature/tall-trees`. See [Tree farming](../../features/farming/tree-farming.md). Built as `harvest_trees` with `reach_tall`; the tower is planned once for the lowest log out of reach and raised a block at a time after that. Cutting leaves that block every column beside the trunk is not built (such a tree is left as `left`); `collect_block` on logs is unchanged.
 
 **Depends on:** [12 Construction engine and building](construction-building.md) (the `Scaffolder`), [18 Farming, crops, animals, and trees](farming.md) (`harvest_trees`), [5 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`collect_block` for logs).  
 **Needed by:** [36 Hardening and polish](hardening-polish.md).
@@ -10,7 +10,7 @@ Today the bot works from the ground and stops at what it can reach, so the top l
 
 - Branch: `feature/tall-trees`. No new tool: `harvest_trees` and `collect_block` (logs) gain the ability, and `harvest_trees` gets `reach_tall: 'pillar' | 'skip'` (default `pillar`).
 - **How:** reuse the construction `Scaffolder` (jump, place a scaffold block underfoot, repeat; take the tower down from the top by breaking the block underfoot, never a fall of more than one block, always descending, also when cancelled or failed). For a tree, the tower stands beside the trunk, on a ground cell with a free column above, outside protected areas and not next to lava. The bot digs the logs within reach from each height, then descends and collects the drops.
-- **Rules:** the scaffold block is dirt by default (it must be breakable with what the bot carries); the tower height is capped (the same `max_scaffold_height`, default 12); a tree that would need more is left as it is today and reported in `left`. Leaves in the way are cut only as much as needed. Once the whole tree is down it counts as felled and is replanted like any other.
+- **Rules:** the scaffold block is dirt by default (it must be breakable with what the bot carries); the tower height is capped (the same `max_scaffold_height`, default 12); a tree that would need more is left as it is today and reported in `left`. Once the whole tree is down it counts as felled and is replanted like any other.
 - **Safety:** never pillar in a protected area or beside a player build; abort on the usual reflexes (they pause the task and the descent still runs); a tower left by a crash is reported, not removed on its own.
 - **Tests:**
   - unit: planning the tower beside a trunk (free column, height needed, capped height), the dig order from the top, the descent on failure and on abort, `reach_tall: skip` keeping today's behavior, and the counts (`left`, felled, replanted)

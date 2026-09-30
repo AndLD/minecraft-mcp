@@ -491,7 +491,15 @@ describe('HarvestTreesTool', () => {
       run: (input: HarvestTreesInput) => {
         runs.push(input)
         return Promise.resolve(
-          ok({ trees: 2, logs: 9, left: 0, replanted: 2, saplingsMissing: 0, gained: [] }),
+          ok({
+            trees: 2,
+            logs: 9,
+            left: 0,
+            replanted: 2,
+            saplingsMissing: 0,
+            scaffoldMissing: 0,
+            gained: [],
+          }),
         )
       },
     } as unknown as HarvestTreesSkill
@@ -502,8 +510,24 @@ describe('HarvestTreesTool', () => {
       context,
     )
 
-    expect(runs[0]).toEqual({ farm: 'wood', area: undefined, replant: false, maxTrees: 2 })
+    expect(runs[0]).toEqual({
+      farm: 'wood',
+      area: undefined,
+      replant: false,
+      maxTrees: 2,
+      reachTall: 'pillar',
+    })
     expect(result).toMatchObject({ ok: true, data: { result: { trees: 2, logs: 9 } } })
+  })
+
+  it('climbs for tall trees unless told to skip them', () => {
+    const tool = new HarvestTreesTool({} as unknown as HarvestTreesSkill, launching().launcher)
+
+    expect(tool.inputSchema.parse({ farm: 'wood' }).reach_tall).toBe('pillar')
+    expect(tool.inputSchema.parse({ farm: 'wood', reach_tall: 'skip' }).reach_tall).toBe('skip')
+    expect(tool.inputSchema.safeParse({ farm: 'wood', reach_tall: 'sometimes' }).success).toBe(
+      false,
+    )
   })
 
   it('replants unless told not to', () => {

@@ -4,11 +4,14 @@ import { DropCollector } from '../../../../src/skills/gathering/drop-collector.j
 import {
   HarvestTreesSkill,
   type HarvestTreesInput,
+  type TowerBuilder,
 } from '../../../../src/skills/farming/harvest-trees-skill.js'
 import type { Scheduler } from '../../../../src/core/scheduler.port.js'
+import type { Tower, TowerPlan } from '../../../../src/skills/construction/scaffolder.js'
 import { FarmRegistry, type GroveSpot } from '../../../../src/state/farm-registry.js'
+import { err, ok } from '../../../../src/core/result.js'
 import { FakeClock } from '../../../fakes/fake-clock.js'
-import { FakeInventory } from '../../../fakes/fake-ports.js'
+import { FakeInventory, FakeVitals } from '../../../fakes/fake-ports.js'
 import {
   AutoScheduler,
   FakeAreaGuard,
@@ -21,7 +24,10 @@ import { InMemoryStateStore } from '../../../fakes/state-fakes.js'
 
 const GROUND = 64
 const at = (x: number, y: number, z: number): Position => ({ x, y, z })
-const rect = (x0: number, z0: number, x1: number, z1: number) => ({ from: at(x0, GROUND, z0), to: at(x1, GROUND, z1) })
+const rect = (x0: number, z0: number, x1: number, z1: number) => ({
+  from: at(x0, GROUND, z0),
+  to: at(x1, GROUND, z1),
+})
 
 /** An auto scheduler that notes every wait, so a test can see when the bot stopped to pick something up. */
 class RecordingScheduler extends AutoScheduler implements Scheduler {
@@ -65,17 +71,42 @@ async function setup(saplings: Record<string, number> = { oak_sapling: 5 }) {
   const clock = new FakeClock(0)
   const events: string[] = []
   const droppedItems = new FakeDroppedItems()
-  const drops = new DropCollector({ drops: droppedItems, navigator, scheduler: new RecordingScheduler(clock, events) })
+  const drops = new DropCollector({
+    drops: droppedItems,
+    navigator,
+    scheduler: new RecordingScheduler(clock, events),
+  })
   const guard = new FakeAreaGuard()
   const farms = new FarmRegistry(clock)
   await farms.attach(new InMemoryStateStore())
-  const skill = new HarvestTreesSkill({ blocks: world, navigator, digger, placer, drops, inventory, guard, farms })
+  const deps = { blocks: world, navigator, digger, placer, drops, inventory, guard, farms }
+  const skill = new HarvestTreesSkill(deps)
   const grove = (spots: readonly GroveSpot[] | undefined, label = 'wood') => {
-    const entry = farms.register({ kind: 'grove', crop: 'oak', bounds: rect(0, 0, 20, 20), label, spots })
+    const entry = farms.register({
+      kind: 'grove',
+      crop: 'oak',
+      bounds: rect(0, 0, 20, 20),
+      label,
+      spots,
+    })
     if (!entry.ok) throw new Error(entry.error)
     return entry.value
   }
-  return { world, digger, placer, navigator, guard, farms, carried, sync, skill, grove, events, droppedItems }
+  return {
+    world,
+    digger,
+    placer,
+    navigator,
+    guard,
+    farms,
+    carried,
+    sync,
+    skill,
+    grove,
+    events,
+    droppedItems,
+    deps,
+  }
 }
 
 const input = (over: Partial<HarvestTreesInput> = {}): HarvestTreesInput => ({
@@ -163,7 +194,12 @@ describe('HarvestTreesSkill', () => {
   it('stops at the requested number of trees', async () => {
     const s = await setup()
     s.grove([spot(2, 2), spot(8, 8), spot(14, 14)])
-    for (const [x, z] of [[2, 2], [8, 8], [14, 14]] as const) s.world.trunk(x, GROUND, z, 3)
+    for (const [x, z] of [
+      [2, 2],
+      [8, 8],
+      [14, 14],
+    ] as const)
+      s.world.trunk(x, GROUND, z, 3)
 
     const result = await s.skill.run(input({ maxTrees: 2 }), skillContext().context)
 
@@ -227,17 +263,32 @@ describe('HarvestTreesSkill', () => {
     s.world.trunk(2, GROUND, 2, 2)
     s.world.trunk(8, GROUND, 8, 2)
 
-    const without = await s.skill.run(input({ replant: false, maxTrees: 1 }), skillContext().context)
+    const without = await s.skill.run(
+      input({ replant: false, maxTrees: 1 }),
+      skillContext().context,
+    )
     const lacking = await s.skill.run(input(), skillContext().context)
 
-    expect(without).toMatchObject({ ok: true, value: { trees: 1, replanted: 0, saplingsMissing: 0 } })
-    expect(lacking).toMatchObject({ ok: true, value: { trees: 1, replanted: 0, saplingsMissing: 1 } })
+    expect(without).toMatchObject({
+      ok: true,
+      value: { trees: 1, replanted: 0, saplingsMissing: 0 },
+    })
+    expect(lacking).toMatchObject({
+      ok: true,
+      value: { trees: 1, replanted: 0, saplingsMissing: 1 },
+    })
   })
 
   it('replants each trunk of a 2x2 tree with its own sapling', async () => {
     const s = await setup({ dark_oak_sapling: 4 })
     s.grove([spot(4, 4, 2)])
-    for (const [x, z] of [[4, 4], [5, 4], [4, 5], [5, 5]] as const) s.world.trunk(x, GROUND, z, 3, 'dark_oak_log')
+    for (const [x, z] of [
+      [4, 4],
+      [5, 4],
+      [4, 5],
+      [5, 5],
+    ] as const)
+      s.world.trunk(x, GROUND, z, 3, 'dark_oak_log')
 
     const result = await s.skill.run(input(), skillContext().context)
 
@@ -320,5 +371,177 @@ describe('HarvestTreesSkill', () => {
     const result = await s.skill.run(input({ farm: 'wheat' }), skillContext().context)
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'not_a_grove' } })
+  })
+})
+
+/** A tower that only counts: cells are recorded, and the digger's reach grows with them. */
+class FakeTowers implements TowerBuilder {
+  readonly calls: string[] = []
+  planTo: TowerPlan | undefined = { base: at(4, GROUND + 1, 2), height: 3 }
+  raiseFails: 'aborted' | 'unreachable' | undefined
+  pillarFails = false
+  onLower: () => void = () => undefined
+
+  plan(): TowerPlan | undefined {
+    this.calls.push('plan')
+    return this.planTo
+  }
+
+  raise(plan: TowerPlan, block: string): ReturnType<TowerBuilder['raise']> {
+    this.calls.push('raise')
+    const tower: Tower = { base: plan.base, block, cells: [] }
+    if (this.raiseFails !== undefined)
+      return Promise.resolve(err({ reason: this.raiseFails, message: 'no', tower }))
+    for (let level = 0; level < plan.height; level += 1)
+      tower.cells.push({ ...plan.base, y: plan.base.y + level })
+    return Promise.resolve(ok(tower))
+  }
+
+  pillarOnce(tower: Tower): ReturnType<TowerBuilder['pillarOnce']> {
+    this.calls.push('pillar')
+    if (this.pillarFails) return Promise.resolve(err({ reason: 'place_failed', message: 'no' }))
+    tower.cells.push({ ...tower.base, y: tower.base.y + tower.cells.length })
+    return Promise.resolve(ok(undefined))
+  }
+
+  lower(tower: Tower): Promise<Position[]> {
+    this.calls.push('lower')
+    tower.cells.length = 0
+    this.onLower()
+    return Promise.resolve([])
+  }
+}
+
+describe('HarvestTreesSkill, tall trees', () => {
+  async function tall(over: { dirt?: number; height?: number } = {}) {
+    const s = await setup({ oak_sapling: 5, dirt: over.dirt ?? 12 })
+    s.grove([spot(2, 2)])
+    const height = over.height ?? 12
+    s.world.trunk(2, GROUND, 2, height)
+    const towers = new FakeTowers()
+    const vitals = new FakeVitals()
+    vitals.vitals = { position: at(3, GROUND + 1, 3) } as never
+    // The bot reaches logs up to 4 blocks above the ground, plus the height of the tower it stands on.
+    let tower: Tower | undefined
+    const raise = towers.raise.bind(towers)
+    towers.raise = async (plan, block) => {
+      const result = await raise(plan, block)
+      if (result.ok) tower = result.value
+      return result
+    }
+    const dig = s.digger.dig.bind(s.digger)
+    s.digger.dig = (position) => {
+      const top = GROUND + 1 + 3 + (tower?.cells.length ?? 0)
+      return position.y > top
+        ? Promise.resolve({
+            ok: false as const,
+            error: { reason: 'out_of_reach' as const, message: 'too far' },
+          })
+        : dig(position)
+    }
+    const skill = new HarvestTreesSkill({ ...s.deps, scaffolder: towers, vitals })
+    return { ...s, towers, skill }
+  }
+
+  it('climbs a tower for the logs the ground cannot reach, takes it down, and replants', async () => {
+    const s = await tall()
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 1, logs: 12, left: 0, replanted: 1 } })
+    expect(s.towers.calls[0]).toBe('plan')
+    expect(s.towers.calls).toContain('raise')
+    expect(s.towers.calls.at(-1)).toBe('lower')
+    expect(s.world.blockAt(at(2, GROUND + 12, 2))).toBe('air')
+    expect(s.world.blockAt(at(2, GROUND + 1, 2))).toBe('oak_sapling')
+  })
+
+  it('raises the tower a block at a time while the next log is still out of reach', async () => {
+    const s = await tall({ height: 12 })
+    s.towers.planTo = { base: at(4, GROUND + 1, 2), height: 1 }
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { left: 0 } })
+    expect(s.towers.calls.filter((call) => call === 'pillar').length).toBeGreaterThan(0)
+  })
+
+  it('leaves the top and does not replant when the tower cannot be raised any more', async () => {
+    const s = await tall({ height: 12 })
+    s.towers.planTo = { base: at(4, GROUND + 1, 2), height: 1 }
+    s.towers.pillarFails = true
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 0 } })
+    expect(result.ok && result.value.left).toBeGreaterThan(0)
+    expect(s.towers.calls.at(-1)).toBe('lower')
+    expect(s.world.blockAt(at(2, GROUND + 1, 2))).not.toBe('oak_sapling')
+  })
+
+  it('leaves the tree and says how much dirt was missing', async () => {
+    const s = await tall({ dirt: 1 })
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 0, scaffoldMissing: 2 } })
+    expect(s.towers.calls).not.toContain('raise')
+  })
+
+  it('leaves the tree when there is no safe place for a tower', async () => {
+    const s = await tall()
+    s.towers.planTo = undefined
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 0 } })
+    expect(s.towers.calls).toEqual(['plan'])
+  })
+
+  it.each(['unreachable', 'aborted'] as const)('takes a failed tower down (%s)', async (reason) => {
+    const s = await tall()
+    s.towers.raiseFails = reason
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(s.towers.calls.at(-1)).toBe('lower')
+    expect(result.ok ? result.value.trees : 'aborted').toBe(reason === 'aborted' ? 'aborted' : 0)
+  })
+
+  it('keeps today’s behavior with reachTall: skip', async () => {
+    const s = await tall()
+
+    const result = await s.skill.run(input({ reachTall: 'skip' }), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 0 } })
+    expect(s.towers.calls).toEqual([])
+  })
+
+  it('leaves the high logs that lie inside a protected area', async () => {
+    const s = await tall()
+    s.guard.protect('a build', (p) => p.x === 2 && p.z === 2 && p.y >= GROUND + 10)
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { trees: 0, logs: 9, left: 3 } })
+    expect(s.towers.calls.at(-1)).toBe('lower')
+  })
+
+  it('takes the tower down when cancelled halfway', async () => {
+    const s = await tall()
+    const context = skillContext()
+    s.towers.onLower = () => undefined
+    const dig = s.digger.dig.bind(s.digger)
+    let count = 0
+    s.digger.dig = (position) => {
+      count += 1
+      if (count === 6) context.controller.abort()
+      return dig(position)
+    }
+
+    const result = await s.skill.run(input(), context.context)
+
+    expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
+    expect(s.towers.calls.at(-1)).toBe('lower')
   })
 })

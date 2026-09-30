@@ -63,6 +63,6 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | [Crop farming](farming/crop-farming.md) | Fields, `build_farm`, planting, harvesting, `tend_farm`, `FarmRegistry` | Construction and building, Persistent state, Gathering, crafting, smelting, Storage (optional) |
 | [Animal farming](farming/animal-farming.md) | Pens, luring, breeding, `HerdManager` | Crop farming, Hunting and food, Construction and building, Opening ordinary doors (optional) |
 | [Egg collection](farming/egg-collection.md) | `collect_eggs`, `set_egg_policy` | Animal farming, Gathering, crafting, smelting, Storage (optional) |
-| [Tree farming](farming/tree-farming.md) | Groves, `plant_trees`, `harvest_trees` | Crop farming, Gathering, crafting, smelting |
+| [Tree farming](farming/tree-farming.md) | Groves, `plant_trees`, `harvest_trees` (tall trees by tower) | Crop farming, Gathering, crafting, smelting, Construction and building (`Scaffolder`) |
 | [Sapling collecting](farming/sapling-collecting.md) | `collect_saplings`, saplings on `collect_block` | Tree farming, Gathering, crafting, smelting |
 | [Discovering farms](farming/discovering-farms.md) | `discover_farm`: proposing farms found by scanning | Crop farming, Animal farming |
