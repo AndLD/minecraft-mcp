@@ -40,6 +40,7 @@ describe('MCP server over an in-memory transport', () => {
         'get_status',
         'get_task_status',
         'give_items',
+        'receive_item',
         'drop_items',
         'edit_sign',
         'resolve_item',

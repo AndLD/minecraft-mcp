@@ -90,7 +90,7 @@ import {
 } from './mcp/tools/memory-tools.js'
 import { SayTool } from './mcp/tools/say-tool.js'
 import { CancelTaskTool, GetTaskStatusTool, StopTool } from './mcp/tools/task-tools.js'
-import { DropItemsTool, GiveItemsTool, ResolveItemTool } from './mcp/tools/handover-tools.js'
+import { DropItemsTool, GiveItemsTool, ReceiveItemTool, ResolveItemTool } from './mcp/tools/handover-tools.js'
 import {
   ListDeathRecordsTool,
   RecoverDropsTool,
@@ -361,6 +361,7 @@ import { UnclaimedDropHandler } from './skills/recovery/unclaimed-drops.js'
 import { DropItemsSkill } from './skills/handover/drop-items-skill.js'
 import { DropSpot } from './skills/handover/drop-spot.js'
 import { GiveItemsSkill } from './skills/handover/give-items-skill.js'
+import { ReceiveItemSkill } from './skills/handover/receive-item-skill.js'
 import { ItemResolver } from './skills/handover/item-resolver.js'
 import { ItemThrower } from './skills/handover/item-thrower.js'
 import { ContainerSelector } from './skills/storage/container-selector.js'
@@ -883,6 +884,19 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     vitals,
     facts: itemFacts,
     unclaimed: unclaimedDrops,
+    clock,
+  })
+  const receiveItem = new ReceiveItemSkill({
+    entities,
+    navigator,
+    gaze: new MineflayerGaze(connection),
+    drops,
+    collector: dropCollector,
+    inventory,
+    facts: itemFacts,
+    chat,
+    combatant,
+    scheduler,
     clock,
   })
   const dropItems = new DropItemsSkill({
@@ -1504,6 +1518,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     .register(new SetStoragePolicyTool(storagePolicy, standing))
     .register(new ResumeTaskTool(tasks, clock))
     .register(new GiveItemsTool(giveItems, launcher, config.owner))
+    .register(new ReceiveItemTool(receiveItem, launcher, config.owner))
     .register(new DropItemsTool(dropItems, launcher))
     .register(new ResolveItemTool(new ItemResolver(itemFacts), inventory, containerIndex))
     .register(new BuildTool(buildSkill, launcher))

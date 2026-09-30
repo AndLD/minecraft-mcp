@@ -220,4 +220,64 @@ describe('handing items over on a real Minecraft server', () => {
     expect(await world.countInChest(at(-2, -4), 'cobblestone')).toBe(576)
     expect(await world.countItem(player(), 'cobblestone')).toBe(0)
   })
+
+  it('takes a sword thrown at it after the wait began, leaves an old drop alone, and holds the sword', async () => {
+    const owner = await world.playerPosition(player())
+    // An item that lies near the player before the wait starts is not what they hand over (nobody can pick it up here).
+    await world.summonWith(
+      'item',
+      { x: owner.x + 6, y: owner.y, z: owner.z },
+      '{Item:{id:"minecraft:stone_sword",count:1},PickupDelay:32767}',
+    )
+
+    const started = await session.bot.call('receive_item', {
+      item: 'sword',
+      from_player: player(),
+      use_it: true,
+      timeout_seconds: 60,
+      wait_seconds: 0,
+    })
+    if (started.isError) throw new Error(`receive_item failed to start: ${started.text}`)
+    // Let the bot walk up and start listening, then "throw": an item lands a couple of blocks from the owner, on the
+    // bot's side (the owner bot cannot throw, and standing on it would pick it up).
+    await waitUntil(
+      async () => {
+        const status = dataOf<{ task: TaskView & { progress: string | null } }>(
+          await session.bot.call('get_task_status'),
+        ).task
+        return status.status !== 'running' || status.progress?.startsWith('Waiting for') === true
+          ? true
+          : undefined
+      },
+      { description: 'the bot to start listening' },
+    )
+    const bots = await world.playerPosition(bot())
+    const owner2 = await world.playerPosition(player())
+    const drop = {
+      x: owner2.x + Math.sign(bots.x - owner2.x) * 2.5,
+      y: owner2.y,
+      z: owner2.z + Math.sign(bots.z - owner2.z) * 2.5,
+    }
+    await world.summonWith(
+      'item',
+      drop,
+      '{Item:{id:"minecraft:diamond_sword",count:1},PickupDelay:0}',
+    )
+
+    const task = await waitUntil(
+      async () => {
+        const status = dataOf<{ task: TaskView }>(await session.bot.call('get_task_status')).task
+        return status.status === 'running' ? undefined : status
+      },
+      { timeoutMs: 90_000, description: 'receive_item to finish' },
+    )
+
+    if (task.status !== 'succeeded')
+      throw new Error(`receive_item did not succeed: ${JSON.stringify(task)}`)
+    expect(task.result).toMatchObject({ received: [{ name: 'diamond_sword', count: 1 }] })
+    expect(await world.countItem(bot(), 'diamond_sword')).toBe(1)
+    expect(await world.countItem(bot(), 'stone_sword')).toBe(0)
+    const inventory = dataOf<{ heldItem: string | null }>(await session.bot.call('get_inventory'))
+    expect(inventory.heldItem).toBe('diamond_sword')
+  }, 180_000)
 })

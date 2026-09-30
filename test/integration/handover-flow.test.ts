@@ -226,4 +226,54 @@ describe('handing items over through the MCP server', () => {
     expect(food.isError).toBe(true)
     expect(h.bot.count('cooked_beef')).toBe(3)
   })
+
+  it('"take this pickaxe": walks to the player, takes what they throw after the wait began, and leaves the old drop', async () => {
+    const h = await start((bot) => {
+      bot.dropItem('stone_pickaxe', 1, { x: 33, y: 64, z: -5 }) // lay there before
+    })
+    const state = { done: false, elapsed: 0, thrown: false }
+    const running = h
+      .call('receive_item', {
+        item: 'pickaxe',
+        from_player: 'Andrey_Knight',
+        use_it: true,
+        wait_seconds: 55,
+      })
+      .finally(() => {
+        state.done = true
+      })
+    while (!state.done && state.elapsed < 120_000) {
+      h.scheduler.advance(250)
+      state.elapsed += 250
+      if (state.elapsed >= 3_000 && !state.thrown) {
+        state.thrown = true
+        h.bot.dropItem('diamond_pickaxe', 1, { x: 29, y: 64, z: -4 })
+      }
+      await h.settle()
+    }
+    const result = await running
+
+    expect(task(result)).toMatchObject({
+      status: 'succeeded',
+      result: { received: [{ name: 'diamond_pickaxe', count: 1 }] },
+    })
+    expect(h.bot.count('diamond_pickaxe')).toBe(1)
+    expect(h.bot.count('stone_pickaxe')).toBe(0)
+    expect(h.bot.lookedAt.at(-1)?.x).toBeGreaterThan(HERE.x)
+    const heard = await call(h, 'wait_for_chat', { timeout_seconds: 1 })
+    expect(JSON.stringify(heard.data)).not.toContain('Nothing came')
+  }, 30_000)
+
+  it('ends nothing_received when nothing is thrown', async () => {
+    const h = await start()
+
+    const result = await call(h, 'receive_item', {
+      from_player: 'Andrey_Knight',
+      timeout_seconds: 5,
+      wait_seconds: 55,
+    })
+
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('nothing_received')
+  })
 })

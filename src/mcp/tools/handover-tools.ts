@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { countItems } from '../../core/inventory-counts.js'
 import type { InventoryReader } from '../../core/inventory.port.js'
 import type { DropItemsSkill } from '../../skills/handover/drop-items-skill.js'
+import type { ReceiveItemSkill } from '../../skills/handover/receive-item-skill.js'
 import type { GiveItemsSkill } from '../../skills/handover/give-items-skill.js'
 import type { ItemRequest } from '../../skills/handover/handover.types.js'
 import type { ItemResolver } from '../../skills/handover/item-resolver.js'
@@ -138,6 +139,91 @@ export class GiveItemsTool implements ToolDefinition<typeof giveSchema> {
               mode: input.mode,
               chest: input.chest,
               recollectUnclaimed: input.recollect_unclaimed,
+            },
+            ctx,
+          ),
+      },
+      {
+        replace: input.replace,
+        waitSeconds: input.wait_seconds ?? DEFAULT_WAIT_SECONDS,
+        signal: context.signal,
+      },
+    )
+  }
+}
+
+const receiveSchema = z.object({
+  item: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'What the player will throw: an item name ("diamond_pickaxe"), a word ("pickaxe", "sword"), or a group ("tools", "food"). Anything that is thrown when omitted.',
+    ),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(2304)
+    .optional()
+    .describe('How many to take. One throw when omitted.'),
+  use_it: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Afterwards put on the best armor and take the best weapon in hand (equipBestGear) and say so in chat.',
+    ),
+  from_player: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Whose throw counts (exact in-game name). Defaults to the owner.'),
+  timeout_seconds: z
+    .number()
+    .min(5)
+    .max(300)
+    .default(30)
+    .describe(
+      'How long to wait for something to be thrown before giving up with nothing_received.',
+    ),
+  ...taskOptionsShape,
+})
+
+export class ReceiveItemTool implements ToolDefinition<typeof receiveSchema> {
+  readonly name = 'receive_item'
+  readonly description =
+    'The reverse of give_items: walks up to a player who is about to throw an item ("take this pickaxe"), faces them, says ' +
+    'it is ready, and picks up what lands near them after the wait began (what lay on the ground before is left alone). ' +
+    "Never takes anything from a player's hands or a chest. Result: received (item and count) and, with use_it, what " +
+    'was equipped. Fails nothing_received (nothing was thrown in time), player_offline, player_lost (out of view), ' +
+    'inventory_full (the item stays on the ground; the message gives where), or aborted. Runs in the background: poll ' +
+    'get_task_status when the reply has status "running".'
+  readonly inputSchema = receiveSchema
+
+  constructor(
+    private readonly skill: ReceiveItemSkill,
+    private readonly launcher: TaskLauncher,
+    private readonly owner: string | undefined,
+  ) {}
+
+  execute(input: z.output<typeof receiveSchema>, context: ToolContext) {
+    const player = input.from_player ?? this.owner
+    if (player === undefined)
+      return toolFail(
+        'Say whose throw to wait for (from_player), or set MC_OWNER so there is a default.',
+      )
+    return this.launcher.launch(
+      {
+        name: this.skill.name,
+        description: `Take ${input.item ?? 'an item'} from ${player}`,
+        run: (ctx) =>
+          this.skill.run(
+            {
+              player,
+              item: input.item,
+              count: input.count,
+              useIt: input.use_it,
+              timeoutMs: input.timeout_seconds * 1000,
             },
             ctx,
           ),
