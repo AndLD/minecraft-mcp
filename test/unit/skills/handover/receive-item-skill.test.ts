@@ -66,7 +66,7 @@ function setup(items: Record<string, number> = {}) {
     navigator,
     gaze,
     drops,
-    collector: { collect: collector.collect } as never,
+    collector,
     inventory: bag,
     facts,
     chat,
