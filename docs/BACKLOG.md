@@ -107,10 +107,10 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **`InventoryWriter` port**: planned with the handover feature (equip, toss).
 
 ### Storage
-- **`OrganizeStorage`**: sort everything already in the chests according to the rules.
+- **`OrganizeStorage`**: now [Phase 37](DEVELOPMENT-PLAN/phases/organize-storage.md).
 - **Craft and place a new chest** when there is no storage space and the player allows it (`no_storage_space` currently falls back to asking).
 - **Ender chests and shulker boxes carried in the inventory** are not handled (placed shulker boxes work like chests).
-- **Free-space knowledge is remembered**, not measured: a container the player emptied since the last scan is still treated as full by the fallback selection until it is scanned again.
+- **Free-space knowledge is remembered**, not measured: a container the player emptied since the last scan is still treated as full by the fallback selection until it is scanned again. The scan step of [Phase 37](DEVELOPMENT-PLAN/phases/organize-storage.md) refreshes it before organizing.
 - **Building integration**: `build` fetching missing materials from the container index (comes with the building feature).
 
 ### Railways

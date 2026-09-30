@@ -1,0 +1,26 @@
+# Phase 37: Organize storage
+
+_Estimate: ½ session._  
+**Status:** not started.
+
+**Depends on:** [9 Storage and containers](storage-containers.md) (`ContainerIndex`, `StorageRules`, `ContainerSelector`, `ContainerVisitor`, `ScanContainers`, `WindowTransfer`, the protected flag), [Tasks](../../features/core/tasks.md).  
+**Needed by:** [38 Hardening and polish](hardening-polish.md).
+
+Storage rules say where new items go, but what is already in the chests stays where it was put. This phase sorts it: "organize my storage" moves every item to the container its rule names. It comes from the backlog item `OrganizeStorage`.
+
+- Branch: `feature/organize-storage`. An `OrganizeStorageSkill` (`organize_storage`) in `src/skills/storage/`, built from what exists: `ContainerVisitor` to walk between chests, `ContainerAccess` to read and move, `StorageRules` and `ContainerSelector` to decide, `ScanContainers` to refresh the index first. No new port.
+- **Tool `organize_storage`:** `containers` (labels or ids to look at, default all registered ones), `dry_run` (default **true**: list the moves and change nothing; `false` does them), `max_minutes` (default 10), and `on_inventory_full` as for the other storage tools. A task with progress and a result: `moves` (item, count, from, to), `left` (items with no rule and no better place, and why), `skipped` (protected containers, unreachable ones), `unchanged`.
+- **How it works.**
+  1. **Scan.** Refresh the index of the chosen containers so the plan uses real contents (a container emptied by the player since the last scan must not be treated as full; this also fixes the backlog note about remembered free space).
+  2. **Plan.** For every stack in every container, ask the selector where it belongs by the rules. A stack already in the right container stays. A stack whose rule names another container is a move. Items with no rule stay where they are (never moved to "any chest with room" just to tidy up), and the preview says so. Free room is counted per destination, including what other moves will take and free, so the plan never overfills a chest.
+  3. **Execute.** Work by destination to keep the walking short: pick up everything that goes to one chest in one trip (the inventory is the hand: it never takes more than fits), deposit it, and go on. The bot keeps its own tools, armor, food, and torches (the reserve list) and never uses slots it needs. Every move is confirmed by reading the containers again; a stack that did not go is reported, not retried forever.
+  4. **Leave nothing in the hand.** Whatever the bot carries for the job goes back to its source if the destination filled up or the task ended. A cancelled or interrupted run puts the carried items into the nearest container that accepts them and says where.
+- **Safety.** Containers marked `protected` are never emptied and never filled by this skill; a protected area is not entered to reach one. Nothing is thrown away or crafted. Chests and barrels only, like the other storage tools (placed shulker boxes work like chests). Lava, water, and the usual hazards are handled by the same navigation as the other storage tools. The default `dry_run: true` means the agent asks the player before the first real run, and says how many items will move.
+- **Docs.** A section in the [storage feature page](../../features/storage/storage.md), the AGENTS.md tool table (Storage row) and runtime protocol (say what it plans, ask before the real run), and the backlog entries for `OrganizeStorage` and the remembered free space are removed or updated.
+- **Tests:**
+  - unit: the planner over a fake index and rules (already in place, wrong place, no rule, two rules matching with priority, a destination that would overflow, room freed by another move, protected containers, unknown containers), the skill over fake containers (one trip per destination, inventory limit, reserve list, confirmation by re-reading, a stack that did not move, dry run changes nothing, abort and interruption give back what is carried, `max_minutes`)
+  - integration: `organize_storage` through the tool layer on a stateful fake world with three chests and rules for two of them: after the run every stack is where its rule says, the index matches the chests, and a protected chest is untouched
+  - e2e (`test/e2e/storage-containers/`, extended): three chests filled through RCON with mixed items and two rules; a dry run lists the moves and changes nothing; the real run leaves each item in its chest (checked with RCON), and the bot's own tools are still in its inventory
+- **Exit criteria:** with rules set for a few chests, "organize my storage" first says what it would move, and after a yes leaves every ruled item in its own chest, the rest untouched, protected chests unopened, and nothing lost or left in the bot's hands.
+
+[Back to the development plan](../DEVELOPMENT-PLAN.md)
