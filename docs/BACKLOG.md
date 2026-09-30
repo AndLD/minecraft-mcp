@@ -98,7 +98,7 @@ Today the player throws an item on the ground and asks the agent to pick it up: 
 - **Leashed animals** are not detected as protected (Mineflayer does not expose leads); the pen heuristic covers most cases.
 - **Pen heuristic** only knows fences, gates, walls, and iron bars; a pen made of other blocks (stone walls, glass) is not recognized.
 - **Cooking in smokers and campfires**: `smelt` uses a regular furnace only.
-- **Fish and other food**: only livestock is huntable; fishing and foraging are not covered (farming is in the plan).
+- **Fish and other food**: only livestock is huntable; foraging is not covered (farming is in the plan). Fishing is now [Phase 35](DEVELOPMENT-PLAN/phases/fishing.md).
 - **Deposit cooked food in chests** once the storage feature exists.
 
 ### Gathering, crafting, smelting

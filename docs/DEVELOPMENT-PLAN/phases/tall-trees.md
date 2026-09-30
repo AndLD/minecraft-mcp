@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** not started.
 
 **Depends on:** [12 Construction engine and building](construction-building.md) (the `Scaffolder`), [18 Farming, crops, animals, and trees](farming.md) (`harvest_trees`), [5 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`collect_block` for logs).  
-**Needed by:** [35 Hardening and polish](hardening-polish.md).
+**Needed by:** [36 Hardening and polish](hardening-polish.md).
 
 Today the bot works from the ground and stops at what it can reach, so the top logs of a tall tree stay (`left` in the `harvest_trees` result) and the tree is neither counted as felled nor replanted. This phase finishes such trees. It comes from the backlog item "Reaching high logs".
 
