@@ -1,6 +1,7 @@
 # Phase 32: Leading a player
 
-_Estimate: ½ session._
+_Estimate: ½ session._  
+**Status:** done on `feature/leading-a-player` (the plan named it `feature/lead-player`). See [Leading a player](../../features/world/leading-a-player.md). Targets also include registered chests and farms and found biomes; the dimension check covers structures and biomes only, since landmarks and coordinates carry no dimension.
 
 **Depends on:** [3 Movement and perception](movement-perception.md), [18 Farming, crops, animals, and trees](farming.md) (optional), [30 World discovery, including caves and canyons](world-discovery.md) (optional).  
 **Needed by:** no later phase depends on it directly.

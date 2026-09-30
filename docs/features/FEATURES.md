@@ -53,6 +53,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 | [Filling buckets](world/buckets.md) | `fill_bucket`: water and lava into empty buckets, source blocks only, the lava safety rules | Tasks, Construction and building, Gathering, crafting, smelting, Survival reflexes |
 | [Railways](world/railways.md) | Route planning, power layout, verification, `place_minecart` | Construction and building, Excavation, Storage (optional) |
 | [Cave exploration](world/cave-exploration.md) | `explore_caves`: `CaveMap`, torch lighting, finds, mining a vein, the ancient city rule | World discovery, Excavation, Construction and building, Survival reflexes |
+| [Leading a player](world/leading-a-player.md) | `lead_player`: comes to the player, leads, waits and calls, follows a wanderer | Tasks, World discovery (optional), Storage (optional), Survival reflexes |
 | [World discovery](world/world-discovery.md) | `explore_for_structure`, structure signatures, exploration strategies, landmarks, `WorldKnowledgeStore` | Tasks, Persistent state, Survival reflexes, Server commands and teleporting (optional) |
 
 ## Farming
