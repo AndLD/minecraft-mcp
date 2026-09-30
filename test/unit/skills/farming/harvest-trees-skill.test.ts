@@ -382,14 +382,17 @@ class FakeTowers implements TowerBuilder {
   pillarFails = false
   onLower: () => void = () => undefined
 
-  plan(): TowerPlan | undefined {
+  requests: Parameters<TowerBuilder['plan']>[0][] = []
+
+  plan(request: Parameters<TowerBuilder['plan']>[0]): TowerPlan | undefined {
     this.calls.push('plan')
+    this.requests.push(request)
     return this.planTo
   }
 
   raise(plan: TowerPlan, block: string): ReturnType<TowerBuilder['raise']> {
     this.calls.push('raise')
-    const tower: Tower = { base: plan.base, block, cells: [] }
+    const tower: Tower = { base: plan.base, block, cells: [], leavesCut: plan.clear?.length ?? 0 }
     if (this.raiseFails !== undefined)
       return Promise.resolve(err({ reason: this.raiseFails, message: 'no', tower }))
     for (let level = 0; level < plan.height; level += 1)
@@ -543,5 +546,72 @@ describe('HarvestTreesSkill, tall trees', () => {
 
     expect(result).toMatchObject({ ok: false, error: { reason: 'aborted' } })
     expect(s.towers.calls.at(-1)).toBe('lower')
+  })
+})
+
+describe('HarvestTreesSkill, leaves in the way of the tower', () => {
+  async function canopy() {
+    const s = await setup({ oak_sapling: 5, dirt: 12 })
+    s.grove([spot(2, 2)])
+    s.world.trunk(2, GROUND, 2, 12)
+    const towers = new FakeTowers()
+    const vitals = new FakeVitals()
+    vitals.vitals = { position: at(3, GROUND + 1, 3) } as never
+    const dig = s.digger.dig.bind(s.digger)
+    s.digger.dig = (position) =>
+      position.y > GROUND + 4 && !towers.calls.includes('raise')
+        ? Promise.resolve({
+            ok: false as const,
+            error: { reason: 'out_of_reach' as const, message: 'far' },
+          })
+        : dig(position)
+    const skill = new HarvestTreesSkill({ ...s.deps, scaffolder: towers, vitals })
+    return { ...s, towers, skill }
+  }
+
+  it('lets the planner run a tower through the tree’s own leaves, up to a limit', async () => {
+    const s = await canopy()
+    s.world.set(3, GROUND + 6, 3, 'oak_leaves')
+    s.world.set(3, GROUND + 6, 4, 'birch_leaves')
+
+    await s.skill.run(input(), skillContext().context)
+
+    const request = s.towers.requests[0]
+    expect(request?.maxClear).toBe(12)
+    expect(request?.passable?.(at(3, GROUND + 6, 3))).toBe(true)
+    expect(request?.passable?.(at(3, GROUND + 6, 4))).toBe(false) // another tree's leaves
+    expect(request?.passable?.(at(3, GROUND + 7, 3))).toBe(false) // not a leaf at all
+  })
+
+  it('never cuts leaves inside somebody else’s protected area', async () => {
+    const s = await canopy()
+    s.world.set(3, GROUND + 6, 3, 'oak_leaves')
+    s.guard.protect('roof', (p) => p.x === 3 && p.y === GROUND + 6 && p.z === 3)
+
+    await s.skill.run(input(), skillContext().context)
+
+    expect(s.towers.requests[0]?.passable?.(at(3, GROUND + 6, 3))).toBe(false)
+  })
+
+  it('reports how many leaves were cut', async () => {
+    const s = await canopy()
+    s.towers.planTo = {
+      base: at(4, GROUND + 1, 2),
+      height: 3,
+      clear: [at(4, GROUND + 3, 2), at(4, GROUND + 4, 2)],
+    }
+
+    const result = await s.skill.run(input(), skillContext().context)
+
+    expect(result).toMatchObject({ ok: true, value: { leavesCut: 2 } })
+  })
+
+  it('reports no leaves cut when the tower needed none, or no tower was built', async () => {
+    const clear = await canopy()
+    const none = await clear.skill.run(input(), skillContext().context)
+    const skipped = await clear.skill.run(input({ reachTall: 'skip' }), skillContext().context)
+
+    expect(none).toMatchObject({ ok: true, value: { leavesCut: 0 } })
+    expect(skipped).toMatchObject({ ok: true, value: { leavesCut: 0 } })
   })
 })

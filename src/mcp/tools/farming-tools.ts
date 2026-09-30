@@ -622,7 +622,7 @@ export class HarvestTreesTool implements ToolDefinition<typeof harvestTreesSchem
     'Fells the grown trees of a grove (or of an area) and, by default, replants each spot with a sapling of the ' +
     'same wood. This is the deliberate way to cut a registered grove: collect_block leaves it alone. It works from ' +
     'the ground and, for a tall tree, climbs a tower of dirt beside the trunk (reach_tall "pillar", the default; up ' +
-    'to 12 blocks, it needs dirt and takes the tower down again). A tree it cannot finish (no safe spot for the ' +
+    'to 12 blocks, it needs dirt and takes the tower down again; it cuts the tree\'s own leaves that stand in the tower\'s column, leavesCut says how many). A tree it cannot finish (no safe spot for the ' +
     'tower, no dirt, too tall) keeps its top: that is reported as left (scaffoldMissing says how much dirt was ' +
     'lacking) and the tree is not replanted. Leaves are left to decay (they drop saplings and apples). Reports what was gained. Runs in the ' +
     'background: poll get_task_status when the reply has status "running".'

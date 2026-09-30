@@ -22,12 +22,20 @@ const SEARCH_RADIUS = 3
 /** How far below a target the ground is looked for. */
 const GROUND_SEARCH = 14
 const FLUIDS = new Set(['water', 'lava'])
+/** Walking is cheap next to digging: a column with leaves in it loses to a clear one that is a few blocks farther. */
+const LEAF_COST = 3
+const cellKeyOf = (cell: Position): string =>
+  `${String(cell.x)},${String(cell.y)},${String(cell.z)}`
 
 export interface TowerPlan {
   /** The ground cell the tower starts in: the bot stands in it, and the first scaffold block goes into it. */
   readonly base: Position
   /** How many blocks high. */
   readonly height: number
+  /** Cells of the tower's column that hold something in the way (a leaf) and are dug before the bot climbs into them. */
+  readonly clear?: readonly Position[]
+  /** Cells above the planned height may be dug too when the tower has to grow (a leaf of the same tree). */
+  readonly mayCut?: (cell: Position) => boolean
 }
 
 export interface Tower {
@@ -35,6 +43,12 @@ export interface Tower {
   readonly block: string
   /** Cells holding a scaffold block, from the bottom up. */
   readonly cells: Position[]
+  /** Cells that may be dug out of the way ahead of the bot (`TowerPlan.clear`), as `x,y,z` keys. */
+  readonly clear?: ReadonlySet<string>
+  /** Any other cell of the column that may be dug when the tower grows past its plan. */
+  readonly mayCut?: (cell: Position) => boolean
+  /** How many of them were dug. */
+  leavesCut?: number
 }
 
 export interface TowerRequest {
@@ -45,6 +59,13 @@ export interface TowerRequest {
   readonly maxHeight: number
   /** Cells to keep out of when there is a choice (the inside of the building). */
   readonly avoid?: (cell: Position) => boolean
+  /**
+   * A solid cell that may stand in the tower's column anyway, because it will be dug first (a leaf of the tree the
+   * tower is for). Without it every cell above the ground must be free.
+   */
+  readonly passable?: (cell: Position) => boolean
+  /** A column that needs more of its cells dug than this is not used. */
+  readonly maxClear?: number
 }
 
 export interface ScaffolderDeps {
@@ -82,16 +103,25 @@ export class Scaffolder {
     for (let dx = -SEARCH_RADIUS; dx <= SEARCH_RADIUS; dx += 1)
       for (let dz = -SEARCH_RADIUS; dz <= SEARCH_RADIUS; dz += 1) {
         if (dx === 0 && dz === 0) continue
-        const ground = this.groundFeet({ x: tx + dx, y: ty, z: tz + dz })
+        const ground = this.groundFeet({ x: tx + dx, y: ty, z: tz + dz }, request.passable)
         if (ground === undefined) continue
         const height = this.heightFor(ground, request.target, request.maxHeight)
         if (height === undefined || height < 1) continue
-        if (!this.columnIsFree(ground, height, request)) continue
+        const clear: Position[] = []
+        if (!this.columnIsFree(ground, height, request, clear)) continue
         const walk = Math.hypot(ground.x + 0.5 - request.from.x, ground.z + 0.5 - request.from.z)
         const inside = request.avoid?.(ground) === true ? 100 : 0
-        const score = height * 10 + walk + inside
+        const score = height * 10 + walk + inside + clear.length * LEAF_COST
         if (best === undefined || score < best.score)
-          best = { plan: { base: ground, height }, score }
+          best = {
+            plan: {
+              base: ground,
+              height,
+              ...(clear.length === 0 ? {} : { clear }),
+              ...(request.passable === undefined ? {} : { mayCut: request.passable }),
+            },
+            score,
+          }
       }
     return best?.plan
   }
@@ -103,7 +133,14 @@ export class Scaffolder {
     signal: AbortSignal,
   ): Promise<Result<Tower, ScaffoldFailure & { tower: Tower }>> {
     const { deps } = this
-    const tower: Tower = { base: plan.base, block, cells: [] }
+    const tower: Tower = {
+      base: plan.base,
+      block,
+      cells: [],
+      clear: new Set((plan.clear ?? []).map(cellKeyOf)),
+      ...(plan.mayCut === undefined ? {} : { mayCut: plan.mayCut }),
+      leavesCut: 0,
+    }
     const walked = await deps.navigator.goToPosition(
       { x: plan.base.x + 0.5, y: plan.base.y, z: plan.base.z + 0.5 },
       0.4,
@@ -129,6 +166,8 @@ export class Scaffolder {
     const cell = { x: tower.base.x, y: tower.base.y + level, z: tower.base.z }
     const below = { x: cell.x, y: cell.y - 1, z: cell.z }
     let problem: ScaffoldFailure = { reason: 'place_failed', message: 'the block did not go down' }
+    const cleared = await this.clearAbove(tower, cell, signal)
+    if (!cleared.ok) return cleared
     for (let attempt = 0; attempt < PILLAR_TRIES; attempt += 1) {
       if (signal.aborted) return err({ reason: 'aborted', message: 'Cancelled.' })
       const start = deps.vitals.read()?.position
@@ -183,16 +222,43 @@ export class Scaffolder {
     return left
   }
 
+  /** Digs what stands in the two cells above the one the bot is about to jump into, when the plan said it may. */
+  private async clearAbove(
+    tower: Tower,
+    cell: Position,
+    signal: AbortSignal,
+  ): Promise<Result<void, ScaffoldFailure>> {
+    for (const up of [1, 2, 3]) {
+      const above = { x: cell.x, y: cell.y + up, z: cell.z }
+      if (tower.clear?.has(cellKeyOf(above)) !== true && tower.mayCut?.(above) !== true) continue
+      const name = this.nameAt(above)
+      if (name === undefined || name === 'air') continue
+      const dug = await this.deps.digger.dig(above, signal)
+      if (!dug.ok)
+        return err({
+          reason: dug.error.reason === 'aborted' ? 'aborted' : 'place_failed',
+          message: `Could not dig ${name} out of the way: ${dug.error.message}`,
+        })
+      tower.leavesCut = (tower.leavesCut ?? 0) + 1
+    }
+    return ok(undefined)
+  }
+
   private nameAt(cell: Position): string | undefined {
     return this.deps.blocks.blockAt(cell)
   }
 
   /** The feet cell of the ground in a column: solid below, two free cells above. */
-  private groundFeet(column: Position): Position | undefined {
+  private groundFeet(
+    column: Position,
+    passable?: (cell: Position) => boolean,
+  ): Position | undefined {
     const { blocks } = this.deps
     for (let y = column.y; y >= column.y - GROUND_SEARCH; y -= 1) {
       const feet = { x: column.x, y, z: column.z }
       if (blocks.isSolid({ ...feet, y: y - 1 }) !== true) continue
+      // A leaf is not ground: the search goes on down through the canopy to the real ground.
+      if (passable?.({ ...feet, y: y - 1 }) === true) continue
       if (blocks.isSolid(feet) !== false || blocks.isSolid({ ...feet, y: y + 1 }) !== false)
         return undefined
       const name = blocks.blockAt(feet)
@@ -216,13 +282,22 @@ export class Scaffolder {
   }
 
   /** Room for the tower and the bot on it, no protected cells, no lava around, nothing that is still to be built. */
-  private columnIsFree(ground: Position, height: number, request: TowerRequest): boolean {
+  private columnIsFree(
+    ground: Position,
+    height: number,
+    request: TowerRequest,
+    clear: Position[],
+  ): boolean {
     const { blocks, guard } = this.deps
     for (let level = 0; level <= height + 1; level += 1) {
       const cell = { x: ground.x, y: ground.y + level, z: ground.z }
       if (request.reserved.has(cellKey(cell))) return false
       if (guard.protectedAt(cell) !== undefined) return false
-      if (level >= 1 && blocks.isSolid(cell) !== false) return false
+      if (level >= 1 && blocks.isSolid(cell) !== false) {
+        if (request.passable?.(cell) !== true) return false
+        clear.push(cell)
+        if (clear.length > (request.maxClear ?? 0)) return false
+      }
       for (const [dx, dz] of [
         [1, 0],
         [-1, 0],
