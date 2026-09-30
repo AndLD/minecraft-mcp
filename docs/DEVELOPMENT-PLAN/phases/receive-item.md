@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/receive-item`. See [Handing items over](../../features/storage/handing-items-over.md). The wait is `timeout_seconds` (the plan's `wait_seconds` already means how long a tool call blocks).
 
 **Depends on:** [3 Movement and perception](movement-perception.md) (walking to a player, facing them, the player lookup), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`DropCollector`, `DroppedItemScanner`), [10 Item handover](item-handover.md) (`give_items`, `DropIgnoreList`, chat lines), [11 Drop recovery](drop-recovery.md) (unclaimed drops, so the two do not fight over the same item), [Tasks](../../features/core/tasks.md).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 The reverse of `give_items`. Today the player throws an item on the ground and asks the agent to pick it up (`pickup_items` with the item name walks onto it), and the digger and the combat code then use the best tool, weapon, or armor the bot carries, so a diamond pickaxe replaces a wooden one without any crafting chain. What is missing is one spoken step: "take this pickaxe" while the player holds it out or throws it. It comes from the backlog item of the same name.
 

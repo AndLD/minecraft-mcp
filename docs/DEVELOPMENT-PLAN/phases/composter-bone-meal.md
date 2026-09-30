@@ -4,7 +4,7 @@ _Estimate: ¾ session._
 **Status:** done on `feature/composter-bone-meal`. See [Fertilization and composting](../../features/farming/fertilization-and-composting.md). Two things were left out: saplings in a grove, and a registered place for a composter (`at` or the nearest one is used).
 
 **Depends on:** [18 Farming, crops, animals, and trees](farming.md) (registered fields, `inspect_farm`, `crop-table.ts`, `tend_farm`), [44 Farming extras](farming-extras.md) (melons and pumpkins share the stem rule), [9 Storage and containers](storage-containers.md) (optional: bone meal from a chest), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting bone meal from bones).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 Bone meal makes a crop grow a stage at once. A player asks for it in one line: "fertilize the whole wheat field". This phase adds that, and a composter that makes bone meal out of scraps. It comes from the backlog entry "Farming extras" (composters).
 

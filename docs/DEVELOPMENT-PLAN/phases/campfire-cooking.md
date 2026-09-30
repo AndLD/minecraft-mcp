@@ -4,7 +4,7 @@ _Estimate: ½ session._
 **Status:** done on `feature/campfire-cooking`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md).
 
 **Depends on:** [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (`smelt`, the stations, `Workstations`), [42 Blast furnace and smoker](blast-furnace-smoker.md) (`station` and the station table), [8 Hunting and food](hunting-food.md) (cooking after a hunt), [Tasks](../../features/core/tasks.md).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 A campfire cooks raw food **without fuel**: up to four items at a time, 30 seconds each, right on the block. It is slower than a furnace or a smoker (a full campfire finishes four items in 30 seconds, so 7.5 seconds each, but the food has to be put on and picked up by hand) but it needs no coal and no window. It is the natural way to cook after a hunt far from home, and a player often keeps one next to a pen. It comes from the backlog note on campfires (the blast furnace and smoker phase left it out because it is a different mechanic: no window, no fuel).
 

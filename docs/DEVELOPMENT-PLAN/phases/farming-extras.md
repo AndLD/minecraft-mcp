@@ -4,7 +4,7 @@ _Estimate: 1 session._
 **Status:** done on `feature/farming-extras`. See [Animal products](../../features/farming/animal-products.md).
 
 **Depends on:** [18 Farming, crops, animals, and trees](farming.md) (`AnimalPen`, `HerdManager`, `crop-table.ts` with the stem crop `pumpkin`, `harvest_crops`, `tend_farm`), [8 Hunting and food](hunting-food.md) (the animal catalog), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting shears), [Tasks](../../features/core/tasks.md).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 Three things the farming feature left out, all small on top of what exists: taking wool from sheep, milk from cows, and growing melons. They come from the backlog entry "Farming extras".
 

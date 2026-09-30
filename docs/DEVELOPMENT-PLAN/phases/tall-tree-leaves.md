@@ -4,7 +4,7 @@ _Estimate: ¼ session._
 **Status:** done on `feature/tall-tree-leaves`. See [Tree farming](../../features/farming/tree-farming.md). Differences from this plan: leaves of the tree's own kind are recognised by name (no `persistent` check: the block scanner does not read blockstates), so a leaf hedge of the same species inside a player build is protected only by the protected-area rule; the tower may cut leaves above its planned height when it has to grow, not only the cells named in the plan; the leaf limit is 12 per planned column.
 
 **Depends on:** [34 Tall trees completion](tall-trees.md) (`harvest_trees` climbing a dirt tower, the `Scaffolder`), [13 Construction engine and building](construction-building.md).  
-**Needed by:** [47 Hardening and polish](hardening-polish.md).
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
 
 Phase 34 fells a tall tree from a dirt tower beside the trunk. The tower needs a free column, and a leafy canopy can fill every column next to the trunk, so such a tree is left as `left`. This phase cuts the leaves that are in the way, and only those.
 
