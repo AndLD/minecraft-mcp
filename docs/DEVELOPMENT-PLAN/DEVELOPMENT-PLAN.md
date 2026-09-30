@@ -250,7 +250,7 @@ minecraft-mcp/
   test/{unit,integration,fakes}/
   test/e2e/<feature>/   # e2e grouped per feature (movement-perception/, survival-reflexes/, ...)
   docker/             # e2e server configuration
-  docs/               # everything but README and AGENTS: DEVELOPMENT-PLAN/ (root + phases/), features/ (index + per-feature files), BACKLOG.md, e2e-docker-server.md, feasibility-findings.md
+  docs/               # everything but README and AGENTS: DEVELOPMENT-PLAN/ (root + phases/), features/ (index + per-feature files), BACKLOG.md (an index) with backlog/ (one file per area) and COMPLETED-BACKLOG.md, e2e-docker-server.md, feasibility-findings.md
   data/<profile>/     # gitignored: per-world state (knowledge, journal, notes, ...)
 ```
 
