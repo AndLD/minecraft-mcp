@@ -18,5 +18,7 @@ export interface Config {
   readonly unclaimedDropWaitSeconds: number
   /** Survival reflexes (eat, fight, flee, avoid lava, surface for air) run by themselves. */
   readonly reflexesEnabled: boolean
+  /** How many times to try to rejoin after the connection is lost (not after a kick or a `disconnect`); 0 turns it off. */
+  readonly reconnectAttempts: number
   readonly logLevel: LogLevel
 }

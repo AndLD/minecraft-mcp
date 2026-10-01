@@ -104,7 +104,7 @@ Goal: a Mineflayer-based MCP server so Claude can play survival Minecraft 1.21.1
 | [45 Composter and bone meal fertilization](phases/composter-bone-meal.md) | done (`feature/composter-bone-meal`: `fertilize_crops` ripens a field with bone meal on ask, from the bag, storage, or crafted bones; `use_composter` turns scraps into bone meal) |
 | [46 Take an item the player hands over](phases/receive-item.md) | done (`feature/receive-item`: `receive_item` walks up to the player and takes what they throw after the wait began, `use_it` equips the best gear, `nothing_received` ends the wait) |
 | [47 Honey farming, hives, bees, and honeycomb](phases/honey-farming.md) | done (`feature/honey-farming`: `inspect_hives`, `harvest_honey` with smoke first, bees in the animal tables, angry bees fought, an `apiary` farm kind; `move_hive` left in the backlog) |
-| [48 Hardening and polish](phases/hardening-polish.md) | not started (renumbered as phases were added and removed; was 14 at first) |
+| [48 Hardening and polish](phases/hardening-polish.md) | built on `feature/hardening` (rejoin after a lost connection, `wait_for_chat` waits meanwhile, a tool-description audit, the timeout audit); the final gate `test:e2e:all` is **not green**: 3 to 6 of 43 suites fail in a long run and pass alone (timing); the co-play session is the player's |
 
 ## Phases
 

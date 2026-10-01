@@ -29,6 +29,7 @@ describe('loadConfig', () => {
       lowHealthThreshold: 8,
       unclaimedDropWaitSeconds: 60,
       reflexesEnabled: true,
+      reconnectAttempts: 6,
       logLevel: 'info',
     })
   })
@@ -66,6 +67,7 @@ describe('loadConfig', () => {
       lowHealthThreshold: 6,
       unclaimedDropWaitSeconds: 20,
       reflexesEnabled: false,
+      reconnectAttempts: 6,
       logLevel: 'debug',
     })
   })

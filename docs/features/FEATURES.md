@@ -12,6 +12,7 @@ Each file also starts with **Depends on / Used by** lines; the last column below
 |---|---|---|
 | [Tasks](core/tasks.md) | The `TaskManager`, cancellation, `wait_seconds`, navigation supervision, pathfinder gotchas | - |
 | [Persistent state](core/persistent-state.md) | Per-world profiles, world identification, state files, the task journal, history | - |
+| [Connection, reconnect, and hardening](core/connection-and-reconnect.md) | `ReconnectSupervisor`, `MC_RECONNECT_ATTEMPTS`, the tool-surface audit | Chat and events, Tasks, Persistent state |
 | [Chat and events](core/chat-and-events.md) | `ChatRouter`, `AgentInbox`, events returned with chat | Tasks |
 
 ## Survival

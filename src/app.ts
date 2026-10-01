@@ -193,6 +193,7 @@ import { Drowning } from './reflexes/drowning.js'
 import { ReflexEngine } from './reflexes/reflex-engine.js'
 import { SafeSpotFinder } from './reflexes/safe-spot.js'
 import { ThreatResponse } from './reflexes/threat-response.js'
+import { ReconnectSupervisor } from './session/reconnect-supervisor.js'
 import { SessionService } from './session/session-service.js'
 import { FileStateStore } from './state/file-state-store.js'
 import { describeToolCall } from './state/history-format.js'
@@ -746,6 +747,18 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     identifier: new MineflayerWorldIdentifier(connection, statusProbe),
     worldState,
   })
+  // A lost connection is retried with growing pauses; a kick or a `disconnect` is not.
+  const reconnect = new ReconnectSupervisor({
+    connection,
+    session,
+    scheduler,
+    logger,
+    attempts: config.reconnectAttempts,
+    emit: (type, message) => {
+      inbox.pushEvent({ type, message })
+    },
+  })
+  reconnect.start()
   const blockFinder = new BlockFinder(blocks)
 
   // Gathering, crafting, and smelting.
@@ -1494,7 +1507,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
         serverCommands,
       ),
     )
-    .register(new WaitForChatTool(connection, inbox))
+    .register(new WaitForChatTool(connection, inbox, () => reconnect.reconnecting))
     .register(new SayTool(chat))
     .register(new WhisperTool(chat))
     .register(new LookAroundTool(new SurroundingsDescriber(blocks, entities, vitals)))
@@ -1643,6 +1656,7 @@ export function createApp(config: Config, overrides: Partial<AppDeps> = {}): App
     mcpServer,
     serve: (transport) => mcpServer.connect(transport),
     shutdown: async () => {
+      reconnect.dispose()
       nightWatch.stop()
       await reflexes.stop()
       await tasks.cancel(undefined, 'shutdown')

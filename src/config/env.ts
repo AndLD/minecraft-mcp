@@ -20,6 +20,7 @@ const envSchema = z.object({
   LOW_HEALTH_THRESHOLD: z.coerce.number().int().min(1).max(20).default(8),
   UNCLAIMED_DROP_WAIT_SECONDS: z.coerce.number().int().min(0).max(240).default(60),
   REFLEXES_ENABLED: envBoolean.default(true),
+  MC_RECONNECT_ATTEMPTS: z.coerce.number().int().min(0).max(20).default(6),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
 })
 
@@ -61,6 +62,7 @@ export function loadConfig(
     lowHealthThreshold: e.LOW_HEALTH_THRESHOLD,
     unclaimedDropWaitSeconds: e.UNCLAIMED_DROP_WAIT_SECONDS,
     reflexesEnabled: e.REFLEXES_ENABLED,
+    reconnectAttempts: e.MC_RECONNECT_ATTEMPTS,
     logLevel: e.LOG_LEVEL,
   })
 }

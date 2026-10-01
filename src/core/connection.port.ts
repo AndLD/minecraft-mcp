@@ -18,7 +18,12 @@ export interface ConnectionInfo {
 
 export type ConnectionEvent =
   | { readonly type: 'connected'; readonly username: string }
-  | { readonly type: 'disconnected'; readonly reason: string }
+  | {
+      readonly type: 'disconnected'
+      readonly reason: string
+      /** True when the bot was told to leave (`disconnect`, shutdown); absent when the connection was lost. */
+      readonly intentional?: true
+    }
   | { readonly type: 'kicked'; readonly reason: string }
   | { readonly type: 'error'; readonly message: string }
 

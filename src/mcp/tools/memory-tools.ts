@@ -72,7 +72,8 @@ const forgetSchema = z.object({
 
 export class ForgetTool implements ToolDefinition<typeof forgetSchema> {
   readonly name = 'forget'
-  readonly description = 'Deletes a saved note by id.'
+  readonly description =
+    'Deletes one saved note by its id (see recall). It cannot be undone. Fails when there is no note with that id.'
   readonly inputSchema = forgetSchema
 
   constructor(private readonly notes: NotesStore) {}

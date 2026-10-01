@@ -239,7 +239,9 @@ describe('MineflayerConnection', () => {
 
       expect(bot.quitCalls).toBe(1)
       expect(connection.state).toBe('disconnected')
-      expect(events).toEqual([{ type: 'disconnected', reason: 'Disconnected by request' }])
+      expect(events).toEqual([
+        { type: 'disconnected', reason: 'Disconnected by request', intentional: true },
+      ])
     })
 
     it('gives up waiting for the bot to end after a few seconds', async () => {
@@ -255,7 +257,9 @@ describe('MineflayerConnection', () => {
       await done
 
       expect(connection.state).toBe('disconnected')
-      expect(events).toEqual([{ type: 'disconnected', reason: 'Disconnected by request' }])
+      expect(events).toEqual([
+        { type: 'disconnected', reason: 'Disconnected by request', intentional: true },
+      ])
     })
   })
 

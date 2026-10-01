@@ -158,7 +158,7 @@ export class MineflayerConnection implements Connection, BotHolder {
       }
       bot.once('end', done)
       cancelTimer = this.scheduler.after(DISCONNECT_TIMEOUT_MS, () => {
-        this.markDisconnected('Disconnected by request')
+        this.markDisconnected('Disconnected by request', true)
         done()
       })
       bot.quit()
@@ -168,7 +168,10 @@ export class MineflayerConnection implements Connection, BotHolder {
   private attachRuntimeListeners(bot: BotLike): void {
     bot.on('end', (reason) => {
       if (this.bot !== bot) return
-      this.markDisconnected(this.intentionalDisconnect ? 'Disconnected by request' : reason)
+      this.markDisconnected(
+        this.intentionalDisconnect ? 'Disconnected by request' : reason,
+        this.intentionalDisconnect,
+      )
     })
     bot.on('kicked', (reason) => {
       this.emit({ type: 'kicked', reason: formatReason(reason) })
@@ -179,12 +182,16 @@ export class MineflayerConnection implements Connection, BotHolder {
     })
   }
 
-  private markDisconnected(reason: string): void {
+  private markDisconnected(reason: string, intentional = false): void {
     if (this.currentState === 'disconnected') return
     this.currentState = 'disconnected'
     this.bot = undefined
     this.notifyBot(undefined)
-    this.emit({ type: 'disconnected', reason })
+    this.emit({
+      type: 'disconnected',
+      reason,
+      ...(intentional ? { intentional: true as const } : {}),
+    })
   }
 
   private notifyBot(bot: BotLike | undefined): void {
