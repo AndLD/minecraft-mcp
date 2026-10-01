@@ -59,7 +59,16 @@ describe('losing the connection on a real Minecraft server', () => {
       timeoutMs: 40_000,
       description: 'the bot to rejoin',
     })
-    const seen = await eventTypes()
+    // `reconnected` follows `connected` a moment later (the world's saved state is opened first), so collect events
+    // until it arrives instead of reading them once.
+    const seen: string[] = []
+    await waitUntil(
+      async () => {
+        seen.push(...(await eventTypes()))
+        return seen.includes('reconnected') ? true : undefined
+      },
+      { timeoutMs: 20_000, description: 'the reconnected event' },
+    )
     expect(seen).toEqual(expect.arrayContaining(['reconnecting', 'reconnected']))
 
     // It works again: the owner is in view and a tool call goes through.
