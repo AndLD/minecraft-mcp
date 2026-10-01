@@ -1,0 +1,1349 @@
+import { EventEmitter } from 'node:events'
+import minecraftData from 'minecraft-data'
+import prismarineRecipe from 'prismarine-recipe'
+import { FakeContainerWindow } from './container-window-fake.js'
+import type { ContainerWindowLike } from '../../src/bot/window-transfer.js'
+import type {
+  BlockLike,
+  BotEvents,
+  BotLike,
+  EntityLike,
+  EquipSlot,
+  FurnaceLike,
+  ItemLike,
+  PathfinderLike,
+  PlayerLike,
+  RecipeLike,
+} from '../../src/bot/bot-like.types.js'
+import type { Position } from '../../src/core/position.types.js'
+import { classifyCrop } from '../../src/skills/farming/crop-table.js'
+import { classifyDoor } from '../../src/skills/movement/door-table.js'
+import { classifySwitch } from '../../src/skills/movement/switch-table.js'
+
+/** A pathfinder whose movements finish only when the test says so, and which behaves like the real plugin. */
+export class FakePathfinder implements PathfinderLike {
+  readonly gotoGoals: unknown[] = []
+  readonly followGoals: { goal: unknown; dynamic: boolean | undefined }[] = []
+  /** How many times movement was halted with `setGoal(null)`. */
+  stopCalls = 0
+  private pending: { resolve: () => void; reject: (error: Error) => void }[] = []
+  /** When set, trips finish at once: this moves the bot to the goal. */
+  onGoto: ((goal: unknown) => void) | undefined
+
+  goto(goal: unknown): Promise<void> {
+    this.gotoGoals.push(goal)
+    if (this.onGoto !== undefined) {
+      this.onGoto(goal)
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve, reject) => {
+      this.pending.push({ resolve, reject })
+    })
+  }
+
+  /** Like the real plugin, changing the goal ends any trip in progress with `GoalChanged`. */
+  setGoal(goal: unknown, dynamic?: boolean): void {
+    if (goal === null) this.stopCalls += 1
+    else this.followGoals.push({ goal, dynamic })
+    const interrupted = this.pending
+    this.pending = []
+    for (const trip of interrupted)
+      trip.reject(namedError('GoalChanged', 'The goal was changed before it could be completed!'))
+  }
+
+  /** The bot reaches the goal. */
+  arrive(): void {
+    this.pending.shift()?.resolve()
+  }
+
+  /** The pathfinder rejects the way the real plugin does (error names NoPath, Timeout, ...). */
+  failWith(name: string, message = name): void {
+    this.pending.shift()?.reject(namedError(name, message))
+  }
+}
+
+function namedError(name: string, message: string): Error {
+  const error = new Error(message)
+  error.name = name
+  return error
+}
+
+interface RecipeFactory {
+  find(itemType: number, metadata: number | null): RecipeLike[]
+}
+
+const key = (p: Position): string =>
+  `${String(Math.floor(p.x))},${String(Math.floor(p.y))},${String(Math.floor(p.z))}`
+
+/** A block the fake world knows, with where it is (the real Mineflayer block has a position too). */
+export interface FakeBlock extends BlockLike {
+  readonly position: Position
+}
+
+/** The metadata keys the game data lists for an ageable animal (`baby` is index 16). */
+export const ANIMAL_KEYS = [
+  'shared_flags',
+  'air_supply',
+  'custom_name',
+  'custom_name_visible',
+  'silent',
+  'no_gravity',
+  'pose',
+  'ticks_frozen',
+  'living_entity_flags',
+  'health',
+  'effect_particles',
+  'effect_ambience',
+  'arrow_count',
+  'stinger_count',
+  'sleeping_pos',
+  'mob_flags',
+  'baby',
+]
+
+const SMELT_MS_PER_ITEM = 10_000
+const FUEL_ITEMS_PER_UNIT: Record<string, number> = {
+  coal: 8,
+  charcoal: 8,
+  oak_planks: 1.5,
+  oak_log: 1.5,
+  stick: 0.5,
+}
+const SMELTS_TO: Record<string, string> = {
+  raw_iron: 'iron_ingot',
+  beef: 'cooked_beef',
+  chicken: 'cooked_chicken',
+  porkchop: 'cooked_porkchop',
+  iron_ore: 'iron_ingot',
+  oak_log: 'charcoal',
+  sand: 'glass',
+  cobblestone: 'stone',
+}
+const STACK_SIZE = 64
+
+/** A furnace that smelts as time passes (read from the injected clock), like the real one. */
+export class FakeFurnace implements FurnaceLike {
+  input: ItemLike | null = null
+  fuelSlot: ItemLike | null = null
+  output: ItemLike | null = null
+  closed = false
+  private burnLeftMs = 0
+  private progressMs = 0
+  private lastUpdate: number
+
+  constructor(
+    private readonly bot: FakeBot,
+    private readonly now: () => number,
+    /** A blast furnace and a smoker smelt twice as fast; the fuel burns at the same rate. */
+    private readonly speed = 1,
+  ) {
+    this.lastUpdate = now()
+  }
+
+  get fuel(): number {
+    this.catchUp()
+    return this.burnLeftMs > 0 ? 1 : 0
+  }
+
+  inputItem(): ItemLike | null {
+    this.catchUp()
+    return this.input
+  }
+
+  fuelItem(): ItemLike | null {
+    this.catchUp()
+    return this.fuelSlot
+  }
+
+  outputItem(): ItemLike | null {
+    this.catchUp()
+    return this.output
+  }
+
+  putInput(itemType: number, _metadata: number | null, count: number): Promise<void> {
+    this.catchUp()
+    const name = this.bot.nameOf(itemType)
+    this.bot.removeItems(name, count)
+    this.input = { name, count: (this.input?.count ?? 0) + count }
+    return Promise.resolve()
+  }
+
+  putFuel(itemType: number, _metadata: number | null, count: number): Promise<void> {
+    this.catchUp()
+    const name = this.bot.nameOf(itemType)
+    this.bot.removeItems(name, count)
+    this.fuelSlot = { name, count: (this.fuelSlot?.count ?? 0) + count }
+    return Promise.resolve()
+  }
+
+  takeInput(): Promise<ItemLike | null> {
+    this.catchUp()
+    return Promise.resolve(this.emptyInto('input'))
+  }
+
+  takeFuel(): Promise<ItemLike | null> {
+    this.catchUp()
+    return Promise.resolve(this.emptyInto('fuelSlot'))
+  }
+
+  takeOutput(): Promise<ItemLike | null> {
+    this.catchUp()
+    return Promise.resolve(this.emptyInto('output'))
+  }
+
+  close(): void {
+    this.closed = true
+  }
+
+  private emptyInto(slot: 'input' | 'fuelSlot' | 'output'): ItemLike | null {
+    const item = this[slot]
+    if (item === null) return null
+    this[slot] = null
+    this.bot.addItems(item.name, item.count)
+    return item
+  }
+
+  /** Plays out the time since the last look, item by item. */
+  private catchUp(): void {
+    let remaining = this.now() - this.lastUpdate
+    this.lastUpdate = this.now()
+    while (remaining > 0) {
+      if (this.input === null || SMELTS_TO[this.input.name] === undefined) return
+      if (this.burnLeftMs <= 0) {
+        if (this.fuelSlot === null) return
+        const perUnit = FUEL_ITEMS_PER_UNIT[this.fuelSlot.name] ?? 1
+        this.burnLeftMs = perUnit * SMELT_MS_PER_ITEM
+        this.fuelSlot =
+          this.fuelSlot.count > 1 ? { ...this.fuelSlot, count: this.fuelSlot.count - 1 } : null
+      }
+      const itemMs = SMELT_MS_PER_ITEM / this.speed
+      const step = Math.min(remaining, this.burnLeftMs, itemMs - this.progressMs)
+      this.burnLeftMs -= step
+      this.progressMs += step
+      remaining -= step
+      if (this.progressMs >= itemMs) {
+        this.progressMs = 0
+        const made = SMELTS_TO[this.input.name] ?? ''
+        this.output = { name: made, count: (this.output?.count ?? 0) + 1 }
+        this.input = this.input.count > 1 ? { ...this.input, count: this.input.count - 1 } : null
+      }
+    }
+  }
+}
+
+/** A stub of the game bot: tests drive it by emitting events and read what it was asked to do. */
+export class FakeBot implements BotLike {
+  username = 'ClaudeBot'
+  version = '1.21.1'
+  health = 20
+  food = 20
+  entity: BotLike['entity'] = { position: { x: 10, y: 64, z: -5 } }
+  game = { dimension: 'overworld' }
+  time = { timeOfDay: 6000 }
+  spawnPoint: Position = { x: 48, y: 81, z: 32 }
+  worldSeed: string | undefined = 'a1b2c3d4e5f60718'
+  entities: Record<string, EntityLike> = {}
+  players: Record<string, PlayerLike> = {}
+  /** What a ray hits; tests set it (or leave null for "nothing"). Face defaults to north (2, an ordinary wall). */
+  rayHit: { name: string; position: Position; face?: number } | null = null
+  readonly rays: { from: Position; direction: Position; range: number }[] = []
+  world = {
+    raycast: (
+      from: Position,
+      direction: Position,
+      range: number,
+    ): { name: string; position: Position; face: number } | null => {
+      this.rays.push({ from, direction, range })
+      return this.rayHit === null ? null : { face: 2, ...this.rayHit }
+    },
+  }
+  registry = {
+    blocksByName: {
+      air: { id: 0 },
+      stone: { id: 1 },
+      dirt: { id: 2 },
+      oak_log: { id: 3 },
+      iron_ore: { id: 4 },
+      crafting_table: { id: 5 },
+    },
+    itemsByName: {
+      cooked_beef: { id: 100 },
+      beef: { id: 1500 },
+      bone_meal: { id: 1501 },
+      glass_bottle: { id: 1502 },
+      shears: { id: 1503 },
+      campfire: { id: 1504 },
+      bread: { id: 101 },
+      apple: { id: 102 },
+      rotten_flesh: { id: 103 },
+      golden_apple: { id: 104 },
+      wooden_sword: { id: 110 },
+      iron_sword: { id: 111 },
+      diamond_sword: { id: 112 },
+      stone_axe: { id: 113 },
+      iron_helmet: { id: 120 },
+      iron_chestplate: { id: 121 },
+      leather_helmet: { id: 122 },
+      diamond_boots: { id: 123 },
+      shield: { id: 130 },
+      wooden_hoe: { id: 140 },
+      wheat_seeds: { id: 141 },
+      carrot: { id: 142 },
+      potato: { id: 143 },
+      beetroot_seeds: { id: 144 },
+      water_bucket: { id: 145 },
+      oak_fence: { id: 146 },
+      oak_fence_gate: { id: 147 },
+      wheat: { id: 148 },
+      egg: { id: 149 },
+      pumpkin_seeds: { id: 150 },
+      pumpkin: { id: 151 },
+    },
+    foodsByName: {
+      cooked_beef: { foodPoints: 8, saturation: 12.8 },
+      bread: { foodPoints: 5, saturation: 6 },
+      apple: { foodPoints: 4, saturation: 2.4 },
+      rotten_flesh: { foodPoints: 4, saturation: 0.8 },
+      golden_apple: { foodPoints: 4, saturation: 9.6 },
+    },
+    items: {},
+    recipes: {},
+    entitiesByName: {
+      cow: { metadataKeys: ANIMAL_KEYS },
+      sheep: { metadataKeys: [...ANIMAL_KEYS, 'wool'] },
+      pig: { metadataKeys: [...ANIMAL_KEYS, 'saddle'] },
+      wolf: { metadataKeys: [...ANIMAL_KEYS, 'flags', 'owneruuid'] },
+    },
+  } as BotLike['registry']
+  inventoryItems: ItemLike[] = []
+  emptySlots = 36
+  heldItem: ItemLike | null = null
+  readonly pathfinder = new FakePathfinder()
+  clearControlStatesCalls = 0
+  /** The block world, by integer coordinates. Unknown positions are unloaded (null). */
+  private readonly blocks = new Map<string, string>()
+  /** Armor slots are 5 (head), 6 (torso), 7 (legs), 8 (feet). */
+  slots: (ItemLike | null)[] = Array.from({ length: 46 }, () => null)
+  /** When set, free slots are worked out from the stacks (64 per slot) instead of `emptySlots`. */
+  slotLimit: number | undefined
+  private readonly inventoryEmitter = new EventEmitter()
+  /** Tells listeners a slot changed, as Mineflayer's window does. */
+  inventoryChanged(): void {
+    this.inventoryEmitter.emit('updateSlot')
+  }
+  inventory = ((owner: FakeBot) => ({
+    on: (_event: 'updateSlot', listener: () => void): unknown =>
+      owner.inventoryEmitter.on('updateSlot', listener),
+    removeListener: (_event: 'updateSlot', listener: () => void): unknown =>
+      owner.inventoryEmitter.removeListener('updateSlot', listener),
+    listenerCount: (): number => owner.inventoryEmitter.listenerCount('updateSlot'),
+    items: (): readonly ItemLike[] => owner.inventoryItems,
+    emptySlotCount: (): number =>
+      owner.slotLimit === undefined
+        ? owner.emptySlots
+        : owner.slotLimit -
+          owner.inventoryItems.reduce((sum, item) => sum + Math.ceil(item.count / STACK_SIZE), 0),
+    /** Armor and off hand (set through `slots`), plus the carried items from slot 9 on, like the real window. */
+    get slots(): (ItemLike | null)[] {
+      const merged = [...owner.slots]
+      owner.inventoryItems.forEach((item, index) => {
+        merged[9 + index] ??= item
+      })
+      return merged
+    },
+  }))(this)
+  foodSaturation = 5
+  oxygenLevel = 20
+  readonly equipped: { itemType: number; slot: EquipSlot }[] = []
+  readonly attacked: number[] = []
+  readonly controlStates: { control: string; active: boolean }[] = []
+  consumeCalls = 0
+  /** Make equip or consume fail, to test error handling. */
+  failEquip: Error | undefined
+  failConsume: Error | undefined
+
+  readonly chatLog: string[] = []
+  readonly whisperLog: { player: string; text: string }[] = []
+  quitCalls = 0
+  /** When true, quit() ends the session like a real bot does. */
+  endOnQuit = true
+
+  private readonly emitter = new EventEmitter()
+
+  setBlock(position: Position, name: string): void {
+    this.blocks.set(key(position), name)
+    // Any change to the block starts a fresh growth stage (a freshly placed crop is not still the old one's age).
+    this.cropAges.delete(key(position))
+    this.liquidLevels.delete(key(position))
+    if (!FakeBot.isSign(name)) this.signs.delete(key(position))
+  }
+
+  private static isSign(name: string): boolean {
+    return /_(wall_)?sign$/.test(name) && !name.includes('hanging')
+  }
+
+  /** Signs by cell: the text of each side (lines joined with newlines), waxed, and where the front faces. */
+  readonly signs = new Map<
+    string,
+    { front: string; back: string; waxed: boolean; facing: string | undefined; rotation: number | undefined }
+  >()
+  /** Cells whose editor the server has opened for the bot: only there does `updateSign` change anything. */
+  private readonly signEditors = new Set<string>()
+  readonly signUpdates: { position: Position; text: string; back: boolean }[] = []
+  /** Makes `updateSign` do nothing, like a server that refuses the text. */
+  ignoreSignUpdates = false
+
+  /** Puts a sign into the world for a test (a player's sign, possibly waxed). */
+  setSign(
+    position: Position,
+    options: {
+      name?: string
+      front?: string
+      back?: string
+      waxed?: boolean
+      facing?: string
+      rotation?: number
+    } = {},
+  ): void {
+    this.setBlock(position, options.name ?? 'oak_wall_sign')
+    this.signs.set(key(position), {
+      front: options.front ?? '',
+      back: options.back ?? '',
+      waxed: options.waxed ?? false,
+      facing: options.facing ?? (options.rotation === undefined ? 'north' : undefined),
+      rotation: options.rotation,
+    })
+  }
+
+  updateSign(block: BlockLike, text: string, back = false): void {
+    const position = (block as FakeBlock).position
+    this.signUpdates.push({ position, text, back })
+    const cell = key(position)
+    const sign = this.signs.get(cell)
+    if (this.ignoreSignUpdates || sign === undefined || !this.signEditors.has(cell) || sign.waxed)
+      return
+    this.signs.set(cell, { ...sign, [back ? 'back' : 'front']: text })
+  }
+
+  blockAt(position: Position): FakeBlock | null {
+    // The real world lookup calls `position.floored()`: a plain { x, y, z } crashes it.
+    if (typeof (position as { floored?: unknown }).floored !== 'function')
+      throw new TypeError('pos.floored is not a function')
+    const name = this.blocks.get(key(position))
+    if (name === undefined) return null
+    const cellKey = key(position)
+    return {
+      name,
+      light: this.lights.get(key(position)),
+      boundingBox:
+        ['air', 'cave_air', 'water', 'lava'].includes(name) || /(^|_)(rail|torch)$/.test(name)
+          ? 'empty'
+          : 'block',
+      position: {
+        x: Math.floor(position.x),
+        y: Math.floor(position.y),
+        z: Math.floor(position.z),
+      },
+      getSignText: () => {
+        const sign = this.signs.get(cellKey)
+        return [sign?.front ?? '', sign?.back ?? '']
+      },
+      blockEntity: { is_waxed: this.signs.get(cellKey)?.waxed === true ? 1 : 0 },
+      getProperties: () => {
+        const props: Record<string, unknown> = {}
+        const sign = this.signs.get(cellKey)
+        if (sign?.facing !== undefined) props['facing'] = sign.facing
+        if (sign?.rotation !== undefined) props['rotation'] = String(sign.rotation)
+        if (name === 'water' || name === 'lava')
+          props['level'] = String(this.liquidLevels.get(cellKey) ?? 0)
+        if (name.endsWith('_fence_gate') && this.gateFacings.has(cellKey))
+          props['facing'] = this.gateFacings.get(cellKey)
+        if (classifyDoor(name) !== undefined) props['open'] = this.doorsOpen.get(cellKey) ?? false
+        if (name === 'beehive' || name === 'bee_nest')
+          props['honey_level'] = String(this.honeyLevels.get(cellKey) ?? 0)
+        if (name === 'composter') props['level'] = String(this.composterLevels.get(cellKey) ?? 0)
+        if (name === 'campfire' || name === 'soul_campfire')
+          props['lit'] = !this.campfiresOut.has(cellKey)
+        if (classifySwitch(name) !== undefined)
+          props['powered'] = this.switchPowered.get(cellKey) ?? false
+        // The real server reports this one as a numeric string ("7"), not a number.
+        if (classifyCrop(name) !== undefined) props['age'] = String(this.cropAges.get(cellKey) ?? 0)
+        if (name.endsWith('_bed')) {
+          props['part'] = this.bedParts.get(cellKey) ?? 'foot'
+          props['occupied'] = false
+        }
+        if (name.endsWith('rail')) {
+          props['shape'] = this.railShapeAt(position)
+          if (name === 'powered_rail') props['powered'] = String(this.railPoweredAt(position))
+        }
+        return props
+      },
+    }
+  }
+
+  /** A rail's shape the way the game works it out from the rails next to it (straight, sloped, or a curve). */
+  private railShapeAt(position: Position): string {
+    const isRail = (x: number, y: number, z: number): boolean =>
+      (this.blocks.get(key({ x, y, z })) ?? '').endsWith('rail')
+    const heads = [
+      ['north', 0, -1],
+      ['south', 0, 1],
+      ['east', 1, 0],
+      ['west', -1, 0],
+    ] as const
+    const links: { heading: string; up: boolean }[] = []
+    for (const [heading, dx, dz] of heads) {
+      const x = Math.floor(position.x) + dx
+      const z = Math.floor(position.z) + dz
+      const y = Math.floor(position.y)
+      if (isRail(x, y + 1, z)) links.push({ heading, up: true })
+      else if (isRail(x, y, z) || isRail(x, y - 1, z)) links.push({ heading, up: false })
+    }
+    const rising = links.find((link) => link.up)
+    if (rising !== undefined) return `ascending_${rising.heading}`
+    const [first, second] = links
+    if (first === undefined) return 'north_south'
+    const axis = (heading: string): string =>
+      heading === 'east' || heading === 'west' ? 'east_west' : 'north_south'
+    if (second === undefined) return axis(first.heading)
+    if (axis(first.heading) === axis(second.heading)) return axis(first.heading)
+    const curves: Record<string, string> = {
+      'east,south': 'south_east',
+      'south,west': 'south_west',
+      'north,west': 'north_west',
+      'east,north': 'north_east',
+    }
+    return curves[[first.heading, second.heading].sort().join(',')] ?? 'north_south'
+  }
+
+  /** A powered rail is powered by a redstone torch beside or below it, or by a powered rail up to eight rails along. */
+  private railPoweredAt(position: Position): boolean {
+    const torchAt = (x: number, y: number, z: number): boolean =>
+      ['redstone_torch', 'redstone_wall_torch'].includes(this.blocks.get(key({ x, y, z })) ?? '')
+    const hasTorch = (c: Position): boolean =>
+      torchAt(c.x + 1, c.y, c.z) ||
+      torchAt(c.x - 1, c.y, c.z) ||
+      torchAt(c.x, c.y, c.z + 1) ||
+      torchAt(c.x, c.y, c.z - 1) ||
+      torchAt(c.x, c.y - 1, c.z)
+    const start = {
+      x: Math.floor(position.x),
+      y: Math.floor(position.y),
+      z: Math.floor(position.z),
+    }
+    const seen = new Set<string>([key(start)])
+    let frontier: Position[] = [start]
+    for (let depth = 0; depth <= 8 && frontier.length > 0; depth += 1) {
+      const next: Position[] = []
+      for (const cell of frontier) {
+        if (hasTorch(cell)) return true
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const)
+          for (const dy of [-1, 0, 1]) {
+            const other = { x: cell.x + dx, y: cell.y + dy, z: cell.z + dz }
+            if (seen.has(key(other)) || this.blocks.get(key(other)) !== 'powered_rail') continue
+            seen.add(key(other))
+            next.push(other)
+          }
+      }
+      frontier = next
+    }
+    return false
+  }
+
+  /** Minecarts put on rails, by rail cell. */
+  readonly minecartsPlaced: Position[] = []
+
+  /** Beehives and bee nests: honey level 0 to 5. A glass bottle (honey bottle) or shears (3 honeycomb) on a full one empties it. */
+  private readonly honeyLevels = new Map<string, number>()
+  setHoneyLevel(position: Position, level: number): void {
+    this.honeyLevels.set(key(position), level)
+  }
+  /** Runs after every hive harvest, so a test can make the bees angry. */
+  onHiveHarvest: (position: Position) => void = () => undefined
+
+  /** Composters: a right-click with a compostable item adds a level (a full one turns ready at once); an empty-handed click on a ready one pops bone meal. */
+  private readonly composterLevels = new Map<string, number>()
+  setComposterLevel(position: Position, level: number): void {
+    this.composterLevels.set(key(position), level)
+  }
+  /** Bone meal used on a crop adds this many growth stages. */
+  boneMealStages = 2
+
+  /** Campfires: burning unless put out here. A right-click with an item takes it while fewer than `campfireRoom` are on. */
+  private readonly campfiresOut = new Set<string>()
+  setCampfireOut(position: Position, out: boolean): void {
+    if (out) this.campfiresOut.add(key(position))
+    else this.campfiresOut.delete(key(position))
+  }
+  /** Items on campfires, in the order they were put on. */
+  readonly onCampfire: { position: Position; item: string; at: number }[] = []
+  campfireRoom = 4
+  /** Food that has been on a campfire for 30 seconds pops out beside it as a dropped item; tests call this as time passes. */
+  popCampfires(): void {
+    for (const entry of [...this.onCampfire]) {
+      if (this.now() - entry.at < 30_000) continue
+      this.onCampfire.splice(this.onCampfire.indexOf(entry), 1)
+      this.dropItem(SMELTS_TO[entry.item] ?? entry.item, 1, {
+        x: entry.position.x + 0.5,
+        y: entry.position.y + 0.3,
+        z: entry.position.z + 1.5,
+      })
+    }
+  }
+
+  /** Doors, gates, and trapdoors: closed unless set open here or toggled via `activateBlock`. */
+  private readonly doorsOpen = new Map<string, boolean>()
+  setDoorOpen(position: Position, open: boolean): void {
+    this.doorsOpen.set(key(position), open)
+  }
+
+  /** Buttons and levers: unpowered unless set here or toggled via `activateBlock`. */
+  private readonly switchPowered = new Map<string, boolean>()
+  setSwitchPowered(position: Position, powered: boolean): void {
+    this.switchPowered.set(key(position), powered)
+  }
+
+  /** Which door a switch's own position opens, for simulating the redstone a test cannot see. */
+  private readonly switchLinks = new Map<string, string>()
+  linkSwitch(switchPosition: Position, doorPosition: Position): void {
+    this.switchLinks.set(key(switchPosition), key(doorPosition))
+  }
+
+  /** Water and lava levels (0 is a source, 1 to 7 flowing, 8 and up falling); a liquid cell not listed is a source. */
+  private readonly liquidLevels = new Map<string, number>()
+  setLiquidLevel(position: Position, level: number): void {
+    this.liquidLevels.set(key(position), level)
+  }
+
+  /** Whether a cell holds a water source. */
+  private isWaterSource(position: Position): boolean {
+    return (
+      this.blocks.get(key(position)) === 'water' && (this.liquidLevels.get(key(position)) ?? 0) === 0
+    )
+  }
+
+  /**
+   * Takes the liquid source the bot looks at into an empty bucket. Like the game, a water cell with two water sources
+   * beside it (and ground or water below) becomes a source again.
+   */
+  private fillBucketAt(point: Position): void {
+    const cell = { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z) }
+    const name = this.blocks.get(key(cell))
+    if ((name !== 'water' && name !== 'lava') || (this.liquidLevels.get(key(cell)) ?? 0) !== 0)
+      return
+    const filled = `${name}_bucket`
+    if (name === 'water') {
+      const beside = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ].filter(([dx, dz]) =>
+        this.isWaterSource({ x: cell.x + (dx ?? 0), y: cell.y, z: cell.z + (dz ?? 0) }),
+      ).length
+      if (beside < 2) this.setBlock(cell, 'air')
+    } else this.setBlock(cell, 'air')
+    this.bucketsFilled.push(cell)
+    this.removeItems('bucket', 1)
+    this.addItems(filled, 1)
+    this.heldItem = this.count('bucket') > 0 ? { name: 'bucket', count: this.count('bucket') } : null
+  }
+  /** The liquid cells taken into a bucket, in order. */
+  readonly bucketsFilled: Position[] = []
+
+  /** A crop block's growth stage. */
+  private readonly cropAges = new Map<string, number>()
+  setCropAge(position: Position, age: number): void {
+    this.cropAges.set(key(position), age)
+  }
+
+  /** Blocks a hoe turns into farmland when right-clicked. */
+  private static readonly TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'podzol'])
+
+  /** Beds: which half a cell is (`foot` by default), what the server says when used, and whether the bot lies in one. */
+  private readonly bedParts = new Map<string, 'head' | 'foot'>()
+  setBedPart(position: Position, part: 'head' | 'foot'): void {
+    this.bedParts.set(key(position), part)
+  }
+  bedRefusesRespawn = false
+  readonly bedsUsed: Position[] = []
+  isSleeping = false
+  /** A refusal `sleep` throws with (and puts on the action bar), for example "You may not rest now, there are monsters nearby". */
+  sleepRefusal: string | undefined
+  readonly sleepCalls: Position[] = []
+  sleep(bed: BlockLike): Promise<void> {
+    this.sleepCalls.push((bed as FakeBlock).position)
+    if (this.sleepRefusal !== undefined) {
+      this.emit('actionBar', this.sleepRefusal)
+      return Promise.reject(new Error('bot.sleep: server refused'))
+    }
+    const t = this.time.timeOfDay
+    if (t < 12_541 || t > 23_458)
+      return Promise.reject(new Error("it's not night and it's not a thunderstorm"))
+    this.isSleeping = true
+    return Promise.resolve()
+  }
+  wakeCalls = 0
+  wake(): Promise<void> {
+    this.wakeCalls += 1
+    this.isSleeping = false
+    return Promise.resolve()
+  }
+
+  readonly activateBlockCalls: Position[] = []
+  activateBlock(block: BlockLike): Promise<void> {
+    const position = (block as FakeBlock).position
+    this.activateBlockCalls.push(position)
+    const cellKey = key(position)
+    if (this.heldItem?.name === 'minecart' && block.name.endsWith('rail')) {
+      this.minecartsPlaced.push(position)
+      this.removeItems('minecart', 1)
+      this.heldItem =
+        this.count('minecart') > 0 ? { name: 'minecart', count: this.count('minecart') } : null
+      const id = this.nextEntityId
+      this.nextEntityId += 1
+      this.entities[String(id)] = {
+        id,
+        type: 'object',
+        name: 'minecart',
+        position: { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
+      }
+    } else if (
+      (block.name === 'beehive' || block.name === 'bee_nest') &&
+      (this.heldItem?.name === 'glass_bottle' || this.heldItem?.name === 'shears') &&
+      (this.honeyLevels.get(cellKey) ?? 0) >= 5
+    ) {
+      this.honeyLevels.set(cellKey, 0)
+      if (this.heldItem.name === 'glass_bottle') {
+        this.removeItems('glass_bottle', 1)
+        this.addItems('honey_bottle', 1)
+        this.heldItem =
+          this.count('glass_bottle') > 0 ? { name: 'glass_bottle', count: this.count('glass_bottle') } : null
+      } else this.addItems('honeycomb', 3)
+      this.onHiveHarvest(position)
+    } else if (this.heldItem?.name === 'bone_meal' && classifyCrop(block.name) !== undefined) {
+      const max = classifyCrop(block.name)?.maxAge ?? 7
+      this.cropAges.set(cellKey, Math.min(max, (this.cropAges.get(cellKey) ?? 0) + this.boneMealStages))
+      this.removeItems('bone_meal', 1)
+      this.heldItem = this.count('bone_meal') > 0 ? { name: 'bone_meal', count: this.count('bone_meal') } : null
+    } else if (block.name === 'composter') {
+      const level = this.composterLevels.get(cellKey) ?? 0
+      const held = this.heldItem?.name
+      if (level === 8) {
+        this.composterLevels.set(cellKey, 0)
+        this.dropItem('bone_meal', 1, { x: position.x + 0.5, y: position.y + 1.2, z: position.z + 0.5 })
+      } else if (held !== undefined && held !== 'bone_meal' && level < 7) {
+        this.removeItems(held, 1)
+        this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
+        this.composterLevels.set(cellKey, level + 1 === 7 ? 8 : level + 1)
+      }
+    } else if (
+      (block.name === 'campfire' || block.name === 'soul_campfire') &&
+      this.heldItem !== null &&
+      this.onCampfire.length < this.campfireRoom
+    ) {
+      const held = this.heldItem.name
+      this.onCampfire.push({ position, item: held, at: this.now() })
+      this.removeItems(held, 1)
+      this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
+    } else if (this.heldItem?.name === 'wooden_hoe' && FakeBot.TILLABLE.has(block.name)) {
+      this.setBlock(position, 'farmland')
+    } else if (FakeBot.isSign(block.name)) {
+      // Right-clicking a sign that is not waxed opens its editor for the bot.
+      if (this.signs.get(cellKey)?.waxed !== true) {
+        this.signEditors.add(cellKey)
+        queueMicrotask(() => {
+          this.emit('signOpen', block)
+        })
+      }
+    } else if (block.name.endsWith('_bed')) {
+      // Using a bed sets the respawn point (unless a test made it refuse) and, at night, lies the bot down.
+      this.bedsUsed.push(position)
+      if (!this.bedRefusesRespawn) this.emit('messagestr', 'Respawn point set')
+      const t = this.time.timeOfDay
+      if (t >= 12_541 && t <= 23_458) this.isSleeping = true
+    } else if (classifySwitch(block.name) !== undefined) {
+      const nowPowered = !(this.switchPowered.get(cellKey) ?? false)
+      this.switchPowered.set(cellKey, nowPowered)
+      const linkedDoor = this.switchLinks.get(cellKey)
+      if (linkedDoor !== undefined) this.doorsOpen.set(linkedDoor, nowPowered)
+    } else {
+      this.doorsOpen.set(cellKey, !(this.doorsOpen.get(cellKey) ?? false))
+    }
+    return Promise.resolve()
+  }
+
+  private readonly lights = new Map<string, number>()
+  /** Sets the block light a cell reports. */
+  setLight(position: Position, level: number): void {
+    this.lights.set(key(position), level)
+  }
+
+  /** Time source for furnaces; tests point it at their fake clock. */
+  now: () => number = () => 0
+
+  /**
+   * Switches to the real Minecraft 1.21.1 data (blocks, items, recipes), so gathering and crafting are tested
+   * against the game's own rules, and lets the bot walk anywhere instantly (picking up drops on the way).
+   */
+  useGameData(): this {
+    const data = minecraftData('1.21.1')
+    this.registry = data
+    // The loader accepts a registry as well as a version string, which its typings do not say.
+    const load = prismarineRecipe as unknown as (registry: unknown) => { Recipe: RecipeFactory }
+    this.recipeFactory = load(data).Recipe
+    this.slotLimit = 36
+    // Trips end a little short of the goal (80% of its range, along the line from where the bot was), like real ones.
+    this.pathfinder.onGoto = (goal) => {
+      const near = goal as { x?: number; y?: number; z?: number; range?: number } | undefined
+      if (near?.x === undefined || near.y === undefined || near.z === undefined) return
+      // Like the real GoalNear, the goal is the block cell containing the coordinates.
+      const center = {
+        x: Math.floor(near.x) + 0.5,
+        y: Math.floor(near.y),
+        z: Math.floor(near.z) + 0.5,
+      }
+      const from = this.entity?.position ?? center
+      const stop = (near.range ?? 1) * 0.8
+      const dx = from.x - center.x
+      const dz = from.z - center.z
+      const away = Math.hypot(dx, dz)
+      if (away <= stop) {
+        this.pickUpNearby() // already there: anything lying next to the bot is picked up
+        return
+      }
+      this.moveTo({
+        x: center.x + (dx / away) * stop,
+        y: Math.min(from.y, center.y),
+        z: center.z + (dz / away) * stop,
+      })
+    }
+    return this
+  }
+
+  private recipeFactory: RecipeFactory | undefined
+  private nextEntityId = 1000
+  readonly furnaces = new Map<string, FakeFurnace>()
+  readonly placed: { name: string; position: Position }[] = []
+  readonly dug: { name: string; position: Position }[] = []
+  /** The drops a block leaves when dug with a fitting tool; blocks not listed drop themselves. */
+  drops: Record<string, string> = {
+    stone: 'cobblestone',
+    iron_ore: 'raw_iron',
+    deepslate_iron_ore: 'raw_iron',
+  }
+  digFailure: Error | undefined
+  /** Makes `dig` wait until the test calls `finishDig` (or `stopDigging` cancels it). */
+  holdDigs = false
+  private heldDig: { resolve: () => void; reject: (error: Error) => void } | undefined
+  stopDiggingCalls = 0
+
+  nameOf(itemType: number): string {
+    const found = Object.entries(this.registry.itemsByName).find(([, item]) => item.id === itemType)
+    if (found === undefined) throw new Error(`Unknown item id ${String(itemType)}`)
+    return found[0]
+  }
+
+  count(name: string): number {
+    return this.inventoryItems.filter((i) => i.name === name).reduce((sum, i) => sum + i.count, 0)
+  }
+
+  addItems(name: string, count: number): void {
+    const existing = this.inventoryItems.find((item) => item.name === name)
+    if (existing === undefined) this.inventoryItems = [...this.inventoryItems, { name, count }]
+    else
+      this.inventoryItems = this.inventoryItems.map((item) =>
+        item === existing ? { name, count: item.count + count } : item,
+      )
+  }
+
+  removeItems(name: string, count: number): void {
+    if (this.count(name) < count) throw new Error(`Not enough ${name}`)
+    this.inventoryItems = this.inventoryItems
+      .map((item) =>
+        item.name === name ? { name, count: item.count - Math.min(count, item.count) } : item,
+      )
+      .filter((item) => item.count > 0)
+  }
+
+  /** Moves the bot and picks up any dropped items it lands next to. */
+  moveTo(position: Position): void {
+    this.entity = { position }
+    this.pickUpNearby()
+  }
+
+  /** Items within reach of the bot are picked up, as the game does when they lie next to it. */
+  pickUpNearby(): void {
+    const position = this.entity?.position
+    if (position === undefined) return
+    for (const [id, entity] of Object.entries(this.entities)) {
+      if (entity.name !== 'item') continue
+      if (
+        Math.hypot(
+          entity.position.x - position.x,
+          entity.position.y - position.y,
+          entity.position.z - position.z,
+        ) > 1.5
+      )
+        continue
+      const stack = entity.getDroppedItem?.()
+      if (stack === undefined || stack === null) continue
+      if (
+        this.slotLimit !== undefined &&
+        this.inventory.emptySlotCount() <= 0 &&
+        this.count(stack.name) % STACK_SIZE === 0
+      )
+        continue
+      this.addItems(stack.name, stack.count)
+      this.removeEntity(Number(id))
+    }
+  }
+
+  /** Puts an item on the ground. */
+  dropItem(name: string, count: number, position: Position): number {
+    const id = this.nextEntityId
+    this.nextEntityId += 1
+    this.entities[String(id)] = {
+      id,
+      type: 'other',
+      name: 'item',
+      position,
+      getDroppedItem: () => ({ name, count }),
+    }
+    return id
+  }
+
+  dig(block: BlockLike): Promise<void> {
+    const at = (block as FakeBlock).position
+    if (this.digFailure !== undefined) return Promise.reject(this.digFailure)
+    const finish = (): void => {
+      this.dug.push({ name: block.name, position: at })
+      this.setBlock(at, 'air')
+      queueMicrotask(() => {
+        this.settle()
+      })
+      const data = this.registry.blocksByName[block.name]
+      const harvestable =
+        data?.harvestTools === undefined ||
+        (this.heldItem !== null &&
+          data.harvestTools[this.registry.itemsByName[this.heldItem.name]?.id ?? -1] === true)
+      if (harvestable)
+        this.dropItem(this.drops[block.name] ?? block.name.replace(/_wall_sign$/, '_sign'), 1, {
+          x: at.x + 0.5,
+          y: this.groundLevel(at) + 0.3,
+          z: at.z + 0.5,
+        })
+    }
+    if (!this.holdDigs) {
+      finish()
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve, reject) => {
+      this.heldDig = {
+        resolve: () => {
+          finish()
+          resolve()
+        },
+        reject,
+      }
+    })
+  }
+
+  /** Where a drop lands: it falls until a solid block is below it. */
+  private groundLevel(from: Position): number {
+    let y = from.y
+    const isSolid = (cell: Position): boolean => {
+      const name = this.blocks.get(key(cell))
+      return name !== undefined && !['air', 'cave_air', 'water', 'lava'].includes(name)
+    }
+    while (y > -64 && !isSolid({ x: from.x, y: y - 1, z: from.z })) y -= 1
+    return y
+  }
+
+  /** Completes a held dig. */
+  finishDig(): void {
+    this.heldDig?.resolve()
+    this.heldDig = undefined
+  }
+
+  stopDigging(): void {
+    this.stopDiggingCalls += 1
+    this.heldDig?.reject(new Error('Digging aborted'))
+    this.heldDig = undefined
+  }
+
+  /** Planting a seed item grows the crop block, not a block of the seed's own name. */
+  private static readonly SEED_TO_CROP: Record<string, string> = {
+    wheat_seeds: 'wheat',
+    carrot: 'carrots',
+    potato: 'potatoes',
+    beetroot_seeds: 'beetroots',
+    pumpkin_seeds: 'pumpkin_stem',
+  }
+
+  placeBlock(reference: BlockLike, face: Position): Promise<void> {
+    const base = (reference as FakeBlock).position
+    const target = { x: base.x + face.x, y: base.y + face.y, z: base.z + face.z }
+    const name = this.heldItem?.name
+    if (name === undefined) return Promise.reject(new Error('Nothing in hand'))
+    if (!this.sneaking && FakeBot.USABLE.test(reference.name))
+      return Promise.reject(
+        new Error(
+          `Server did not answer the placement at ${String(target.x)},${String(target.y)},${String(target.z)}: the click used the ${reference.name}`,
+        ),
+      )
+    this.removeItems(name, 1)
+    this.heldItem = this.count(name) > 0 ? { name, count: this.count(name) } : null
+    if (FakeBot.isSign(name)) this.placeSign(name, target, face)
+    else {
+      this.setBlock(target, FakeBot.SEED_TO_CROP[name] ?? name)
+      if (name.endsWith('_fence_gate')) this.gateFacings.set(key(target), this.facingTowards(target))
+    }
+    this.placed.push({ name, position: target })
+    this.settle()
+    return Promise.resolve()
+  }
+
+  /** The way a fence gate faces: like the game, the horizontal direction the placing player looks, here towards the cell. */
+  private facingTowards(target: Position): string {
+    const from = this.entity?.position ?? target
+    const dx = target.x + 0.5 - from.x
+    const dz = target.z + 0.5 - from.z
+    if (Math.abs(dz) >= Math.abs(dx)) return dz > 0 ? 'south' : 'north'
+    return dx > 0 ? 'east' : 'west'
+  }
+  /** Fence gates by cell: the direction each was placed facing. */
+  private readonly gateFacings = new Map<string, string>()
+
+  /** A sign item on a top face is a standing sign (turned like the server turns it, to face the bot); on a side, a wall sign. */
+  private placeSign(name: string, target: Position, face: Position): void {
+    const standing = face.y === 1
+    this.setBlock(target, standing ? name : name.replace(/_sign$/, '_wall_sign'))
+    let facing: string | undefined
+    let rotation: number | undefined
+    if (standing) {
+      const from = this.entity?.position ?? target
+      // The game's own yaw (0 looks south, 90 west) of the bot looking at the cell; the sign turns to face the placer.
+      const yaw = Math.atan2(-(target.x + 0.5 - from.x), target.z + 0.5 - from.z)
+      rotation = ((Math.floor(((yaw * 180) / Math.PI + 180) * 16 / 360 + 0.5) % 16) + 16) % 16
+    } else facing = face.x === 1 ? 'east' : face.x === -1 ? 'west' : face.z === 1 ? 'south' : 'north'
+    this.signs.set(key(target), { front: '', back: '', waxed: false, facing, rotation })
+    // The server opens the editor for whoever placed the sign.
+    this.signEditors.add(key(target))
+  }
+
+  /** Container contents by block cell; each is the container's slot list. */
+  readonly containers = new Map<string, (ItemLike | null)[]>()
+  /** Slots per container (27 for a chest, 54 for a double chest). */
+  containerSlots = 27
+  readonly openedContainers: string[] = []
+  windows: FakeContainerWindow[] = []
+
+  /** Puts items into the container at a position, opening no window. */
+  stock(position: Position, name: string, count: number): void {
+    const slots = this.slotsAt(position)
+    let left = count
+    for (let i = 0; i < slots.length && left > 0; i += 1) {
+      if (slots[i] !== null) continue
+      const put = Math.min(left, name === 'ender_pearl' ? 16 : 64)
+      slots[i] = { name, count: put }
+      left -= put
+    }
+  }
+
+  /** How many of an item are in the container at a position. */
+  inContainer(position: Position, name: string): number {
+    return this.slotsAt(position)
+      .filter((item) => item?.name === name)
+      .reduce((sum, item) => sum + (item?.count ?? 0), 0)
+  }
+
+  private slotsAt(position: Position): (ItemLike | null)[] {
+    const id = key(position)
+    let slots = this.containers.get(id)
+    if (slots === undefined) {
+      slots = Array.from({ length: this.containerSlots }, () => null)
+      this.containers.set(id, slots)
+    }
+    return slots
+  }
+
+  /** What the bot threw on the ground, in order. */
+  readonly tossed: { name: string; count: number }[] = []
+  readonly lookedAt: Position[] = []
+  /** The bot's own inventory as a window (slots 0-35 are the player's; a real one starts at 9). */
+  get inventoryWindow(): ContainerWindowLike {
+    return new FakeContainerWindow(
+      [],
+      this.inventoryItems,
+      (_container, player) => {
+        this.inventoryItems = player
+      },
+      (name, count) => {
+        this.tossed.push({ name, count })
+        const here = this.entity?.position ?? { x: 0, y: 64, z: 0 }
+        this.dropItem(name, count, { x: here.x + 1, y: here.y + 0.3, z: here.z })
+      },
+    )
+  }
+
+  waitedTicks = 0
+  /** What was in hand each time `activateItem` was called. */
+  readonly activated: string[] = []
+
+  /**
+   * Uses the item in hand: a water or lava bucket empties into the open cell at the point the bot last looked at (the
+   * point lies on the face between a solid block and the empty cell).
+   */
+  activateItem(): void {
+    this.pullIn?.()
+    this.pullIn = undefined
+    const held = this.heldItem?.name ?? ''
+    this.activated.push(held)
+    const fluid = held === 'water_bucket' ? 'water' : held === 'lava_bucket' ? 'lava' : undefined
+    const point = this.lookedAt.at(-1)
+    if (held === 'bucket' && point !== undefined) this.fillBucketAt(point)
+    if (fluid === undefined || point === undefined) return
+    const eps = 0.001
+    for (const dx of [-eps, eps])
+      for (const dy of [-eps, eps])
+        for (const dz of [-eps, eps]) {
+          const cell = {
+            x: Math.floor(point.x + dx),
+            y: Math.floor(point.y + dy),
+            z: Math.floor(point.z + dz),
+          }
+          const name = this.blocks.get(key(cell))
+          if (name !== 'air' && name !== 'cave_air') continue
+          this.setBlock(cell, fluid)
+          this.removeItems(held, 1)
+          this.addItems('bucket', 1)
+          this.heldItem = this.count(held) > 0 ? { name: held, count: this.count(held) } : null
+          return
+        }
+  }
+
+  waitForTicks(ticks: number): Promise<void> {
+    this.waitedTicks += ticks
+    return Promise.resolve()
+  }
+
+  lookAt(point: Position): Promise<void> {
+    this.lookedAt.push(point)
+    return Promise.resolve()
+  }
+
+  openContainerWindow(block: BlockLike): Promise<ContainerWindowLike> {
+    const at = (block as FakeBlock).position
+    this.openedContainers.push(key(at))
+    const window = new FakeContainerWindow(
+      this.slotsAt(at),
+      this.inventoryItems,
+      (container, player) => {
+        this.containers.set(key(at), container)
+        this.inventoryItems = player
+      },
+    )
+    this.windows.push(window)
+    return Promise.resolve(window)
+  }
+
+  openFurnace(block: BlockLike): Promise<FurnaceLike> {
+    const at = (block as FakeBlock).position
+    const id = key(at)
+    const speed = block.name === 'blast_furnace' || block.name === 'smoker' ? 2 : 1
+    const furnace = this.furnaces.get(id) ?? new FakeFurnace(this, () => this.now(), speed)
+    furnace.closed = false
+    this.furnaces.set(id, furnace)
+    return Promise.resolve(furnace)
+  }
+
+  recipesAll(
+    itemType: number,
+    _metadata: number | null,
+    craftingTable: boolean,
+  ): readonly RecipeLike[] {
+    const factory = this.recipeFactory
+    if (factory === undefined) return []
+    return factory.find(itemType, null).filter((recipe) => !recipe.requiresTable || craftingTable)
+  }
+
+  readonly crafted: { item: string; times: number }[] = []
+
+  craft(recipe: RecipeLike, count: number, craftingTable?: BlockLike | null): Promise<void> {
+    if (recipe.requiresTable && (craftingTable === undefined || craftingTable === null))
+      return Promise.reject(new Error('A crafting table is required'))
+    for (const entry of recipe.delta) {
+      if (entry.count < 0 && this.count(this.nameOf(entry.id)) < -entry.count * count)
+        return Promise.reject(new Error(`missing ingredient ${this.nameOf(entry.id)}`))
+    }
+    for (const entry of recipe.delta) {
+      if (entry.count < 0) this.removeItems(this.nameOf(entry.id), -entry.count * count)
+    }
+    this.addItems(this.nameOf(recipe.result.id), recipe.result.count * count)
+    this.crafted.push({ item: this.nameOf(recipe.result.id), times: count })
+    return Promise.resolve()
+  }
+
+  /** Whether the bot holds sneak. */
+  sneaking = false
+
+  /** Blocks a right click uses (opens, toggles) instead of placing a block against them, unless the bot sneaks. */
+  private static readonly USABLE = /(^|_)(chest|barrel|crafting_table|furnace|door|button|lever|shulker_box)$/
+
+  /** When true the bot jumps (1.25 blocks up) and falls until it stands on something solid, so it can pillar up. */
+  physics = false
+
+  setControlState(control: 'jump' | 'sprint' | 'sneak', active: boolean): void {
+    this.controlStates.push({ control, active })
+    if (control === 'sneak') this.sneaking = active
+    const position = this.entity?.position
+    if (this.physics && control === 'jump' && active && position !== undefined)
+      this.entity = { position: { ...position, y: Math.floor(position.y) + 1.25 } }
+  }
+
+  /** The bot falls until it stands on something solid (only with `physics`). */
+  private settle(): void {
+    const position = this.entity?.position
+    if (!this.physics || position === undefined) return
+    const solid = (y: number): boolean => {
+      const name = this.blocks.get(key({ x: position.x, y, z: position.z }))
+      return name !== undefined && !['air', 'cave_air', 'water', 'lava'].includes(name)
+    }
+    let y = Math.floor(position.y)
+    while (y > -64 && !solid(y - 1)) y -= 1
+    this.entity = { position: { ...position, y } }
+    this.pickUpNearby()
+  }
+
+  equip(itemType: number, slot: EquipSlot): Promise<void> {
+    if (this.failEquip !== undefined) return Promise.reject(this.failEquip)
+    this.equipped.push({ itemType, slot })
+    if (slot === 'hand') {
+      const name = Object.entries(this.registry.itemsByName).find(
+        ([, item]) => item.id === itemType,
+      )?.[0]
+      const held = this.inventoryItems.find((item) => item.name === name)
+      if (held !== undefined) this.heldItem = held
+    }
+    return Promise.resolve()
+  }
+
+  /** How much the food bar goes up per bite. */
+  foodPerConsume = 0
+
+  consume(): Promise<void> {
+    if (this.failConsume !== undefined) return Promise.reject(this.failConsume)
+    this.consumeCalls += 1
+    this.food = Math.min(20, this.food + this.foodPerConsume)
+    return Promise.resolve()
+  }
+
+  /** How each `fish` call ends: 'bite' resolves, 'never' waits until the line is pulled in (`activateItem`). */
+  fishScript: ('bite' | 'never' | 'error')[] = []
+  fishCalls = 0
+  private pullIn: (() => void) | undefined
+
+  fish(): Promise<void> {
+    this.fishCalls += 1
+    const next = this.fishScript.shift() ?? 'bite'
+    if (next === 'bite') return Promise.resolve()
+    if (next === 'error') return Promise.reject(new Error('Fishing cancelled'))
+    return new Promise<void>((_resolve, reject) => {
+      this.pullIn = () => {
+        reject(new Error('Fishing cancelled'))
+      }
+    })
+  }
+
+  /** Takes an entity out of the world (it died or left). */
+  removeEntity(id: number): void {
+    this.entities = Object.fromEntries(
+      Object.entries(this.entities).filter(([key]) => key !== String(id)),
+    )
+  }
+
+  /** Runs on every hit, so a test can let the target die (call `removeEntity`). */
+  onAttack: (entity: EntityLike) => void = () => undefined
+
+  attack(entity: EntityLike): void {
+    this.attacked.push(entity.id)
+    this.onAttack(entity)
+  }
+
+  readonly activatedEntities: number[] = []
+  /** Runs on every activateEntity (feeding an animal), so a test can react (for example spawn a baby). */
+  onActivateEntity: (entity: EntityLike) => void = () => undefined
+
+  activateEntity(entity: EntityLike): Promise<void> {
+    this.activatedEntities.push(entity.id)
+    this.onActivateEntity(entity)
+    return Promise.resolve()
+  }
+
+  findBlocks(options: {
+    matching: number | number[]
+    maxDistance: number
+    count: number
+  }): readonly Position[] {
+    const origin = this.entity?.position
+    if (origin === undefined) return []
+    const ids = new Set(Array.isArray(options.matching) ? options.matching : [options.matching])
+    const found: { position: Position; distance: number }[] = []
+    for (const [coordinates, name] of this.blocks) {
+      if (!ids.has(this.registry.blocksByName[name]?.id ?? -1)) continue
+      const [x = 0, y = 0, z = 0] = coordinates.split(',').map(Number)
+      const distance = Math.hypot(x - origin.x, y - origin.y, z - origin.z)
+      if (distance <= options.maxDistance) found.push({ position: { x, y, z }, distance })
+    }
+    return found
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, options.count)
+      .map((f) => f.position)
+  }
+
+  clearControlStates(): void {
+    this.clearControlStatesCalls += 1
+  }
+
+  chat(message: string): void {
+    this.chatLog.push(message)
+  }
+
+  whisper(player: string, text: string): void {
+    this.whisperLog.push({ player, text })
+  }
+
+  quit(): void {
+    this.quitCalls += 1
+    if (this.endOnQuit) this.emit('end', 'quit')
+  }
+
+  on<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): this {
+    this.emitter.on(event, listener)
+    return this
+  }
+
+  once<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): this {
+    this.emitter.once(event, listener)
+    return this
+  }
+
+  removeListener<E extends keyof BotEvents>(event: E, listener: BotEvents[E]): this {
+    this.emitter.removeListener(event, listener)
+    return this
+  }
+
+  emit<E extends keyof BotEvents>(event: E, ...args: Parameters<BotEvents[E]>): void {
+    this.emitter.emit(event, ...args)
+  }
+
+  listenerCount(event: keyof BotEvents): number {
+    return this.emitter.listenerCount(event)
+  }
+}

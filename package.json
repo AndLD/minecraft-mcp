@@ -1,0 +1,50 @@
+{
+  "name": "minecraft-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets an AI agent play Minecraft as a co-player through a Mineflayer bot",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit integration",
+    "test:unit": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit",
+    "test:integration": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects integration",
+    "test:coverage": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects unit integration --coverage",
+    "test:e2e": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects e2e --runInBand",
+    "test:e2e:all": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --selectProjects e2e --runInBand"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@jest/globals": "^30.5.2",
+    "@types/node": "^22.20.4",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jest": "^30.5.2",
+    "minecraft-data": "^3.116.0",
+    "prettier": "^3.9.8",
+    "prismarine-recipe": "^1.5.0",
+    "rcon-client": "^4.2.5",
+    "testcontainers": "^11.14.0",
+    "ts-jest": "^29.4.12",
+    "tsx": "^4.23.13",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "vec3": "^0.2.0",
+    "zod": "^4.6.5"
+  }
+}

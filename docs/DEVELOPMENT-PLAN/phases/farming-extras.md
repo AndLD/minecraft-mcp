@@ -1,0 +1,23 @@
+# Phase 44: Farming extras, shearing, milking, and melons
+
+_Estimate: 1 session._  
+**Status:** done on `feature/farming-extras`. See [Animal products](../../features/farming/animal-products.md).
+
+**Depends on:** [18 Farming, crops, animals, and trees](farming.md) (`AnimalPen`, `HerdManager`, `crop-table.ts` with the stem crop `pumpkin`, `harvest_crops`, `tend_farm`), [8 Hunting and food](hunting-food.md) (the animal catalog), [7 Gathering, crafting, smelting](gathering-crafting-smelting.md) (crafting shears), [Tasks](../../features/core/tasks.md).  
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
+
+Three things the farming feature left out, all small on top of what exists: taking wool from sheep, milk from cows, and growing melons. They come from the backlog entry "Farming extras".
+
+- Branch: `feature/farming-extras`. Two tools, `shear_sheep` and `milk_cows`, and `melon` in the crop table. Honey, sugar cane, bamboo, cocoa, nether wart, and redstone auto-farms stay in the backlog.
+- **Shearing.** `shear_sheep`: `count` (sheep to shear, default all in reach), `farm` (a registered pen) or `max_distance`, and `dye` optional filters (only sheep of a colour: `white`, or `not_dyed`). It needs shears (crafted from 2 iron ingots when the player asked for it, otherwise `no_shears` says so). For each adult sheep that is not sheared (read from the entity metadata, like the baby and saddle flags), the bot walks up to it, holds the shears, and uses them on the sheep (`activateEntity`); the wool drops and is picked up (1 to 3 blocks per sheep), and the sheep is left as it is (it regrows). Baby sheep, named sheep, and tamed animals are never touched (the animal catalog rules), and a sheep that was sheared already is skipped. The result: `sheared`, `wool` (by colour), `skipped` with reasons. **A registered pen** is worked from inside its gate rules (the bot closes gates behind it, as everywhere) and the herd floor is irrelevant: shearing does not kill.
+- **Milking.** `milk_cows`: `count` (buckets wanted, default 1), the same filters. It needs an empty bucket per cow (`fill_bucket`'s bucket rules; it never crafts one on its own but says what a bucket is made of). The bot walks up to an adult cow (mooshrooms count, with a mushroom stew option off by default), uses the bucket on it, and checks the inventory gained a `milk_bucket`; each cow can be milked again at once in the game, but the tool takes each cow only **once per call** so a single cow is not milked in a loop. Result: `buckets`, `cows`, `skipped`.
+- **Melons.** `melon` is added to `crop-table.ts` as a stem crop like `pumpkin` (seeds `melon_seeds`, stem `melon_stem`, fruit `melon`, harvest the fruit block on a free cell next to the stem and never the stem). `build_farm` with `crop: melon` makes the same stem field with its gaps, `plant_crops`, `harvest_crops`, `tend_farm`, and `inspect_farm` work on it through the table, and melon slices come from breaking the block (drops 3 to 7 slices) so `harvest_crops` reports slices. Gathering melon seeds: from melon slices (crafted: 1 slice makes 1 seed) or found in chests; `no_seeds` says so.
+- **Protection.** Protected areas and pens the player asked to keep are respected as everywhere, and the tools never approach a mob that is a threat (hostile mobs near a pen end the run, as for hunting).
+- **Docs.** A page for the animal products (the crop and animal farming pages get a line each), AGENTS.md (two tools and a protocol item), the backlog entry (what is left).
+- **Tests:**
+  - unit: shearing (adult unsheared sheep only, the filters, no shears, none in reach, a sheared one skipped, a named or tamed one skipped, the wool counted, cancel), milking (a bucket per cow, no bucket, once per cow, the mooshroom, cancel), the crop table with `melon` (stem and fruit, the harvest rule, the field shape), the tools
+  - integration: a pen with three sheep and two cows through the tool layer: wool and milk come back and the animals are alive and where they were
+  - e2e (`test/e2e/farming/`, extended): sheep and a cow summoned with `NoAI` in a pen, shears and a bucket given: the bot shears and milks and the inventory shows wool and a milk bucket; a melon field built with `build_farm crop: melon`, a stem and a fruit set through RCON, and `harvest_crops` takes the fruit and leaves the stem
+- **Exit criteria:** "shear the sheep in the pen" and "get me a bucket of milk" work with the right tool in the bag and leave the animals alive, and a melon field is built, planted, and harvested like a pumpkin field.
+
+[Back to the development plan](../DEVELOPMENT-PLAN.md)

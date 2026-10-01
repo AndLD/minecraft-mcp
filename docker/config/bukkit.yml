@@ -1,0 +1,4 @@
+# Copied into the e2e server (itzg syncs /config into /data). The tests log several bots in from one IP
+# in quick succession, which Paper's default 4 s connection throttle would reject.
+settings:
+  connection-throttle: -1

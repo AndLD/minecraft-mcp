@@ -1,0 +1,23 @@
+# Phase 41: Smelting, fuel top-up and a ready signal
+
+_Estimate: ½ session._  
+**Status:** done on `feature/smelting-fuel-and-ready`. See [Gathering, crafting, smelting](../../features/gathering/gathering-crafting-smelting.md). Differences from this plan: fuel from storage (`fuel_from_storage`) was built afterwards on the same branch, at the start of a job only (not mid-job); the far-furnace warning is in the `smelt_ready` message and the collect refusal (`furnace_far` for another dimension), not a separate record field; the distance is checked when the signal is sent, not while the bot walks about.
+
+**Depends on:** [36 Smelting wait strategy](smelting-wait.md) (`SmeltJobs`, the closed-window wait, `collect`), [9 Storage and containers](storage-containers.md) (optional: fuel from storage), [Tasks](../../features/core/tasks.md).  
+**Needed by:** [48 Hardening and polish](hardening-polish.md).
+
+Phase 36 stopped the bot from standing at the furnace, but two things stayed out: the fuel for the whole job is chosen up front (so a big job is cut to what the fuel covers), and while a job cooks the bot cannot usefully go elsewhere because nothing tells the agent when it is ready.
+
+- Branch: `feature/smelting-fuel-and-ready`. Changes to `SmeltItemsSkill` and `SmeltJobs`, one new class (`SmeltJobWatcher`), and a `smelt_ready` event; no new tool.
+- **Fuel top-up at every look.** At each look into the furnace, when the fuel slot is empty (or holds less than the items still to cook need) and the inventory holds fuel, the bot puts more in, by the same `chooseFuel` rules. So a job is no longer limited to what the first load of fuel covers: `smelt 640 raw_iron` with a few coal is run in stages, and the result says how much fuel was used. With no more fuel it ends `out_of_fuel` as now (by the stalled-furnace check), leaving the rest in the furnace as a job to continue. Optionally it takes fuel from a registered container by the storage rules when the inventory has none (off by default, `fuel_from_storage: true`).
+- **A ready signal instead of standing by.** `start_only` jobs (and jobs cut short) are watched by a `SmeltJobWatcher` that only uses the injected `Clock` and `Scheduler`: when the estimated time is up (`startedAt` plus 10 seconds per item, less what was collected), it pushes a `smelt_ready` event into the agent's inbox (`wait_for_chat`) saying which furnace holds what. It does not open the furnace or walk anywhere, so it costs nothing while the bot does other work. The agent then calls `smelt` with `collect: true`. The estimate is written into the job record, so the watcher is rebuilt after a restart, and events are sent once per job.
+- **Walking away from the furnace.** Between starting a job and collecting it the bot is free to do other tasks: the closed-window wait already allows it, and the ready signal makes it practical. The bot may go as far as it needs, but the job record warns the agent when the furnace is farther than a set distance (default 64 blocks) or in another dimension, so it is not a surprise; collecting walks back (the existing `resume`), and an unreachable furnace is reported, keeping the job.
+- **Safety.** The furnace burns and cooks by itself, so nothing in it can be lost by leaving; a furnace that runs out of fuel while the bot is away simply stops with the items inside. A furnace that was broken meanwhile drops its job when the bot arrives (as now).
+- **Docs.** The gathering, crafting, and smelting page (top-up, the ready signal), AGENTS.md (the `smelt_ready` event and what to do with it), the session briefing text.
+- **Tests:**
+  - unit: top-up at a look (empty slot with fuel in the inventory, not needed when enough, the fuel chosen by the same rules, a job larger than the first load, no fuel left ends `out_of_fuel` with the job kept, fuel from storage when asked), the watcher (fires once at the estimate, not before, not after `collect`, rebuilt from the record after a restart, several jobs), the distance warning
+  - integration: `smelt` with `wait: start_only` through the tool layer on the fake furnace with a scripted clock: another task runs, `smelt_ready` arrives in `wait_for_chat`, `collect` takes the ingots
+  - e2e (`test/e2e/gather-craft-smelt/`, extended): more raw iron than one coal covers, with two coal in the inventory: the job runs to the end in stages on a real server
+- **Exit criteria:** "smelt 200 iron" with enough fuel in the bag finishes in one request without the fuel limit cutting it; and a job started with `wait: start_only` announces itself with `smelt_ready` while the bot does something else.
+
+[Back to the development plan](../DEVELOPMENT-PLAN.md)
